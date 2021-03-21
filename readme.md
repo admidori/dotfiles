@@ -37,12 +37,12 @@ Ubuntu 20.04
  ```
  
  # 構築される環境（どんどん増えます）
- ・python3.8
- ・詳細はpip(requirement.txt参照)
- ・gcc
+ ・python3.8  
+ ・詳細はpip(requirement.txt参照)  
+ ・gcc  
  
  # オプションでインストールされるソフト(必要に応じで消えたり増えたりします）
- ・Midnight Commander
- ・powerline
- ・tmux
+ ・Midnight Commander  
+ ・powerline  
+ ・tmux  
  
