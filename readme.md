@@ -1,18 +1,20 @@
 # Dotfiles  
 [動作確認済環境]  
 macOS Big Sur  
+Ubuntu 20.04
 
 # How to install  
  ```
  $ git clone https://github.com/rp-agota/dotfiles.git
  $ cd dotfiles  
+ $ chmod +x install.sh
  $ ./install.sh
  ```  
  
  # ディレクトリ構造
  ```
  root/
-　├ bin/
+　├ bin/ (スクリプトファイルなど)
 　│　└ option/　（開発に直接必要のないツールなどのスクリプトファイル）
 　│　     └ /linux
 　│　             └ ~install.sh files
@@ -21,7 +23,7 @@ macOS Big Sur
 　│　     └ /linux
 　│　            └ ~install.sh files
 　│　     └ /mac
-　├ etc/
+　├ etc/ (複雑なdotfileなど)
 　│　└ init/　　（環境依存のdotfile）
 　│　     └ /linux
 　│　           └ setuplinux.sh
@@ -33,4 +35,14 @@ macOS Big Sur
 　├　link.sh
 　└  dotfiles
  ```
+ 
+ # 構築される環境（どんどん増えます）
+ ・python3.8
+ ・詳細はpip(requirement.txt参照)
+ ・gcc
+ 
+ # オプションでインストールされるソフト(必要に応じで消えたり増えたりします）
+ ・Midnight Commander
+ ・powerline
+ ・tmux
  
