@@ -38,7 +38,7 @@ Ubuntu 20.04
  
  # 構築される環境（どんどん増えます）
  ・python3.8  
- ・詳細はpip(requirement.txt参照)  
+ ・pip(詳細はrequirement.txt参照)  
  ・gcc  
  
  # オプションでインストールされるソフト(必要に応じで消えたり増えたりします）
