@@ -1,4 +1,7 @@
 # Dotfiles  
+完全に自分用の開発用PCのdotfilesです。
+自分のニーズに最大限合わせているので傍から見れば基本的に不必要なものが多いです。
+
 [動作確認済環境]  
 macOS Big Sur  
 Ubuntu 20.04
@@ -40,9 +43,8 @@ Ubuntu 20.04
  ・python3.8  
  ・pip(詳細はrequirement.txt参照)  
  ・gcc  
- 
+
  # オプションでインストールされるソフト(必要に応じで消えたり増えたりします）
  ・Midnight Commander  
- ・powerline  
+ ・Powerline  
  ・tmux  
- 
