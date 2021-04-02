@@ -1,5 +1,10 @@
 #!/bin/bash
 
+echo "change zsh!"
+sudo apt update
+sudo apt-get install -y zsh
+chsh -s $(which zsh)
+
 for f in .??*
 do
     [[ "$f" == ".git" ]] && continue

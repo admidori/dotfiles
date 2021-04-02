@@ -7,7 +7,6 @@
 
 echo "Hello! This is the install.sh!"
 
-
 echo "----------[FIRST STEP]----------"
 #各dotfileのSymbolic linkをホームディレクトリに貼り付ける
 echo "make Symbolic link of dotfiles!"
@@ -36,6 +35,7 @@ if [ "$FLG_OS" = "MAC" ]; then
   chmod +x setupmac.sh
   ./setupmac.sh
 fi
+
 if [ "$FLG_OS" = "LINUX" ]; then
   cd ~/dotfiles/etc/init/linux/
   chmod +x setuplinux.sh
@@ -49,6 +49,8 @@ echo "----------[THIRD STEP]----------"
 echo "Begin to setup deleloping tool"
 
 if [ "$FLG_OS" = "MAC" ]; then
+echo "----------[Homebrew installing]----------"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
 cd ~/dotfiles/bin/tool/mac/
 for f in *.sh
 do
