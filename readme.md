@@ -1,11 +1,11 @@
 # Dotfiles  
 開発用PCのdotfilesです。
 自分のニーズに最大限合わせているので傍から見れば基本的に不必要なものが多いです。
-サーバー用→https://github.com/rp-agota/dotfiles-server
+サーバー用→[rp-agota/dotfiles-server](https://github.com/rp-agota/dotfiles-server)
 
-[動作確認済環境]  
+# 動作確認済環境
 macOS Big Sur  
-Ubuntu 20.04
+Ubuntu 20.04  
 
 # How to install  
  ```
@@ -42,7 +42,10 @@ Ubuntu 20.04
 　│　             └...
 　│　             └ ~install.sh
 　│　             └...
-　│　             
+　│
+　│　└ etc/　（その他手動でインストールするスクリプトファイル）
+　│　      └zplug-install.sh (zplug)
+　│
 　├　install.sh (インストール用のスクリプトファイル)
 　│　             
 　├　link.sh    (dotfilesのシンボリックリンクを貼るためのスクリプトファイル)
