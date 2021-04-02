@@ -14,38 +14,53 @@ Ubuntu 20.04
  $ chmod +x install.sh
  $ ./install.sh
  ```  
- 
+
+# How to maintenance
+ ルートディレクトリに置かれるdotfilesは全てこのリポジトリのシンボリックリンクになっています。  
+ dotfilesを変更したら定期的にcommit & pushしてあげてください。
+
  # ディレクトリ構造
  ```
  root/
 　├ bin/ (スクリプトファイルなど)
-　│　└ option/　（開発に直接必要のないツールなどのスクリプトファイル）
+　│　└ tool/　（開発ツール導入用のスクリプトファイル）
 　│　     └ /linux
-　│　             └ ~install.sh files
+　│　             └...
+　│　             └ ~install.sh
+　│　             └...
 　│　     └ /mac
-　│　└ tool/　　（環境構築用のスクリプトファイル）
+　│　             └...
+　│　             └ ~install.sh
+　│　             └...
+　│　             
+　│　└ env/　　（環境構築用のスクリプトファイル）
 　│　     └ /linux
-　│　            └ ~install.sh files
+　│　             └...
+　│　             └ ~install.sh
+　│　             └...
 　│　     └ /mac
-　├ etc/ (複雑なdotfileなど)
-　│　└ init/　　（環境依存のdotfile）
-　│　     └ /linux
-　│　           └ setuplinux.sh
-　│　           └ dotfiles
-　│　     └ /mac
-　│　           └ setupmac.sh
-　│　           └ dotfiles
-　├　install.sh
-　├　link.sh
-　└  dotfiles
+　│　             └...
+　│　             └ ~install.sh
+　│　             └...
+　│　             
+　├　install.sh (インストール用のスクリプトファイル)
+　│　             
+　├　link.sh    (dotfilesのシンボリックリンクを貼るためのスクリプトファイル)
+　│　             
+　├　...
+　├　dotfiles   (各dotfiles)
+　└  ...
+
+ MacではHomebrew、Linuxではapt-getを使用しています。
  ```
  
- # 構築される環境
+ # 構築環境
  ・python3.8  
  ・pip(詳細はrequirement.txt参照)  
  ・gcc  
 
- # オプションでインストールされるソフト
- ・Midnight Commander  
- ・Powerline  
+ # 開発ツール
+ ・zsh & zplug  
+ ・vim  
+ ・Midnight Commander    
  ・tmux  
