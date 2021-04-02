@@ -2,7 +2,7 @@
 
 echo "------------[PYTHON]---------------"
 sudo apt update
-sudo apt install -y python3.8.2
+sudo apt install -y python3.8
 
 echo "------------[PIP]---------------"
 wget https://bootstrap.pypa.io/get-pip.py

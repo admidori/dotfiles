@@ -15,7 +15,6 @@ chmod +x link.sh
 
 
 echo "----------[SECOND STEP]----------"
-#OS固有の設定をインストールする
 echo "Now which do  you use computer?"
 echo "Macintosh->1"
 echo "Linux->2"
@@ -30,28 +29,16 @@ if [ "$OSname" = "2" ]; then
    FLG_OS="LINUX"
 fi
 
-if [ "$FLG_OS" = "MAC" ]; then
-  cd ~/dotfiles/etc/init/mac/
-  chmod +x setupmac.sh
-  ./setupmac.sh
-fi
-
-if [ "$FLG_OS" = "LINUX" ]; then
-  cd ~/dotfiles/etc/init/linux/
-  chmod +x setuplinux.sh
-  ./setuplinux.sh
-fi
-
-
 echo "----------[THIRD STEP]----------"
 #各開発環境をインストールする
-#開発環境が必要になった場合インストールコマンドを~/dotfiles/bin/toolにsh形式で入れると次回セットアップ時に自動実行する
+#開発環境が必要になった場合インストールコマンドを~/dotfiles/bin/envにsh形式で入れると次回セットアップ時に自動実行する
 echo "Begin to setup deleloping tool"
 
 if [ "$FLG_OS" = "MAC" ]; then
 echo "----------[Homebrew installing]----------"
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
-cd ~/dotfiles/bin/tool/mac/
+
+cd ~/dotfiles/bin/env/mac/
 for f in *.sh
 do
     echo "----$f installing----"
@@ -62,7 +49,9 @@ done
 fi
 
 if [ "$FLG_OS" = "LINUX" ]; then
-cd ~/dotfiles/bin/tool/linux/
+cd ~/dotfiles/bin/env/linux/
+sudo apt update
+sudo apt -y upgrade
 for f in *.sh
 do
     echo "----$f installing----"
@@ -73,12 +62,12 @@ done
 fi
 
 echo "----------[FOURTH STEP]----------"
-#開発には直接関係の無いオプション(powerlineなど)をインストールする
-#同様に~/dotfiles/bin/optionにsh形式で入れると次回セットアップ時に自動続行する
+#開発には直接関係の無いオプションをインストールする
+#同様に~/dotfiles/bin/toolにsh形式で入れると次回セットアップ時に自動続行する
 echo "Begin to setup option tool"
 
 if [ "$FLG_OS" = "MAC" ]; then
-cd ~/dotfiles/bin/option/mac
+cd ~/dotfiles/bin/tool/mac
 for f in *.sh
 do
     echo "----$f installing...----"
@@ -89,7 +78,7 @@ done
 fi
 
 if [ "$FLG_OS" = "LINUX" ]; then
-cd ~/dotfiles/bin/option/linux
+cd ~/dotfiles/bin/tool/linux
 for f in *.sh
 do
     echo "----$f installing...----"
@@ -100,8 +89,8 @@ done
 fi
 
 echo "----------[FINAL STEP]----------"
-#githubの設定を行う
-echo "Begin to setup git and github"
+#gitの設定を行う
+echo "Begin to setup git"
 echo "What is your git name?:"
 read gitname
 echo "What is your git email?"
