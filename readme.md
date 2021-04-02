@@ -1,6 +1,7 @@
 # Dotfiles  
 開発用PCのdotfilesです。
 自分のニーズに最大限合わせているので傍から見れば基本的に不必要なものが多いです。
+サーバー用→https://github.com/rp-agota/dotfiles-server
 
 [動作確認済環境]  
 macOS Big Sur  
@@ -39,12 +40,12 @@ Ubuntu 20.04
 　└  dotfiles
  ```
  
- # 構築される環境（どんどん増えます）
+ # 構築される環境
  ・python3.8  
  ・pip(詳細はrequirement.txt参照)  
  ・gcc  
 
- # オプションでインストールされるソフト(必要に応じで消えたり増えたりします）
+ # オプションでインストールされるソフト
  ・Midnight Commander  
  ・Powerline  
  ・tmux  

@@ -2,6 +2,6 @@
 export PATH=/usr/local/bin:$PATH
 export PATH=$PATH:/usr/local/texlive/current/bin/x86_64-darwin
 
-if [ -f ~/.bashrc ]; then
-    . ~/.bashrc
+if [ -f ~/.zshrc ]; then
+    . ~/.zshrc
 fi

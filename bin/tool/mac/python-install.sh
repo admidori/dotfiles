@@ -1,10 +1,10 @@
 #!/bin/bash
 
 echo "------------[PYTHON]---------------"
-sudo apt update
-sudo apt install -y python3.8.2
+brew update
+brew install python
 
 echo "------------[PIP]---------------"
-wget https://bootstrap.pypa.io/get-pip.py
-sudo python3 get-pip.py
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+python3 get-pip.py
 pip install -r requirements.txt

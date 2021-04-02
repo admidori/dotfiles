@@ -1,5 +1,8 @@
 #!/bin/bash
 
+echo "change zsh!"
+chsh -s /bin/zsh
+
 for f in .??*
 do
     [[ "$f" == ".git" ]] && continue
