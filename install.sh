@@ -41,10 +41,8 @@ echo "----------[Homebrew installing]----------"
 cd ~/dotfiles/bin/env/mac/
 for f in *.sh
 do
-    echo "----$f installing----"
     chmod +x $f
     ./$f
-    echo "----$f installed!----"
 done
 fi
 
@@ -54,10 +52,8 @@ sudo apt update
 sudo apt -y upgrade
 for f in *.sh
 do
-    echo "----$f installing----"
     chmod +x $f
     ./$f
-    echo "----$f installed!----"
 done
 fi
 
@@ -70,10 +66,8 @@ if [ "$FLG_OS" = "MAC" ]; then
 cd ~/dotfiles/bin/tool/mac
 for f in *.sh
 do
-    echo "----$f installing...----"
     chmod +x $f
     ./$f
-    echo "----$f installed!----"
 done
 fi
 
@@ -81,10 +75,8 @@ if [ "$FLG_OS" = "LINUX" ]; then
 cd ~/dotfiles/bin/tool/linux
 for f in *.sh
 do
-    echo "----$f installing...----"
     chmod +x $f
     ./$f
-    echo "----$f installed!----"
 done
 fi
 
