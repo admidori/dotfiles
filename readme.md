@@ -9,10 +9,10 @@ Ubuntu 20.04
 
 # How to install  
  ```
- $ git clone https://github.com/rp-agota/dotfiles.git
- $ cd dotfiles  
- $ chmod +x install.sh
- $ ./install.sh
+ git clone https://github.com/rp-agota/dotfiles.git
+ cd dotfiles  
+ chmod +x install.sh
+ ./install.sh
  ```  
 
 # How to maintenance
