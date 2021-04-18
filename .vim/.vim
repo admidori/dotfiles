@@ -1,1 +1,0 @@
-/Users/agota/dotfiles/.vim
