@@ -1,7 +1,6 @@
 # Dotfiles  
 開発用PCのdotfilesです。
 自分のニーズに最大限合わせているので傍から見れば基本的に不必要なものが多いです。  
-サーバー用→[rp-agota/dotfiles-server](https://github.com/rp-agota/dotfiles-server)
 
 # 動作確認済環境
 macOS Big Sur  
