@@ -1,11 +1,18 @@
+alias tmux="tmux -u2"
+
+# Auto tmux
+count=`ps aux | grep tmux | grep -v grep | wc -l`
+if test $count -eq 0; then
+    echo `tmux`
+elif test $count -eq 1; then
+    echo `tmux a`
+fi
+
 # zplug setting
 source ~/.zplug/init.zsh
 zplug 'zplug/zplug', hook-build:'zplug --self-manage'
 
 # ----------Zsh plugins----------
-# theme
-zplug "romkatv/powerlevel10k", as:theme, depth:1
-
 # async job
 zplug "mafredri/zsh-async"
 
@@ -24,6 +31,9 @@ zplug "b4b4r07/enhancd", use:enhancd.sh
 # 256color
 zplug "chrissicool/zsh-256color"
 
+# theme
+zplug romkatv/powerlevel10k, as:theme, depth:1
+
 # ----------Plugins END----------
 
 # Install plugins if there are plugins that have not been installed
@@ -36,5 +46,10 @@ fi
 
 zplug load
 
-# powerlevel10k setting
+# Source Prezto.
+if [[ -s "${ZDOTDIR:-$HOME}/.zprezto/init.zsh" ]]; then
+  source "${ZDOTDIR:-$HOME}/.zprezto/init.zsh"
+fi
+
+# Source powerlevel10k
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh

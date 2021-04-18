@@ -1,6 +1,35 @@
+# How to add plugin
+# repo='Author's GitHubID/Repository name'
+# 
+# [[plugins]]
+# repo = '/'
+
+# Visual theme
 [[plugins]]
 repo = 'vim-airline/vim-airline'
+# Git plugin
 [[plugins]]
 repo = 'tpope/vim-fugitive'
+# Comment out plugin
 [[plugins]]
 repo = 'tpope/vim-commentary'
+# Filename auto-complete plugin
+[[plugins]]
+repo = 'junegunn/fzf.vim'
+# Filetree plugin
+[[plugins]]
+repo = 'preservim/nerdtree'
+
+# -----Colorscheme plugins-----
+[[plugins]]
+repo = 'tomasr/molokai'
+[[plugins]]
+repo = 'joshdick/onedark.vim'
+[[plugins]]
+repo = 'gosukiwi/vim-atom-dark'
+[[plugins]]
+repo = 'raphamorim/lucario'
+[[plugins]]
+repo = 'jdkanani/vim-material-theme'
+[[plugins]]
+repo = 'jacoborus/tender.vim'
