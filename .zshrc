@@ -32,7 +32,7 @@ zplug "b4b4r07/enhancd", use:enhancd.sh
 zplug "chrissicool/zsh-256color"
 
 # theme
-zplug romkatv/powerlevel10k, as:theme, depth:1
+zplug "romkatv/powerlevel10k", as:theme, depth:1
 
 # ----------Plugins END----------
 
@@ -53,3 +53,7 @@ fi
 
 # Source powerlevel10k
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+
+# Autocomplete
+autoload -Uz compinit && compinit
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
