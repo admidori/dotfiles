@@ -1,3 +1,4 @@
+export PATH="/usr/local/bin:$PATH"
 #
 # Executes commands at login pre-zshrc.
 #

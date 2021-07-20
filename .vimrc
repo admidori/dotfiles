@@ -58,7 +58,7 @@ endif
 "----------------------------------------
 " カラースキーム
 "----------------------------------------
-colorscheme atom-dark-256
+colorscheme luinnar
 
 "----------------------------------------
 " 内部設定
@@ -146,7 +146,7 @@ set clipboard=unnamed,autoselect
 " Escの2回押しでハイライト消去
 nnoremap <Esc><Esc> :nohlsearch<CR><ESC>
 " シンタックスハイライト
-syntax on
+syntax enable
 " すべての数を10進数として扱う
 set nrformats=
 " 行をまたいで移動
