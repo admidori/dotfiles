@@ -33,3 +33,11 @@ repo = 'raphamorim/lucario'
 repo = 'jdkanani/vim-material-theme'
 [[plugins]]
 repo = 'jacoborus/tender.vim'
+[[plugins]]
+repo = 'vim-scripts/chlordane.vim'
+[[plugins]]
+repo = 'altercation/vim-colors-solarized'
+[[plugins]]
+repo = 'w0ng/vim-hybrid'
+[[plugins]]
+repo = 'lxmzhv/vim'
