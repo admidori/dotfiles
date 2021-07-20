@@ -1,4 +1,5 @@
 alias tmux="tmux -u2"
+alias ghidra '~/Documents/Ghidra/10.0.1_PUBLIC/ghidraRun'
 
 # Auto tmux
 count=`ps aux | grep tmux | grep -v grep | wc -l`
@@ -57,3 +58,5 @@ fi
 # Autocomplete
 autoload -Uz compinit && compinit
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
+export PATH="/usr/local/Cellar/qemu/6.0.0/bin:$PATH"
+export PATH="/usr/local/opt/openjdk/bin:$PATH"
