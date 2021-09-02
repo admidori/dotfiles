@@ -2,6 +2,7 @@
 
 for f in .??*
 do
+    #Write ignore files
     [[ "$f" == ".git" ]] && continue
     [[ "$f" == ".DS_Store" ]] && continue
     [[ "$f" == ".vscode" ]] && continue

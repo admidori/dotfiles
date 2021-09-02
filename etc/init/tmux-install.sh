@@ -1,5 +1,4 @@
 #!/bin/bash
 
 echo "----------[TMUX]----------"
-brew update
-brew install tmux
+sudo apt-get install -y tmux

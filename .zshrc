@@ -58,5 +58,7 @@ fi
 # Autocomplete
 autoload -Uz compinit && compinit
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
+
+#PATH
 export PATH="/usr/local/Cellar/qemu/6.0.0/bin:$PATH"
 export PATH="/usr/local/opt/openjdk/bin:$PATH"

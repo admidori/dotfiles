@@ -1,96 +1,67 @@
 #!/bin/bash
+DOT_DIR="$HOME/dotfiles"
 
-#Welcome to install.sh
+function usage {
+  cat <<EOM
+Usage: $(basename "$0") [OPTION]...
+  -h[Help]          Display help
+  -f[Full-Setup]    Full-setup which will excute deploy/init/env/
+  -s[Setup]         Setup default shell.
+  -i[Init]          Install tools ignore environment for develop.
+  -e[Env]           Install environment for develop.
+  -d[Deploy]        Link dotfiles(.)
+EOM
+  exit 2
+}
 
-#[動作確認済環境]
-#macOS Big Sur
+has() {
+    type "$1" > /dev/null 2>&1
+}
 
-echo "Hello! This is the install.sh!"
+if [ ! -d ${DOT_DIR} ]; then
+    if has "git"; then
+        git clone https://github.com/rp-agota/dotfiles.git ${DOT_DIR}
+    elif has "curl" || has "wget"; then
+        TARBALL="https://github.com/rp-agota/dotfiles/archive/master.tar.gz"
+        if has "curl"; then
+            curl -L ${TARBALL} -o master.tar.gz
+        else
+            wget ${TARBALL}
+        fi
+        tar -zxvf master.tar.gz
+        rm -f master.tar.gz
+        mv -f dotfiles-master "${DOT_DIR}"
+    else
+        echo "ERROR: curl or wget or git required!"
+        exit 1
+    fi
 
-echo "----------[FIRST STEP]----------"
-#各dotfileのSymbolic linkをホームディレクトリに貼り付ける
-echo "make Symbolic link of dotfiles!"
-chmod +x link.sh
-./link.sh
-
-
-echo "----------[SECOND STEP]----------"
-echo "Now which do  you use computer?"
-echo "Macintosh->1"
-echo "Linux->2"
-read -p "Answer:" OSname
-
-#Macの場合FLG_OSがMACになる
-if [ "$OSname" = "1" ]; then
-   FLG_OS="MAC"
-fi
-#Linuxの場合FLG_OSがLINUXになる
-if [ "$OSname" = "2" ]; then
-   FLG_OS="LINUX"
-fi
-
-echo "----------[THIRD STEP]----------"
-#各開発環境をインストールする
-#開発環境が必要になった場合インストールコマンドを~/dotfiles/bin/envにsh形式で入れると次回セットアップ時に自動実行する
-echo "Begin to setup deleloping tool"
-
-if [ "$FLG_OS" = "MAC" ]; then
-echo "----------[Homebrew installing]----------"
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
-
-cd ~/dotfiles/bin/env/mac/
-for f in *.sh
-do
-    chmod +x $f
-    ./$f
-done
-fi
-
-if [ "$FLG_OS" = "LINUX" ]; then
-cd ~/dotfiles/bin/env/linux/
-sudo apt update
-sudo apt -y upgrade
-for f in *.sh
-do
-    chmod +x $f
-    ./$f
-done
-fi
-
-echo "----------[FOURTH STEP]----------"
-#開発には直接関係の無いオプションをインストールする
-#同様に~/dotfiles/bin/toolにsh形式で入れると次回セットアップ時に自動続行する
-echo "Begin to setup option tool"
-
-if [ "$FLG_OS" = "MAC" ]; then
-cd ~/dotfiles/bin/tool/mac
-for f in *.sh
-do
-    chmod +x $f
-    ./$f
-done
+    cd ${DOT_DIR}
+    while getopts ":f:s:i:e:d:h" optKey; do
+        case "$optKey" in
+            f)
+                make fullsetup
+                exit 0
+            s)
+                make setup
+                exit 0
+            i)
+                make init
+                exit 0
+            e)
+                make env
+                exit 0
+            d)
+                make deploy
+                exit 0
+            '-h'|'--help'|* )
+                usage
+                ;;
+        esac
+    done
+else
+    echo "ERROR: dotfiles already exists!"
+    exit 1
 fi
 
-if [ "$FLG_OS" = "LINUX" ]; then
-cd ~/dotfiles/bin/tool/linux
-for f in *.sh
-do
-    chmod +x $f
-    ./$f
-done
-fi
-
-echo "----------[FINAL STEP]----------"
-#gitの設定を行う
-echo "Begin to setup git"
-echo "What is your git name?:"
-read gitname
-echo "What is your git email?"
-read gitemail
-
-git config --global user.name"$gitname"
-git config --global user.email $gitmail
-
-echo "----------[INSTALL ENDED!]----------"
-echo "Thank you for using this install script."
-echo "Good bye and Enjoy new computer!"
+make setup
