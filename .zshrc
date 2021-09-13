@@ -1,5 +1,4 @@
 alias tmux="tmux -u2"
-alias ghidra '~/Documents/Ghidra/10.0.1_PUBLIC/ghidraRun'
 
 # Auto tmux
 count=`ps aux | grep tmux | grep -v grep | wc -l`
