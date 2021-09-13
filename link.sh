@@ -7,7 +7,6 @@ do
     [[ "$f" == ".vscode" ]] && continue
     [[ "$f" == ".mc.menu" ]] && continue
     [[ "$f" == ".gitignore" ]] && continue
-    [[ "$f" == ".gnuplot" ]] && continue
 
     ln -sf ~/dotfiles/$f ~/$f
     echo "$f linked!"
