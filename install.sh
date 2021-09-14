@@ -53,6 +53,16 @@ do
     ./$f
 done
 
-echo "----------[INSTALL ENDED!]----------"
-echo "Thank you for using this install script."
+echo "Install etc program"
+cd ~/dotfiles/etc
+for f in *.sh
+do
+    chmod 777 $f
+    ./$f
+done
+
+echo "#######################################"
+echo "#         INSTALL COMPLETE            #"
+echo "#######################################"
+echo "Thank you for using dotfile."
 echo "Good bye and Enjoy new computer!"
