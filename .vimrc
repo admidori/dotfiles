@@ -1,7 +1,13 @@
-"----------------------------------------
-" テンプレート設定
-"----------------------------------------
-autocmd BufNewFile *.cpp 0r $HOME/.vim/template/cpp.txt
+" 
+"            _
+"     __   _(_)_ __ ___  _ __ ___
+"     \ \ / / | '_ ` _ \| '__/ __|
+"      \ V /| | | | | | | | | (__
+"       \_/ |_|_| |_| |_|_|  \___|
+"
+
+" Plugin Manager -> dein.vim
+" (https://github.com/Shougo/dein.vim)
 
 "----------------------------------------
 " プラグイン設定
@@ -58,7 +64,9 @@ endif
 "----------------------------------------
 " カラースキーム
 "----------------------------------------
-colorscheme luinnar
+syntax enable
+"set background=dark
+"colorscheme Solarized
 
 "----------------------------------------
 " 内部設定
@@ -89,6 +97,8 @@ set wrapscan
 set incsearch
 " 検索結果をハイライト表示
 set hlsearch
+" NERDTree setting
+nnoremap <silent><C-e> :NERDTreeToggle<CR>
 
 "----------------------------------------
 " 表示設定
@@ -145,8 +155,6 @@ set number
 set clipboard=unnamed,autoselect
 " Escの2回押しでハイライト消去
 nnoremap <Esc><Esc> :nohlsearch<CR><ESC>
-" シンタックスハイライト
-syntax enable
 " すべての数を10進数として扱う
 set nrformats=
 " 行をまたいで移動

@@ -1,6 +1,16 @@
-alias tmux="tmux -u2"
+# 
+#              _
+#      _______| |__  _ __ ___
+#     |_  / __| '_ \| '__/ __|
+#      / /\__ \ | | | | | (__
+#     /___|___/_| |_|_|  \___|
+# 
 
-# Auto tmux
+
+alias tmux="tmux -u2"
+alias ide="~/.scripts/ide.sh"
+
+# tmux autmatic start
 count=`ps aux | grep tmux | grep -v grep | wc -l`
 if test $count -eq 0; then
     echo `tmux`
@@ -46,16 +56,9 @@ fi
 
 zplug load
 
-# Source Prezto.
-if [[ -s "${ZDOTDIR:-$HOME}/.zprezto/init.zsh" ]]; then
-  source "${ZDOTDIR:-$HOME}/.zprezto/init.zsh"
-fi
-
 # Source powerlevel10k
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
 # Autocomplete
 autoload -Uz compinit && compinit
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
-export PATH="/usr/local/Cellar/qemu/6.0.0/bin:$PATH"
-export PATH="/usr/local/opt/openjdk/bin:$PATH"
