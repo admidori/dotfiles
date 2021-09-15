@@ -8,7 +8,8 @@
 # 
 
 
-#xrandr --output DVI-I-1 --pos 1920x400 --output HDMI-0 --pos 0x0
+./fehbg
+xrandr --output DVI-I-1 --pos 1920x400 --output HDMI-0 --pos 0x0
 export GTK_IM_MODULE=fcitx
 export QT_IM_MODULE=fcitx
 export XMODIFIERS=@im=fcitx
