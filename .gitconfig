@@ -1,3 +1,5 @@
 [user]
 	email = admidori.develop@gmail.com
 	name = Midori Ado
+[alias]
+	tree = log --graph --oneline --decorate=short --date=short
