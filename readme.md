@@ -15,7 +15,7 @@ chmod 777 setup.sh
 ./setup.sh
 ```
 
-## SETP 3 (softwere install)  
+## SETP 3 (software install)  
 ```
 cd dotfiles
 chmod 777 install.sh
