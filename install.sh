@@ -18,14 +18,14 @@ echo "Hello! Welcome to install.sh!"
 echo ""
 
 if [ "$(uname)" == 'Darwin' ]; then
-    export OPERATING_SYSTEM = Mac
+    export OPERATING_SYSTEM="Mac"
 elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
     echo -n "Which is your Linux distribution?"
     echo -n "Debian -> 1"
     echo -n "Arch Linux -> 2"
     read str
     if [ str="1" ]; then
-        export OPERATING_SYSTEM = Debian
+        export OPERATING_SYSTEM="Debian"
         echo "########################"
         echo "#      FIRST STEP      #"
         echo "########################"
@@ -56,7 +56,7 @@ elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
         done
 
     elif [ str="2" ]; then
-        export OPERATING_SYSTEM = Arch
+        export OPERATING_SYSTEM="Arch"
         echo "########################"
         echo "#      FIRST STEP      #"
         echo "########################"

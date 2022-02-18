@@ -1,2 +1,5 @@
 *.DS_Store
 *.deb
+*.gpg
+*.deb.?
+*.gpg.?

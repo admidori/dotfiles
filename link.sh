@@ -7,16 +7,8 @@
 #   |_|_|_| |_|_|\_(_)___/_| |_|
 #                            
 
-for f in .??*
-do
-    [[ "$f" == ".git" ]] && continue
-    [[ "$f" == ".gitignore" ]] && continue
-
-    ln -sf ~/dotfiles/mac/$f ~/$f
-    echo "$f linked!"
-done
-
 if [ "$(uname)" == 'Darwin' ]; then
+    cd ~/dotfiles/shared
     for f in .??*
     do
         [[ "$f" == ".git" ]] && continue
@@ -25,6 +17,7 @@ if [ "$(uname)" == 'Darwin' ]; then
         ln -sf ~/dotfiles/shared/$f ~/$f
         echo "$f linked!"
     done
+    cd ~/dotfiles/mac
     for f in .??*
     do
         [[ "$f" == ".git" ]] && continue
@@ -34,6 +27,7 @@ if [ "$(uname)" == 'Darwin' ]; then
         echo "$f linked!"
     done
 elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
+    cd ~/dotfiles/shared
     for f in .??*
     do
         [[ "$f" == ".git" ]] && continue
@@ -42,6 +36,7 @@ elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
         ln -sf ~/dotfiles/shared/$f ~/$f
         echo "$f linked!"
     done
+    cd ~/dotfiles/shared/Linux
     for f in .??*
     do
         [[ "$f" == ".git" ]] && continue
@@ -50,16 +45,8 @@ elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
         ln -sf ~/dotfiles/shared/Linux/$f ~/$f
         echo "$f linked!"
     done
-    if [ OPERATING_SYSTEM == 'Debian' ]; then
-        for f in .??*
-        do
-            [[ "$f" == ".git" ]] && continue
-            [[ "$f" == ".gitignore" ]] && continue
-
-            ln -sf ~/dotfiles/debian/$f ~/$f
-            echo "$f linked!"
-        done
-    else
+    if [ "$OPERATING_SYSTEM" == "Arch" ]; then
+	      cd ~/dotfiles/arch
         for f in .??*
         do
             [[ "$f" == ".git" ]] && continue
