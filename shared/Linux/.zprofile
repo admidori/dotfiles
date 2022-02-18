@@ -10,10 +10,6 @@
 
 export PATH="/usr/local/bin:$PATH"
 
-if [[ "$OSTYPE" == darwin* ]]; then
-  export BROWSER='open'
-fi
-
 export EDITOR='vim'
 export VISUAL='vim'
 export PAGER='less'
