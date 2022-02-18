@@ -8,12 +8,12 @@
 #                                      |_|
 # 
 
-if [ OPERATING_SYSTEM == 'Mac' ]; then
-
-elif [ OPERATING_SYSTEM == 'Debian' ]; then
+if [ "$OPERATING_SYSTEM" = "Mac" ]; then
+    brew update
+elif [ "$OPERATING_SYSTEM" = "Debian" ]; then
     sudo apt update
     sudo apt-get -y install zsh
-elif [ OPERATING_SYSTEM == 'Arch']; then
+elif [ "$OPERATING_SYSTEM" = "Arch" ]; then
     sudo pacman -Syu --noconfirm xsel
     sudo pacman -Syu --noconfirm zsh
 fi
