@@ -8,16 +8,9 @@
 #                                      |_|
 # 
 
-if [ OPERATING_SYSTEM == 'Mac' ]; then
 
-elif [ OPERATING_SYSTEM == 'Debian' ]; then
-    sudo apt update
-    sudo apt-get -y install zsh
-elif [ OPERATING_SYSTEM == 'Arch']; then
-    sudo pacman -Syu --noconfirm xsel
-    sudo pacman -Syu --noconfirm zsh
-fi
-
+sudo pacman -Syu --noconfirm xsel
+sudo pacman -Syu --noconfirm zsh
 curl -sL --proto-redir -all,https https://raw.githubusercontent.com/zplug/installer/master/installer.zsh| zsh
 chsh -s $(which zsh)
 exit
