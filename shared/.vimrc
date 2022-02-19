@@ -65,8 +65,6 @@ endif
 " カラースキーム
 "----------------------------------------
 syntax enable
-"set background=dark
-"colorscheme Solarized
 
 "----------------------------------------
 " 内部設定
@@ -123,14 +121,14 @@ set display=lastline
 set history=10000
 " コメントの色を水色
 hi Comment ctermfg=3
-" 入力モードでTabキー押下時に半角スペースを挿入
-"set expandtab
 " インデント幅
 set shiftwidth=2
 " タブキー押下時に挿入される文字幅を指定
 set softtabstop=2
 " ファイル内にあるタブ文字の表示幅
 set tabstop=2
+" タブ文字を可視化
+set listchars=tab:>-,space:-
 " ツールバーを非表示にする
 set guioptions-=T
 " yでコピーした時にクリップボードに入る
@@ -152,7 +150,7 @@ set title
 " 行番号の表示
 set number
 " ヤンクでクリップボードにコピー
-set clipboard=unnamed,autoselect
+set clipboard=unnamedplus
 " Escの2回押しでハイライト消去
 nnoremap <Esc><Esc> :nohlsearch<CR><ESC>
 " すべての数を10進数として扱う
