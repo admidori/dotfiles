@@ -55,6 +55,14 @@ elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
             ./$f
         done
 
+        cd ~/dotfiles/debian/bin/final
+        for f in *.sh
+        do
+            sudo apt update
+            chmod 777 $f
+            ./$f
+        done
+    
     elif [ str="2" ]; then
         export OPERATING_SYSTEM="Arch"
         echo "########################"
