@@ -124,7 +124,7 @@ set history=10000
 " コメントの色を水色
 hi Comment ctermfg=3
 " 入力モードでTabキー押下時に半角スペースを挿入
-set expandtab
+"set expandtab
 " インデント幅
 set shiftwidth=2
 " タブキー押下時に挿入される文字幅を指定
