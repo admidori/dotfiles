@@ -1,2 +1,2 @@
 #!/bin/bash
-sudo apt -y install vim
+sudo apt -y install vim-gtk
