@@ -1,11 +1,11 @@
 #!/bin/sh
 # Set language directory.
-mkdir -p ~/docker/python/machine-learning/share
-mkdir -p ~/docker/C/dev/share
+mkdir -p ~/docker/python/machine-learning/src
+mkdir -p ~/docker/C/dev/src
 
 # Set symbolic link.
-ln -sf ~/dotfiles/env/Dockerfiles/Dokcerfile-py-ML ~/docker/python/machine-learning/Dockerfile
-ln -sf ~/dotfiles/env/Dockerfiles/Dockerfile-C-dev ~/docker/C/dev/Dockerfile
+cp ~/dotfiles/env/Dockerfiles/Dockerfile-py-ML ~/docker/python/machine-learning/Dockerfile
+cp ~/dotfiles/env/Dockerfiles/Dockerfile-C-dev ~/docker/C/dev/Dockerfile
 
 ln -sf ~/dotfiles/env/Dockerfiles/docker-compose.yaml ~/docker/docker-compose.yaml
 

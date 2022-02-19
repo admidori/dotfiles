@@ -1,18 +1,18 @@
 version: '3' 
 services: 
-  python3-ML: 
+  python3-ml: 
     restart: always 
-    build: . 
+    build: ./python/machine-learning  
     container_name: 'python3_ML' 
     working_dir: '/root/' 
     tty: true 
     volumes: 
-      - ./share:/root/share 
-  C-dev: 
-    restart: always 
-    build: . 
+      - ./src:/root/src 
+  c-dev: 
+    restart: always  
+    build: ./C/dev  
     container_name: 'C_dev' 
     working_dir: '/root/' 
     tty: true 
     volumes: 
-      - ./share:/root/share
+      - ./src:/root/src
