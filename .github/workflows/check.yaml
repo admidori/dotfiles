@@ -7,13 +7,14 @@ on:
 jobs: 
   Ubuntu: 
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps: 
       - uses: actions/checkout@v2
       - name: debian-install 
-        run: make debian-install
+        run: make install　OS=Debian
 
       - name: debian-link
-        run: make debian-link
+        run: make link OS=Debian
 
       - name: unlink
         run: make unlink
