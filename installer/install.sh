@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2022 Midori Ado All Rights Reserved.
+# Copyright (c) 2021-2022 Midori Ado All Rights Reserved.
 #      _           _        _ _       _
 #     (_)_ __  ___| |_ __ _| | |  ___| |__
 #     | | '_ \/ __| __/ _` | | | / __| '_ \
@@ -12,7 +12,7 @@ echo "#######################################"
 echo "#         dotfiles ver 2.0            #"
 echo "#          >>install.sh<<             #"
 echo "#######################################"
-echo "Copyright (c) 2022 Midori Ado All Rights Reserved."
+echo "Copyright (c) 2021-2022 Midori Ado All Rights Reserved."
 echo ""
 echo "Hello! Welcome to install.sh!"
 echo ""
@@ -119,15 +119,9 @@ elif [[ $OPERATING_SYSTEM = "Arch" ]]; then
         ./install.sh
 fi
 
-echo "########################"
-echo "#      SETUP ENV.      #"
-echo "########################"
-mkdir -p ~/docker/python/machine-learning/src
-mkdir -p ~/docker/C/dev/src
-cp $MAIN_PATH/env/Dockerfiles/Dockerfile-py-ML ~/docker/python/machine-learning/Dockerfile
-cp $MAIN_PATH/env/Dockerfiles/Dockerfile-C-dev ~/docker/C/dev/Dockerfile
-ln -sf $MAIN_PATH/env/Dockerfiles/docker-compose.yaml ~/docker/docker-compose.yaml
-echo "Complete to setup environment!"
+cd $MAIN_PATH/installer
+chmod 777 env.sh
+./env.sh
 
 echo "########################"
 echo "#      SETUP ZSH       #"

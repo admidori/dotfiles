@@ -7,6 +7,10 @@
 #   |_|_|_| |_|_|\_(_)___/_| |_|
 #                            
 
+
+echo "########################"
+echo "#  MAKE SYMBOLIC LINK  #"
+echo "########################"
 if [ $OPERATING_SYSTEM == 'Debian' ]; then
     cd $MAIN_PATH/shared
     for f in .??*
