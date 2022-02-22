@@ -127,6 +127,7 @@ mkdir -p ~/docker/C/dev/src
 cp $MAIN_PATH/env/Dockerfiles/Dockerfile-py-ML ~/docker/python/machine-learning/Dockerfile
 cp $MAIN_PATH/env/Dockerfiles/Dockerfile-C-dev ~/docker/C/dev/Dockerfile
 ln -sf $MAIN_PATH/env/Dockerfiles/docker-compose.yaml ~/docker/docker-compose.yaml
+echo "Complete to setup environment!"
 
 echo "########################"
 echo "#      SETUP ZSH       #"
