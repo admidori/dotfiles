@@ -40,7 +40,7 @@ if [ $OPERATING_SYSTEM == 'Debian' ]; then
             ./$f
         done
 
-        cd ~/dotfiles/debian/bin
+        cd ~/dotfiles/debian/bin/tools
         for f in *.sh
         do
             sudo apt update
@@ -56,6 +56,9 @@ if [ $OPERATING_SYSTEM == 'Debian' ]; then
             ./$f
         done
     
+				cd ~/dotfiles
+				chmod 777 init-env.sh
+				./init-env.sh
 elif [ $OPERATING_SYSTEM == 'Arch' ]; then
 				echo "Starting to install dotfile for Arch..."
         echo "########################"
@@ -108,9 +111,9 @@ elif [ $OPERATING_SYSTEM == 'Arch' ]; then
         chmod 777 install.sh
         ./install.sh
 
-else
-  echo "Your platform ($(uname -a)) is not supported."
-  exit 1
+				cd ~/dotfiles
+				chmod 777 init-env.sh
+				./init-env.sh
 fi
 
 echo "#######################################"

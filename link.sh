@@ -7,17 +7,6 @@
 #   |_|_|_| |_|_|\_(_)___/_| |_|
 #                            
 
-
-for f in .??*
-    do
-        [[ "$f" == ".git" ]] && continue
-        [[ "$f" == ".gitignore" ]] && continue
-        [[ "$f" == ".github" ]] && continue
-
-        ln -sf ~/dotfiles/$f ~/$f
-        echo "$f linked!"
-    done
-
 if [ $OPERATING_SYSTEM == 'Debian' ]; then
     cd ~/dotfiles/shared
     for f in .??*
