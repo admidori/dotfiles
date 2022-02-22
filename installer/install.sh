@@ -23,6 +23,7 @@ if [ $OPERATING_SYSTEM == 'Debian' ]; then
         echo "#      FIRST STEP      #"
         echo "########################"
         echo "Make Symbolic link from dotfiles!"
+				cd ~/dotfiles/installer
         chmod 777 link.sh
         ./link.sh
         echo "Link succeeded!"
@@ -56,7 +57,15 @@ if [ $OPERATING_SYSTEM == 'Debian' ]; then
             ./$f
         done
     
-				cd ~/dotfiles
+        cd ~/dotfiles/debian/etc
+        for f in *.sh
+        do
+            sudo apt update
+            chmod 777 $f
+            ./$f
+        done
+
+				cd ~/dotfiles/installer
 				chmod 777 init-env.sh
 				./init-env.sh
 elif [ $OPERATING_SYSTEM == 'Arch' ]; then
@@ -65,7 +74,8 @@ elif [ $OPERATING_SYSTEM == 'Arch' ]; then
         echo "#      FIRST STEP      #"
         echo "########################"
         echo "Make Symbolic link from dotfiles!"
-        chmod 777 link.sh
+        cd ~/dotfiles/installer
+				chmod 777 link.sh
         ./link.sh
         echo "Link succeeded!"
         echo ""
@@ -111,13 +121,18 @@ elif [ $OPERATING_SYSTEM == 'Arch' ]; then
         chmod 777 install.sh
         ./install.sh
 
-				cd ~/dotfiles
+				cd ~/dotfiles/installer
 				chmod 777 init-env.sh
 				./init-env.sh
 fi
+
+curl -sL --proto-redir -all,https https://raw.githubusercontent.com/zplug/installer/master/installer.zsh|
+zsh
+chsh -s $(which zsh)
 
 echo "#######################################"
 echo "#         INSTALL COMPLETE            #"
 echo "#######################################"
 echo "Thank you for using dotfile."
 echo "Good bye and enjoy new computer!"
+exit
