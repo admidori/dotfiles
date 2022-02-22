@@ -1,13 +1,11 @@
 OS := Debian
-PATH := $(cd $(dirname $0);pwd)
+export
+MAIN_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+OPERATING_SYSTEM := $(OS)
 
-install: export OPERATING_SYSTEM := $(OS)
-install: export MAIN_PATH := $(PATH)
 install: ## Install softwares and scripts.
 	@cd installer && chmod 777 install.sh && ./install.sh 
 
-link: export OPERATING_SYSTEM := $(OS)
-link: export MAIN_PATH := $(PATH)
 link: ## Create & update symbolic link 
 	@cd installer && chmod 777 link.sh && ./link.sh 
   

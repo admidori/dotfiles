@@ -17,7 +17,7 @@ echo ""
 echo "Hello! Welcome to install.sh!"
 echo ""
 
-if [ $OPERATING_SYSTEM == 'Debian' ]; then
+if [[ $OPERATING_SYSTEM = "Debian" ]]; then
 				echo "Starting to install dotfile for Debian..."
         echo "########################"
         echo "#  MAKE SYMBOLIC LINK  #"
@@ -65,10 +65,7 @@ if [ $OPERATING_SYSTEM == 'Debian' ]; then
             ./$f
         done
 
-				cd $MAIN_PATH/installer
-				chmod 777 init-env.sh
-				./init-env.sh
-elif [ $OPERATING_SYSTEM == 'Arch' ]; then
+elif [[ $OPERATING_SYSTEM = "Arch" ]]; then
 				echo "Starting to install dotfile for Arch..."
         echo "########################"
         echo "#   MAKE SYMBOLIC LINK #"
@@ -120,12 +117,7 @@ elif [ $OPERATING_SYSTEM == 'Arch' ]; then
         cd $MAIN_PATH/arch/i3/
         chmod 777 install.sh
         ./install.sh
-
-				cd $MAIN_PATH/installer
-				chmod 777 init-env.sh
-				./init-env.sh
 fi
-
 
 echo "########################"
 echo "#      SETUP ENV.      #"
