@@ -2,14 +2,14 @@ OS := Debian
 
 install: export OPERATING_SYSTEM := $(OS)
 install: ## Install softwares and scripts.
-	@cd ~/dotfiles/installer && chmod 777 install.sh && ./install.sh 
+	@cd installer && chmod 777 install.sh && ./install.sh 
 
 link: export OPERATING_SYSTEM := $(OS)
 link: ## Create & update symbolic link 
-	@cd ~/dotfiles/installer && chmod 777 link.sh && ./link.sh 
+	@cd installer && chmod 777 link.sh && ./link.sh 
   
 unlink: ## Unlink symbolic link 
-	@cd ~/dotfiles/installer && chmod 777 unlink.sh && ./unlink.sh 
+	@cd installer && chmod 777 unlink.sh && ./unlink.sh 
   
 .DEFAULT_GOAL := help 
 .PHONY: help install link unlink 
