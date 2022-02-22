@@ -8,29 +8,29 @@
 #                            
 
 if [ $OPERATING_SYSTEM == 'Debian' ]; then
-    cd ~/dotfiles/shared
+    cd $MAIN_PATH/shared
     for f in .??*
     do
         [[ "$f" == ".gitignore" ]] && continue
 
-        ln -sf ~/dotfiles/shared/$f ~/$f
+        ln -sf $MAIN_PATH/shared/$f ~/$f
         echo "$f linked!"
     done
-    cd ~/dotfiles/shared/Linux
+    cd $MAIN_PATH/shared/Linux
     for f in .??*
     do
         [[ "$f" == ".gitignore" ]] && continue
 
-        ln -sf ~/dotfiles/shared/Linux/$f ~/$f
+        ln -sf $MAIN_PATH/shared/Linux/$f ~/$f
         echo "$f linked!"
     done
 elif [ $OPERATING_SYSTEM == 'Arch' ]; then
-	      cd ~/dotfiles/arch
+	      cd $MAIN_PATH/arch
         for f in .??*
         do
             [[ "$f" == ".gitignore" ]] && continue
             
-						ln -sf ~/dotfiles/arch/$f ~/$f
+						ln -sf $MAIN_PATH/arch/$f ~/$f
             echo "$f linked!"
         done
 else

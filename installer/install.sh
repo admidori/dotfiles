@@ -20,20 +20,20 @@ echo ""
 if [ $OPERATING_SYSTEM == 'Debian' ]; then
 				echo "Starting to install dotfile for Debian..."
         echo "########################"
-        echo "#      FIRST STEP      #"
+        echo "#  MAKE SYMBOLIC LINK  #"
         echo "########################"
         echo "Make Symbolic link from dotfiles!"
-				cd ~/dotfiles/installer
+				cd $MAIN_PATH/installer
         chmod 777 link.sh
         ./link.sh
         echo "Link succeeded!"
         echo ""
         echo "########################"
-        echo "#      SECOND STEP     #"
+        echo "#   INSTALL SOFTWARES  #"
         echo "########################"
         echo "Install general softwere"
 
-        cd ~/dotfiles/debian/bin/init
+        cd $MAIN_PATH/debian/bin/init
         for f in *.sh
         do
             sudo apt update
@@ -41,7 +41,7 @@ if [ $OPERATING_SYSTEM == 'Debian' ]; then
             ./$f
         done
 
-        cd ~/dotfiles/debian/bin/tools
+        cd $MAIN_PATH/debian/bin/tools
         for f in *.sh
         do
             sudo apt update
@@ -49,7 +49,7 @@ if [ $OPERATING_SYSTEM == 'Debian' ]; then
             ./$f
         done
 
-        cd ~/dotfiles/debian/bin/final
+        cd $MAIN_PATH/debian/bin/final
         for f in *.sh
         do
             sudo apt update
@@ -57,7 +57,7 @@ if [ $OPERATING_SYSTEM == 'Debian' ]; then
             ./$f
         done
     
-        cd ~/dotfiles/debian/etc
+        cd $MAIN_PATH/debian/etc
         for f in *.sh
         do
             sudo apt update
@@ -65,25 +65,25 @@ if [ $OPERATING_SYSTEM == 'Debian' ]; then
             ./$f
         done
 
-				cd ~/dotfiles/installer
+				cd $MAIN_PATH/installer
 				chmod 777 init-env.sh
 				./init-env.sh
 elif [ $OPERATING_SYSTEM == 'Arch' ]; then
 				echo "Starting to install dotfile for Arch..."
         echo "########################"
-        echo "#      FIRST STEP      #"
+        echo "#   MAKE SYMBOLIC LINK #"
         echo "########################"
         echo "Make Symbolic link from dotfiles!"
-        cd ~/dotfiles/installer
+        cd $MAIN_PATH/installer
 				chmod 777 link.sh
         ./link.sh
         echo "Link succeeded!"
         echo ""
         echo "########################"
-        echo "#      SECOND STEP     #"
+        echo "#    INSTALL SOFTWARES #"
         echo "########################"
         echo "Install fonts"
-        cd ~/dotfiles/arch/bin/fonts
+        cd $MAIN_PATH/arch/bin/fonts
         for f in *.sh
         do
             chmod 777 $f
@@ -91,7 +91,7 @@ elif [ $OPERATING_SYSTEM == 'Arch' ]; then
         done
 
         echo "Install general softwere"
-        cd ~/dotfiles/arch/bin/general
+        cd $MAIN_PATH/arch/bin/general
         for f in *.sh
         do
             chmod 777 $f
@@ -99,7 +99,7 @@ elif [ $OPERATING_SYSTEM == 'Arch' ]; then
         done
 
         echo "Install tools"
-        cd ~/dotfiles/arch/bin/tools
+        cd $MAIN_PATH/arch/bin/tools
         for f in *.sh
         do
             chmod 777 $f
@@ -107,25 +107,38 @@ elif [ $OPERATING_SYSTEM == 'Arch' ]; then
         done
 
         echo "Install etc program"
-        cd ~/dotfiles/arch/etc
+        cd $MAIN_PATH/arch/etc
         for f in *.sh
         do
             chmod 777 $f
             ./$f
         done
         echo "########################"
-        echo "#      THIRD STEP      #"
+        echo "# SETUP WINDOW MANAGER #"
         echo "########################"
         echo "Window-Manager i3 setup"
-        cd ~/dotfiles/arch/i3/
+        cd $MAIN_PATH/arch/i3/
         chmod 777 install.sh
         ./install.sh
 
-				cd ~/dotfiles/installer
+				cd $MAIN_PATH/installer
 				chmod 777 init-env.sh
 				./init-env.sh
 fi
 
+
+echo "########################"
+echo "#      SETUP ENV.      #"
+echo "########################"
+mkdir -p ~/docker/python/machine-learning/src
+mkdir -p ~/docker/C/dev/src
+cp $MAIN_PATH/env/Dockerfiles/Dockerfile-py-ML ~/docker/python/machine-learning/Dockerfile
+cp $MAIN_PATH/env/Dockerfiles/Dockerfile-C-dev ~/docker/C/dev/Dockerfile
+ln -sf $MAIN_PATH/env/Dockerfiles/docker-compose.yaml ~/docker/docker-compose.yaml
+
+echo "########################"
+echo "#      SETUP ZSH       #"
+echo "########################"
 curl -sL --proto-redir -all,https https://raw.githubusercontent.com/zplug/installer/master/installer.zsh|
 zsh
 chsh -s $(which zsh)
