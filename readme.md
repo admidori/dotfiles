@@ -1,3 +1,6 @@
+# Attention!
+This dotfiles still has developed yet!
+
 # Dotfiles (Arch/Debian)  
 ## STEP 1 --install git  
 - Arch 
