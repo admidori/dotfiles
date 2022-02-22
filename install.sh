@@ -17,15 +17,8 @@ echo ""
 echo "Hello! Welcome to install.sh!"
 echo ""
 
-if [ "$(uname)" == 'Darwin' ]; then
-    export OPERATING_SYSTEM="Mac"
-elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
-    echo -n "Which is your Linux distribution?"
-    echo -n "Debian -> 1"
-    echo -n "Arch Linux -> 2"
-    read str
-    if [ str="1" ]; then
-        export OPERATING_SYSTEM="Debian"
+if [ $OPERATING_SYSTEM == 'Debian' ]; then
+				echo "Starting to install dotfile for Debian..."
         echo "########################"
         echo "#      FIRST STEP      #"
         echo "########################"
@@ -63,8 +56,8 @@ elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
             ./$f
         done
     
-    elif [ str="2" ]; then
-        export OPERATING_SYSTEM="Arch"
+elif [ $OPERATING_SYSTEM == 'Arch' ]; then
+				echo "Starting to install dotfile for Arch..."
         echo "########################"
         echo "#      FIRST STEP      #"
         echo "########################"
@@ -114,8 +107,7 @@ elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
         cd ~/dotfiles/arch/i3/
         chmod 777 install.sh
         ./install.sh
-    fi
-        
+
 else
   echo "Your platform ($(uname -a)) is not supported."
   exit 1
