@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 # set tmux panes like ide
 
