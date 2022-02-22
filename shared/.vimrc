@@ -150,7 +150,7 @@ set title
 " 行番号の表示
 set number
 " ヤンクでクリップボードにコピー
-set clipboard=unnamedplus
+set clipboard=unnamedplus,autoselect
 " Escの2回押しでハイライト消去
 nnoremap <Esc><Esc> :nohlsearch<CR><ESC>
 " すべての数を10進数として扱う
