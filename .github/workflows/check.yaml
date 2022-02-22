@@ -10,8 +10,6 @@ jobs:
     timeout-minutes: 15
     steps: 
       - uses: actions/checkout@v2
-        with: 
-             path: ./root/dofiles
       - name: debian-install 
         run: sudo make install　OS=Debian
 
