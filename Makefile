@@ -1,17 +1,20 @@
+OS1 := Debian
+OS2 := Arch
+
+debian-install: export OPERATING_SYSTEM := $(OS1)
 debian-install: ## Begin to run installer for Debian GNU/Linux 
-	export OPERATING_SYSTEM := Debian 
 	@chmod 777 install.sh init-env.sh && ./install.sh && ./init-env.sh
 
+arch-install: export OPERATING_SYSTEM := $(OS2)
 arch-install: ## Begin to run installer for Arch Linux 
-	export OPERATING_SYSTEM := Arch 
 	@chmod 777 install.sh init-env.sh && ./install.sh && ./init-env.sh 
-  
+
+debian-link: export OPERATING_SYSTEM := $(OS1)
 debian-link: ## Create & update symbolic link 
-	export OPERATING_SYSTEM := Debian 
 	@chmod 777 link.sh && ./link.sh 
-  
+
+arch-link: export OPERATING_SYSTEM := $(OS2)
 arch-link: ## Create & update symbolic link 
-	export OPERATING_SYSTEM := Arch 
 	@chmod 777 link.sh && ./link.sh 
   
 uninstall: ## Unlink symbolic link 
