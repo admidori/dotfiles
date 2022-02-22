@@ -35,8 +35,11 @@ zplug "zsh-users/zsh-completions"
 # history-search
 zplug "zsh-users/zsh-history-substring-search"
 
+# history-search
+zplug "zsh-users/zsh-autosuggestions"
+
 # easy moving directory
-zplug "b4b4r07/enhancd", use:enhancd.sh
+zplug "b4b4r07/enhancd", use:init.sh
 
 # 256color
 zplug "chrissicool/zsh-256color"
