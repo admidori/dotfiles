@@ -9,7 +9,7 @@
 
 alias tmux="tmux -u2"
 alias ide="~/.scripts/ide.sh"
-alias ide="~/.scripts/apt-u.sh"
+alias apt-u="~/.scripts/apt-fetch.sh"
 
 # tmux autmatic start
 count=`ps aux | grep tmux | grep -v grep | wc -l`
