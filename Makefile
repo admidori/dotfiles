@@ -1,10 +1,10 @@
 debian-install: ## Begin to run installer for Debian GNU/Linux 
 	export OPERATING_SYSTEM := Debian 
-	@chmod 777 install.sh && ./install.sh 
-  
+	@chmod 777 install.sh init-env.sh && ./install.sh && ./init-env.sh
+
 arch-install: ## Begin to run installer for Arch Linux 
 	export OPERATING_SYSTEM := Arch 
-	@chmod 777 install.sh && ./install.sh 
+	@chmod 777 install.sh init-env.sh && ./install.sh && ./init-env.sh 
   
 debian-link: ## Create & update symbolic link 
 	export OPERATING_SYSTEM := Debian 
