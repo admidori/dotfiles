@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v2
       - name: debian-install 
         run: sudo make install OS=Debian 
-			
+
       - name: test docker
         working-directory: ./docker
         run: docker-compose up -d --build
