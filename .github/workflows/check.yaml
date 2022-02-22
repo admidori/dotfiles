@@ -1,0 +1,19 @@
+name: CI
+
+on: 
+	push: 
+		branches: [master]
+
+jobs:
+	Ubuntu:
+		runs-on: ubuntu-latest
+		steps: 
+			- uses: actions/checkout@v2
+			- name: debian-install 
+				run: make debian-install
+			
+			- name: debian-link
+				run: make debian-link
+
+			- name: unlink
+				run: make unlink
