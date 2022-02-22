@@ -14,7 +14,7 @@ jobs:
         run: sudo make install OS=Debian 
 
       - name: test docker
-        working-directory: ./docker
+        working-directory: ~/docker
         run: docker-compose up -d --build
 
       - name: debian-link 
