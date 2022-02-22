@@ -1,6 +1,3 @@
-# Attention!
-This dotfiles still has developed yet!
-
 # Dotfiles (Arch/Debian)  
 ## STEP 1 --install git  
 - Arch 
@@ -15,13 +12,6 @@ This dotfiles still has developed yet!
 ## STEP 3 --Permission setting and install dots and more.  
 ```
 cd dotfiles
-chmod 777 install.sh
-./install.sh
-```  
-  
-## STEP 4 --zsh install 
-```
-cd dotfiles
-chmod 777 zshsetup.sh
-./zshsetup.sh
+make install OS=Debian(Debian)
+make install OS=Arch(Arch Linux)
 ```  
