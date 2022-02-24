@@ -4,15 +4,15 @@
 # [[plugins]]
 # repo = '/'
 
-# Visual theme
+# Status Line
 [[plugins]]
-repo = 'vim-airline/vim-airline'
-# Git plugin
+repo = 'itchyny/lightline.vim'
 [[plugins]]
 repo = 'tpope/vim-fugitive'
-# Comment out plugin
 [[plugins]]
-repo = 'tpope/vim-commentary'
+repo = 'airblade/vim-gitgutter'
+[[plugins]]
+repo = 'itchyny/vim-gitbranch'
 # Filename auto-complete plugin
 [[plugins]]
 repo = 'junegunn/fzf.vim'
@@ -23,8 +23,16 @@ repo = 'preservim/nerdtree'
 [[plugins]]
 repo = 'Shougo/unite.vim'
 # Auto complete
-[[plugin]]
+[[plugins]]
 repo = 'Shougo/deoplete.nvim'
+# Preview markdown
+[[plugins]]
+repo = 'previm/previm'
+# Support Lnaguage
+[[plugins]]
+repo = 'prabirshrestha/vim-lsp'
+[[plugins]]
+repo = 'mattn/vim-lsp-settings'
 
 # -----Colorscheme plugins-----
 [[plugins]]
