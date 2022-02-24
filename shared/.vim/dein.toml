@@ -19,12 +19,6 @@ repo = 'junegunn/fzf.vim'
 # Filetree plugin
 [[plugins]]
 repo = 'preservim/nerdtree'
-# File History
-[[plugins]]
-repo = 'Shougo/unite.vim'
-# Auto complete
-[[plugins]]
-repo = 'Shougo/deoplete.nvim'
 # Preview markdown
 [[plugins]]
 repo = 'previm/previm'
