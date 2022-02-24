@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Copyright (c) 2021-2022 Midori Ado All Rights Reserved.
 #      _           _        _ _       _
