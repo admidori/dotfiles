@@ -8,6 +8,7 @@
 #     |_|_| |_|___/\__\__,_|_|_(_)___/_| |_|
 # 
 
+echo ""
 echo "#######################################"
 echo "#         dotfiles ver 2.0            #"
 echo "#          >>install.sh<<             #"
@@ -17,7 +18,7 @@ echo ""
 echo "Hello! Welcome to install.sh!"
 echo ""
 
-if [[ $OPERATING_SYSTEM = "Debian" ]]; then
+if [ $OPERATING_SYSTEM = "Debian" ]; then
 				echo "Starting to install dotfile for Debian..."
         echo "########################"
         echo "#  MAKE SYMBOLIC LINK  #"
@@ -65,7 +66,7 @@ if [[ $OPERATING_SYSTEM = "Debian" ]]; then
             ./$f
         done
 
-elif [[ $OPERATING_SYSTEM = "Arch" ]]; then
+elif [ $OPERATING_SYSTEM = "Arch" ]; then
 				echo "Starting to install dotfile for Arch..."
         echo "########################"
         echo "#   MAKE SYMBOLIC LINK #"
@@ -117,6 +118,10 @@ elif [[ $OPERATING_SYSTEM = "Arch" ]]; then
         cd $MAIN_PATH/arch/i3/
         chmod 777 install.sh
         ./install.sh
+
+else
+	echo "Argument error"
+	exit 1
 fi
 
 cd $MAIN_PATH/installer
