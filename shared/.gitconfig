@@ -1,5 +1,12 @@
 [user]
 	email = agotadmidori@gmail.com
 	name = Aoi Kondo
+	signingkey = 6571F92634F81AFF
 [alias]
 	tree = log --graph --oneline --decorate=short --date=short
+[gpg]
+	program = gpg
+[commit]
+	gpgsign = true
+[tag]
+	gpgsign = true

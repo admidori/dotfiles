@@ -9,7 +9,7 @@
 
 
 export PATH="/usr/local/bin:$PATH"
-
+export GPG_TTY=$TTY
 export EDITOR='vim'
 export VISUAL='vim'
 export PAGER='less'
