@@ -19,10 +19,7 @@ repo = 'junegunn/fzf.vim'
 # Filetree plugin
 [[plugins]]
 repo = 'preservim/nerdtree'
-# Preview markdown
-[[plugins]]
-repo = 'previm/previm'
-# Support Lnaguage
+#Support Lnaguage
 [[plugins]]
 repo = 'prabirshrestha/vim-lsp'
 [[plugins]]

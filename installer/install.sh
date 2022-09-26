@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (c) 2021-2022 Midori Ado All Rights Reserved.
+# Copyright (c) 2021-2022 Aoi Kondo All Rights Reserved.
 #      _           _        _ _       _
 #     (_)_ __  ___| |_ __ _| | |  ___| |__
 #     | | '_ \/ __| __/ _` | | | / __| '_ \
@@ -10,10 +10,10 @@
 
 echo ""
 echo "#######################################"
-echo "#         dotfiles ver 2.0            #"
+echo "#         dotfiles ver 2.1            #"
 echo "#          >>install.sh<<             #"
 echo "#######################################"
-echo "Copyright (c) 2021-2022 Midori Ado All Rights Reserved."
+echo "Copyright (c) 2021-2022 Aoi Kondo All Rights Reserved."
 echo ""
 echo "Hello! Welcome to install.sh!"
 echo ""
@@ -123,10 +123,6 @@ else
 	echo "Argument error"
 	exit 1
 fi
-
-cd $MAIN_PATH/installer
-chmod 777 env.sh
-./env.sh
 
 echo "########################"
 echo "#      SETUP ZSH       #"

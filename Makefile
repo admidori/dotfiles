@@ -14,10 +14,10 @@ env: ## Setup developing environment
 
 unlink: ## Unlink symbolic link 
 	@cd installer && chmod 777 unlink.sh && ./unlink.sh 
-  
+
 .DEFAULT_GOAL := help 
 .PHONY: help install link env unlink 
-  
+
 help:  ## You can read help about this Makefile. 
 	@echo "***rp-agota/dotfiles***" 
 	@echo "You can install dotfiles for Debian/Arch. Don't forget write 'sudo'." 
