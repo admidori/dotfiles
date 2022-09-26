@@ -20,14 +20,6 @@ if [ $OPERATING_SYSTEM == 'Debian' ]; then
         ln -sf $MAIN_PATH/shared/$f ~/$f
         echo "$f linked!"
     done
-    cd $MAIN_PATH/shared/Linux
-    for f in .??*
-    do
-        [[ "$f" == ".gitignore" ]] && continue
-
-        ln -sf $MAIN_PATH/shared/Linux/$f ~/$f
-        echo "$f linked!"
-    done
 elif [ $OPERATING_SYSTEM == 'Arch' ]; then
 	      cd $MAIN_PATH/arch
         for f in .??*
