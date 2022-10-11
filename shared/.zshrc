@@ -26,25 +26,18 @@ zplug 'zplug/zplug', hook-build:'zplug --self-manage'
 # ----------Zsh plugins----------
 # async job
 zplug "mafredri/zsh-async"
-
 # syntax-highlighting
 zplug "zsh-users/zsh-syntax-highlighting", defer:2
-
 # auto-complete
 zplug "zsh-users/zsh-completions"
-
 # history-search
 zplug "zsh-users/zsh-history-substring-search"
-
 # history-search
 zplug "zsh-users/zsh-autosuggestions"
-
 # easy moving directory
 zplug "b4b4r07/enhancd", use:init.sh
-
 # 256color
 zplug "chrissicool/zsh-256color"
-
 # theme
 zplug "romkatv/powerlevel10k", as:theme, depth:1
 
