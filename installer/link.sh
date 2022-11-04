@@ -17,4 +17,3 @@ do
   ln -sf $MAIN_PATH/bin/dotfiles/$f ~/$f
   echo "$f linked!"
 done
-

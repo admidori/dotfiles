@@ -10,6 +10,5 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/rp-agota/dotfiles/master/i
 ```
 git clone https://github.com/rp-agota/dotfiles.git
 cd dotfiles
-make install OS=Debian (If you use Debian)
-make install OS=Arch (If you use Arch Linux)
+make install
 ```  
