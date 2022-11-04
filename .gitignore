@@ -3,3 +3,4 @@
 *.gpg
 *.deb.?
 *.gpg.?
+tmux-*
