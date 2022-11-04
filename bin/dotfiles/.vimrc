@@ -106,7 +106,7 @@ set backspace=indent,eol,start
 set ambiwidth=double
 set wildmenu
 set cursorline
-
+set scrolloff=1
 "----------------------------------------
 " Search
 "----------------------------------------
