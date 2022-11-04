@@ -62,6 +62,29 @@ endif
 " }}}
 
 "----------------------------------------
+" ddc.vim
+"----------------------------------------
+call ddc#custom#patch_global('ui', 'native')
+call ddc#custom#patch_global('sources', ['around', 'nextword'])
+call ddc#custom#patch_global('sourceOptions', {
+      \ 'around': {'mark': 'A'},
+      \ 'nextword': {'mark': 'nextword'},
+      \ '_': {
+      \   'matchers': ['matcher_head'],
+      \   'sorters': ['sorter_rank']},
+      \ })
+" Mappings
+" <TAB>: completion.
+inoremap <silent><expr> <TAB>
+\ pumvisible() ? '<C-n>' :
+\ (col('.') <= 1 <Bar><Bar> getline('.')[col('.') - 2] =~# '\s') ?
+\ '<TAB>' : ddc#map#manual_complete()
+" <S-TAB>: completion back.
+inoremap <expr><S-TAB>  pumvisible() ? '<C-p>' : '<C-h>'
+
+call ddc#enable()
+
+"----------------------------------------
 " Colorscheme
 "----------------------------------------
 if !has('gui_running') && &term =~ '^\%(screen\|tmux\)'
@@ -70,8 +93,8 @@ if !has('gui_running') && &term =~ '^\%(screen\|tmux\)'
 endif
 
 syntax enable
-set background=dark
-colorscheme solarized
+set t_Co=256
+colorscheme atom-dark-256
 
 "----------------------------------------
 " General
@@ -82,6 +105,7 @@ set virtualedit=block
 set backspace=indent,eol,start
 set ambiwidth=double
 set wildmenu
+set cursorline
 
 "----------------------------------------
 " Search
@@ -166,7 +190,7 @@ set updatetime=100
 
 " lightline.vim
 let g:lightline = {
-	      \ 'colorscheme': 'solarized',
+	      \ 'colorscheme': 'dark',
         \ 'mode_map': {'c': 'NORMAL'},
         \ 'active': {
         \   'left': [
