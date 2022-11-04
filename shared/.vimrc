@@ -150,6 +150,13 @@ set mouse=a
 "----------------------------------------
 " Others
 "----------------------------------------
+" undo settings
+silent !mkdir ~/.vim/undo -p >/dev/null 2>&1
+if has('persistent_undo')
+  set undodir=~/.vim/undo
+  set undofile
+endif
+
 " auto reload .vimrc
 augroup source-vimrc
   autocmd!
