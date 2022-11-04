@@ -7,9 +7,6 @@ install: ## Install softwares and scripts.
 link: ## Create & update symbolic link 
 	@cd installer && chmod 777 link.sh && ./link.sh 
 
-env: ## Setup developing environment
-	@cd installer && chmod 777 env.sh && ./env.sh
-
 unlink: ## Unlink symbolic link 
 	@cd installer && chmod 777 unlink.sh && ./unlink.sh 
 
