@@ -151,6 +151,7 @@ nnoremap <Esc><Esc> :nohlsearch<CR><ESC>
 set nrformats=
 set whichwrap=b,s,h,l,<,>,[,],~
 set mouse=a
+set laststatus=2
 
 "----------------------------------------
 " Others
