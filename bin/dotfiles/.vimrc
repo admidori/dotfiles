@@ -107,6 +107,12 @@ set ambiwidth=double
 set wildmenu
 set cursorline
 set scrolloff=1
+let &t_ti .= "\e[2 q"
+let &t_SI .= "\e[6 q"
+let &t_EI .= "\e[2 q"
+let &t_SR .= "\e[4 q"
+let &t_te .= "\e[6 q"
+
 "----------------------------------------
 " Search
 "----------------------------------------
@@ -186,6 +192,7 @@ endif
 
 " NERDTree setting
 nnoremap <silent><C-e> :NERDTreeToggle<CR>
+let NERDTreeShowHidden=1
 
 " vim-gitgutter
 let g:gitgutter_sign_added = '+'
