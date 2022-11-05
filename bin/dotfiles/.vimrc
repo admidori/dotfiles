@@ -126,10 +126,6 @@ set hlsearch
 " Appearance
 "----------------------------------------
 set noerrorbells
-nnoremap <C-g> 1<C-g>
-augroup EchoFilePath
-  autocmd WinEnter * execute "normal! 1\<C-g>"
-augroup END
 set shellslash
 set showmatch matchtime=1
 set cinoptions+=:0
