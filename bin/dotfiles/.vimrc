@@ -126,6 +126,10 @@ set hlsearch
 " Appearance
 "----------------------------------------
 set noerrorbells
+nnoremap <C-g> 1<C-g>
+augroup EchoFilePath
+  autocmd WinEnter * execute "normal! 1\<C-g>"
+augroup END
 set shellslash
 set showmatch matchtime=1
 set cinoptions+=:0
@@ -204,7 +208,7 @@ set updatetime=100
 
 " lightline.vim
 let g:lightline = {
-	      \ 'colorscheme': 'dark',
+	      \ 'colorscheme': 'wombat',
         \ 'mode_map': {'c': 'NORMAL'},
         \ 'active': {
         \   'left': [
@@ -240,12 +244,17 @@ function! MyReadonly()
 endfunction
 
 function! MyFilename()
-  return ('' != MyReadonly() ? MyReadonly() . ' ' : '') .
-        \ (&ft == 'vimfiler' ? vimfiler#get_status_string() :
-        \  &ft == 'unite' ? unite#get_status_string() :
-        \  &ft == 'vimshell' ? substitute(b:vimshell.current_dir,expand('~'),'~','') :
-        \ '' != expand('%:t') ? expand('%:t') : '[No Name]') .
-        \ ('' != MyModified() ? ' ' . MyModified() : '')
+if expand('%:t') ==# ''
+        let filename = '[No Name]'
+    else
+        let dirfiles = split(expand('%:p'), '/')
+        if len(dirfiles) < 2
+            let filename = dirfiles[0]
+        else
+            let filename = dirfiles[-2] . '/' . dirfiles[-1]
+        endif
+    endif
+    return filename
 endfunction
 
 function! MyFugitive()
