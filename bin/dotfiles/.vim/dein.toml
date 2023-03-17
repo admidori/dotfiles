@@ -19,6 +19,9 @@ repo = 'junegunn/fzf.vim'
 # Filetree plugin
 [[plugins]]
 repo = 'preservim/nerdtree'
+[[plugins]]
+repo = 'skanehira/denops-docker.vim'
+
 #Support Lnaguage
 [[plugins]]
 repo = 'prabirshrestha/vim-lsp'

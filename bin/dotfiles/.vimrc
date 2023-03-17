@@ -112,7 +112,8 @@ let &t_SI .= "\e[6 q"
 let &t_EI .= "\e[2 q"
 let &t_SR .= "\e[4 q"
 let &t_te .= "\e[6 q"
-
+set encoding=utf-8
+set fileencodings=iso-2022-jp,cp932,euc-jp,sjis,utf-8,windows932
 "----------------------------------------
 " Search
 "----------------------------------------

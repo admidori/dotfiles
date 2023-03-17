@@ -6,6 +6,8 @@
 #     /___|___/_| |_|_|  \___|
 # 
 
+export PATH="$HOME/.rbenv/shims:$PATH"
+eval "$(rbenv init - zsh)"
 export DENO_INSTALL="/Users/agota/.deno"
 export PATH="$DENO_INSTALL/bin:$PATH"
 
