@@ -11,6 +11,9 @@ eval "$(rbenv init - zsh)"
 export DENO_INSTALL="/Users/agota/.deno"
 export PATH="$DENO_INSTALL/bin:$PATH"
 
+export GOPATH=$HOME/go 
+export PATH=$GOPATH/bin:$PATH
+
 setopt share_history
 
 # tmux autmatic start
