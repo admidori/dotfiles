@@ -15,7 +15,7 @@ export PAGER='less'
 export LC_ALL="ja_JP.UTF-8"
 export LANG="ja_JP.UTF-8"
 export LANGUAGE="ja_JP.UTF-8"
-source ~/spresenseenv/setup
+source ~/develop/wep/spresenseenv/setup
 
 if [[ -z "$LANG" ]]; then
   export LANG='en_US.UTF-8'
