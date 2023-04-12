@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (c) 2021-2022 Aoi Kondo All Rights Reserved.
+# Copyright (c) 2021-2023 Aoi Kondo All Rights Reserved.
 #      _           _        _ _       _
 #     (_)_ __  ___| |_ __ _| | |  ___| |__
 #     | | '_ \/ __| __/ _` | | | / __| '_ \
@@ -10,19 +10,19 @@
 
 echo ""
 echo "#######################################"
-echo "#         dotfiles ver 3.0            #"
+echo "#         dotfiles ver 3.1            #"
 echo "#          >>install.sh<<             #"
 echo "#######################################"
-echo "Copyright (c) 2021-2022 Aoi Kondo All Rights Reserved."
+echo "Copyright (c) 2021-2023 Aoi Kondo All Rights Reserved."
 echo ""
-echo "Hello! Welcome to install.sh!"
+echo "Hello! Welcome to install.sh! (for ubuntu edition)"
 echo ""
 
 echo "########################"
 echo "#  MAKE SYMBOLIC LINK  #"
 echo "########################"
 echo "Make Symbolic link from dotfiles!"
-cd $MAIN_PATH/installer
+cd $MAIN_PATH/installer/ubuntu
 chmod 777 link.sh
 ./link.sh
 echo "Link succeeded!"
@@ -32,6 +32,13 @@ echo "########################"
 echo "#   INSTALL SOFTWARES  #"
 echo "########################"
 echo "Install general softwere"
+cd $MAIN_PATH/bin/dotfiles
+for f in ??*.sh
+do
+    chmod 777 $f
+    ./$f
+    echo "$f Downloaded!"
+done
 
 echo "########################"
 echo "#      SETUP ZSH       #"

@@ -12,3 +12,10 @@ git clone https://github.com/rp-agota/dotfiles.git
 cd dotfiles
 make install
 ```  
+
+## Requirements software
+- GNU make
+- curl
+- git
+- zsh
+- homebrew(if you use Mac)
