@@ -2,16 +2,10 @@ export
 MAIN_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 install: ## Install softwares and scripts.
-	@cd installer/mac && chmod 777 install.sh && ./install.sh 
-
-install-ubuntu: ## Install softwares and scripts.
-	@cd installer/ubuntu && chmod 777 install.sh && ./install.sh 
+	@cd installer && chmod 777 install.sh && ./install.sh 
 
 link: ## Create & update symbolic link 
-	@cd installer/mac && chmod 777 link.sh && ./link.sh 
-
-link-ubuntu: ## Create & update symbolic link 
-	@cd installer/ubuntu && chmod 777 link.sh && ./link.sh 
+	@cd installer && chmod 777 link.sh && ./link.sh 
 
 unlink: ## Unlink symbolic link 
 	@cd installer && chmod 777 unlink.sh && ./unlink.sh 

@@ -18,4 +18,10 @@ make install
 - curl
 - git
 - zsh
-- homebrew(if you use Mac)
+
+## Install software
+- Sheldon (zsh plugin manager)
+- tmux (terminal mux)
+- neovim (editor)
+- chromium (browser)
+- 

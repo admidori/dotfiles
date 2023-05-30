@@ -15,7 +15,7 @@ echo "#          >>install.sh<<             #"
 echo "#######################################"
 echo "Copyright (c) 2021-2023 Aoi Kondo All Rights Reserved."
 echo ""
-echo "Hello! Welcome to install.sh! (for ubuntu edition)"
+echo "Hello! Welcome to install.sh!"
 echo ""
 
 echo "########################"
