@@ -8,4 +8,5 @@ do
   if [ -L $f ]; then
     unlink ./$f
   fi
+  echo "$f Unlinked."
 done

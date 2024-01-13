@@ -21,7 +21,7 @@ echo ""
 echo "########################"
 echo "#  MAKE SYMBOLIC LINK  #"
 echo "########################"
-echo "Make Symbolic link from dotfiles!"
+echo "Make Symbolic link from dotfiles."
 cd $MAIN_PATH/installer
 chmod 777 link.sh
 ./link.sh
@@ -37,7 +37,7 @@ for f in ??*.sh
 do
     chmod 777 $f
     ./$f
-    echo "$f installed."
+    echo "installed $f"
 done
 
 echo "#######################################"
