@@ -14,7 +14,7 @@ unlink: ## Unlink symbolic link
 .PHONY: help install link env unlink 
 
 help:  ## You can read help about this Makefile. 
-	@echo "***rp-agota/dotfiles***" 
+	@echo "***admidori/dotfiles***" 
 	@echo "You can install dotfiles for Macintosh." 
 	@echo "[e.g.] $ sudo make install" 
 	@echo "" 
