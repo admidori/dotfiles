@@ -1,0 +1,14 @@
+name: CI
+
+on: [push]
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    container: ubuntu:latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Install required packages
+        run: apt-get update && apt-get install -y git sudo make wget 
+      - name: Install dotfiles
+        run: sudo make install
