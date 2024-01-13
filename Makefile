@@ -15,7 +15,7 @@ unlink: ## Unlink symbolic link
 
 help:  ## You can read help about this Makefile. 
 	@echo "***admidori/dotfiles***" 
-	@echo "You can install dotfiles for Macintosh." 
+	@echo "You can install dotfiles for Ubuntu." 
 	@echo "[e.g.] $ sudo make install" 
 	@echo "" 
 	@grep -E '^[0-9a-zA-Z_-]+[[:blank:]]*:.*?## .*$$' $(MAKEFILE_LIST) | sort \
