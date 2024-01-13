@@ -32,7 +32,7 @@ echo "########################"
 echo "#   INSTALL SOFTWARES  #"
 echo "########################"
 echo "Install general softwere"
-cd $MAIN_PATH/bin/arch
+cd $MAIN_PATH/bin/scripts
 for f in ??*.sh
 do
     chmod 777 $f
