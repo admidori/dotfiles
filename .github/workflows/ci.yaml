@@ -4,8 +4,8 @@ on: [push]
 
 jobs:
   ubuntu:
-    runs-on: ubuntu-latest
-    container: ubuntu:latest
+    runs-on: debian
+    container: debian:latest
     steps:
       - uses: actions/checkout@v1
       - name: Install required packages
