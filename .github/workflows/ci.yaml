@@ -3,8 +3,8 @@ name: CI
 on: [push]
 
 jobs:
-  ubuntu:
-    runs-on: debian
+  debian:
+    runs-on: debian-latest
     container: debian:latest
     steps:
       - uses: actions/checkout@v1
