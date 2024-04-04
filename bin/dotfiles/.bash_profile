@@ -1,3 +1,4 @@
+export PATH=$PATH:/usr/local/texlive/2023/bin/x86_64-linux
 eval "$(ssh-agent -s)"
 
 ssh-add ~/.ssh/github
