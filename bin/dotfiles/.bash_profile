@@ -1,4 +1,4 @@
-export PATH=$PATH:/usr/local/texlive/2023/bin/x86_64-linux
+export PATH=~/.npm-global/bin:$PATH
 eval "$(ssh-agent -s)"
 
 ssh-add ~/.ssh/github
@@ -14,4 +14,4 @@ if [ -z "$SSH_AUTH_SOCK" ]; then
 fi
 
 test -r ~/.bashrc && . ~/.bashrc
-
+export PATH=$PATH:/usr/local/go/bin
