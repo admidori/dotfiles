@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (c) 2021-2024 Aoi Kondo All Rights Reserved.
+# Copyright (c) Aoi Kondo All Rights Reserved.
 #      _           _        _ _       _
 #     (_)_ __  ___| |_ __ _| | |  ___| |__
 #     | | '_ \/ __| __/ _` | | | / __| '_ \
@@ -10,10 +10,10 @@
 
 echo ""
 echo "#######################################"
-echo "#         dotfiles 2024-v1            #"
+echo "#             dotfiles                #"
 echo "#          >>install.sh<<             #"
 echo "#######################################"
-echo "Copyright (c) 2021-2024 Aoi Kondo All Rights Reserved."
+echo "Copyright (c) Aoi Kondo All Rights Reserved."
 echo ""
 echo "Hello! Welcome to install.sh!"
 echo ""
