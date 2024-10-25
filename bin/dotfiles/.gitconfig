@@ -1,7 +1,6 @@
 [user]
 	email = agotadmidori@gmail.com
 	name = Aoi Kondo
+	
 [alias]
 	tree = log --graph --oneline --decorate=short --date=short
-[init]
-	defaultBranch = main
