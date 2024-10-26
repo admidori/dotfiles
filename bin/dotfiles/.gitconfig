@@ -4,3 +4,5 @@
 	
 [alias]
 	tree = log --graph --oneline --decorate=short --date=short
+[core]
+	editor = nvim
