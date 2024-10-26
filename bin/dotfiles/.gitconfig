@@ -1,8 +1,10 @@
 [user]
 	email = agotadmidori@gmail.com
 	name = Aoi Kondo
-	
+	signingkey = 62B4805206B249F4
 [alias]
 	tree = log --graph --oneline --decorate=short --date=short
 [core]
 	editor = nvim
+[commit]
+	gpgsign = true
