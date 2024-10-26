@@ -17,5 +17,9 @@ make install
 - wget
 - git
 
+## About nvim enviroments
+Neovim environment settings are referenced to [dam9000/kickstart-modular.nvim](https://github.com/dam9000/kickstart-modular.nvim) implementation.
+
 # License
-MIT (c) 2024 [@admidori](https://github.com/admidori)
+MIT (c) 2024 [@admidori](https://github.com/admidori)  
+And Thanks to all giants. I'm just standing on your shoulders.  
