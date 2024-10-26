@@ -1,7 +1,15 @@
 #!/bin/sh
+# Copyright (c) Aoi Kondo All Rights Reserved.
+#    _               _                           __ _ _
+#   | |__   __ _ ___| |__       _ __  _ __ ___  / _(_) | ___
+#   | '_ \ / _` / __| '_ \     | '_ \| '__/ _ \| |_| | |/ _ \
+#  _| |_) | (_| \__ \ | | |    | |_) | | | (_) |  _| | |  __/
+# (_)_.__/ \__,_|___/_| |_|____| .__/|_|  \___/|_| |_|_|\___|
+#                        |_____|_|
 
 # Path
 export PATH=$PATH:/usr/local/go/bin
+export PATH=$PATH:/usr/local/bin/nvim
 
 ###### Scripts ######
 ### History ###

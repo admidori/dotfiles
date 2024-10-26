@@ -12,6 +12,7 @@ if [ -f /etc/bashrc ]; then
 fi
 
 ###### Alias ######
+alias vi='nvim'
 alias vim='nvim'
 
 ###### Scripts ######
