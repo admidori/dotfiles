@@ -26,3 +26,8 @@ export HISTSIZE=2000
 if [ -f $HOME/dotfiles/vendor/enhancd/init.sh ]; then
    source $HOME/dotfiles/vendor/enhancd/init.sh
 fi
+
+###### Initialize ######
+if [[ -f ~/.bashrc ]] ; then
+	. ~/.bashrc
+fi
