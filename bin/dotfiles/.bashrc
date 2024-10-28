@@ -36,6 +36,7 @@ GIT_PS1_SHOWUPSTREAM=auto
 export PS1='[\t]\[\033[32m\]\u@\h\[\033[00m\]:\[\033[34m\]\w\[\033[31m\]$(__git_ps1)\[\033[00m\]\$ '
 export GPG_TTY=$(tty)
 
+##### Software configuration ####
 ##### conda initialize #####
 # !! Contents within this block are managed by 'conda init' !!
 __conda_setup="$($HOME'/anaconda3/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
@@ -50,7 +51,7 @@ else
 fi
 unset __conda_setup
 
-##### Tmux initialize ####
+##### tmux initialize ####
 alias tmux="tmux -u2"
 
 count=`ps aux | grep tmux | grep -v grep | wc -l`
@@ -59,3 +60,9 @@ if test $count -eq 0; then
 elif test $count -eq 1; then
     echo `tmux a`
 fi
+
+#### nvm initialize ####
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
