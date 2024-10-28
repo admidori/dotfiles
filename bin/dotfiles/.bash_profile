@@ -10,6 +10,7 @@
 # Path
 export PATH=$PATH:/usr/local/go/bin
 export PATH=$PATH:/usr/local/bin/nvim
+export PATH=$PATH:$HOME/dotfiles/vendor/vivify
 
 ###### Scripts ######
 ### History ###
