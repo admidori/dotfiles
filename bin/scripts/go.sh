@@ -1,7 +1,7 @@
 #!/bin/sh
 
 sudo apt update
-sudo apt-get install gccgo-5
+sudo apt install -y gccgo-5
 sudo update-alternatives --set go /usr/bin/go-5
 GOROOT_BOOTSTRAP=/usr ./make.bash
 
