@@ -11,6 +11,7 @@
 export PATH=$PATH:/usr/local/go/bin
 export PATH=$PATH:/usr/local/bin/nvim
 export PATH=$PATH:$HOME/dotfiles/vendor/vivify
+export PATH="$PATH:/usr/local/texlive/2025/bin/x86_64-linux"
 
 ###### Scripts ######
 ### History ###
