@@ -1,13 +1,13 @@
 [user]
 	email = aoi.kondo@admidori.net
 	name = Aoi Kondo
-	signingkey = 62B4805206B249F4
+
 [alias]
 	tree = log --graph --oneline --decorate=short --date=short
+
 [core]
-	editor = nvim
-[commit]
-	gpgsign = true
+	editor = vim
+
 [filter "lfs"]
 	clean = git-lfs clean -- %f
 	smudge = git-lfs smudge -- %f
