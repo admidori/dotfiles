@@ -74,7 +74,11 @@ ZSH_THEME="eastwood"
 export ZSH_TMUX_AUTOSTART=true
 export ZSH_TMUX_FIXTERM=true
 
-plugins=(git tmux)
+plugins=(
+git
+tmux
+zsh-autosuggestions
+)
 
 source $ZSH/oh-my-zsh.sh
 
