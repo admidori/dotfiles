@@ -117,3 +117,4 @@ export NVM_DIR="$HOME/.nvm"
 if [ -d "/usr/local/go/bin" ] ; then
 	    PATH="/usr/local/go/bin:$PATH"
 fi
+export PATH="/home/admidori/.local/bin:$PATH"
