@@ -69,7 +69,11 @@ ZSH_THEME="eastwood"
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
 
-export ZSH_TMUX_AUTOSTART=true
+if [[ "$TERM_PROGRAM" != "vscode" ]]; then
+	  ZSH_TMUX_AUTOSTART=true
+else
+			ZSH_TMUX_AUTOSTART=false
+fi
 export ZSH_TMUX_FIXTERM=true
 
 plugins=(
@@ -118,3 +122,4 @@ if [ -d "/usr/local/go/bin" ] ; then
 	    PATH="/usr/local/go/bin:$PATH"
 fi
 export PATH="/home/admidori/.local/bin:$PATH"
+eval "$(uv generate-shell-completion zsh)"
