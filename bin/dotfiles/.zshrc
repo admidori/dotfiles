@@ -123,3 +123,9 @@ if [ -d "/usr/local/go/bin" ] ; then
 fi
 export PATH="/home/admidori/.local/bin:$PATH"
 eval "$(uv generate-shell-completion zsh)"
+
+# Key-agent
+if [ -n "$SSH_AUTH_SOCK" ] && [ "$SSH_AUTH_SOCK" != "$HOME/.ssh/ssh_auth_sock" ]; then
+	ln -sf "$SSH_AUTH_SOCK" "$HOME/.ssh/ssh_auth_sock"
+fi
+export SSH_AUTH_SOCK="$HOME/.ssh/ssh_auth_sock"
