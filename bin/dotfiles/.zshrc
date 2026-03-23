@@ -127,5 +127,7 @@ eval "$(uv generate-shell-completion zsh)"
 # Key-agent
 if [ -n "$SSH_AUTH_SOCK" ] && [ "$SSH_AUTH_SOCK" != "$HOME/.ssh/ssh_auth_sock" ]; then
 	ln -sf "$SSH_AUTH_SOCK" "$HOME/.ssh/ssh_auth_sock"
+	export SSH_AUTH_SOCK="$HOME/.ssh/ssh_auth_sock"
 fi
-export SSH_AUTH_SOCK="$HOME/.ssh/ssh_auth_sock"
+
+alias tssh='eval $(tmux show-env -s SSH_AUTH_SOCK)'
