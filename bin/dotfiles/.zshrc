@@ -80,6 +80,8 @@ plugins=(
 git
 tmux
 zsh-autosuggestions
+fzf
+z
 )
 
 source $ZSH/oh-my-zsh.sh
