@@ -4,4 +4,3 @@
 *.deb.?
 *.gpg.?
 tmux-*
-bin/dotfiles/.zprofile.local
