@@ -1,0 +1,6 @@
+# Ignore runtime/sensitive data
+*
+
+# Track only config files
+!.gitignore
+!settings.json

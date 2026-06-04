@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Read(//home/admidori/.tmux/plugins/tmux-copilot-usage/**)",
+      "Read(//home/admidori/.tmux/plugins/tmux-copilot-usage/bin/**)"
+    ]
+  }
+}

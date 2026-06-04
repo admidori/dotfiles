@@ -135,6 +135,5 @@ fi
 alias tssh='eval $(tmux show-env -s SSH_AUTH_SOCK)'
 
 export PATH=$HOME/bin:$PATH
-export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh

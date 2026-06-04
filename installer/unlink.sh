@@ -11,3 +11,12 @@ do
   fi
   echo "$f Unlinked."
 done
+
+# Unlink .claude config files individually
+for f in ~/.claude/.*
+do
+  if [ -L "$f" ]; then
+    unlink "$f"
+    echo ".claude/$(basename $f) Unlinked."
+  fi
+done
