@@ -137,3 +137,9 @@ alias tssh='eval $(tmux show-env -s SSH_AUTH_SOCK)'
 export PATH=$HOME/bin:$PATH
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+# >>> android-dev-env >>>
+export ANDROID_HOME="$HOME/Android/Sdk"
+export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
+export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$HOME/android-studio/bin"
+# <<< android-dev-env <<<
