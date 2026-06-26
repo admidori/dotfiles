@@ -27,5 +27,5 @@ This builds the image from `Dockerfile` and runs `installer/test.sh`, which
 performs a full `make install` and verifies the symlinks and oh-my-zsh setup.
 
 # License
-MIT (c) 2024 [@admidori](https://github.com/admidori)  
+MIT (c) 2024–2026 [@admidori](https://github.com/admidori)  
 And Thanks to all giants. I'm just standing on their shoulders.  
