@@ -4,4 +4,4 @@ export PATH=/opt/REAPER/reaper:$PATH
 
 
 # Added by Antigravity CLI installer
-export PATH="/home/admidori/.local/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"

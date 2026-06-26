@@ -86,6 +86,10 @@ z
 
 source $ZSH/oh-my-zsh.sh
 
+# Keep $PATH entries unique no matter how many times they get appended below
+# (also collapses any duplicates inherited from .zprofile).
+typeset -U path PATH
+
 # User configuration
 
 # export MANPATH="/usr/local/man:$MANPATH"
@@ -123,7 +127,7 @@ export NVM_DIR="$HOME/.nvm"
 if [ -d "/usr/local/go/bin" ] ; then
 	    PATH="/usr/local/go/bin:$PATH"
 fi
-export PATH="/home/admidori/.local/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 eval "$(uv generate-shell-completion zsh)"
 
 # Key-agent
