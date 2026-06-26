@@ -14,8 +14,8 @@ make install
 ## Requirements software
 - bash
 - GNU make
-- wget
 - git
+- curl
 
 ## About nvim environments
 Neovim environment settings are referenced to [dam9000/kickstart-modular.nvim](https://github.com/dam9000/kickstart-modular.nvim) implementation.
