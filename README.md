@@ -17,8 +17,14 @@ make install
 - git
 - curl
 
-## About nvim environments
-Neovim environment settings are referenced to [dam9000/kickstart-modular.nvim](https://github.com/dam9000/kickstart-modular.nvim) implementation.
+## Running the tests
+The installer can be exercised on a clean Debian system without touching your
+machine, using Docker:
+```
+make test
+```
+This builds the image from `Dockerfile` and runs `installer/test.sh`, which
+performs a full `make install` and verifies the symlinks and oh-my-zsh setup.
 
 # License
 MIT (c) 2024 [@admidori](https://github.com/admidori)  

@@ -1,5 +1,6 @@
 export
 MAIN_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+TEST_IMAGE := dotfiles-test
 
 install: ## Install software, oh-my-zsh, and symlinks.
 	@cd installer && chmod +x install.sh && ./install.sh
@@ -10,8 +11,12 @@ link: ## Create & update symbolic links.
 unlink: ## Remove symbolic links created by this repo.
 	@cd installer && chmod +x unlink.sh && ./unlink.sh
 
+test: ## Run the installer in a clean Debian container (needs Docker).
+	docker build -t $(TEST_IMAGE) -f Dockerfile .
+	docker run --rm $(TEST_IMAGE)
+
 .DEFAULT_GOAL := help
-.PHONY: help install link unlink
+.PHONY: help install link unlink test
 
 help:  ## You can read help about this Makefile.
 	@echo "***admidori/dotfiles***"

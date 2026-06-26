@@ -1,0 +1,6 @@
+# Keep the build context small and force a clean install in the test:
+# oh-my-zsh must be installed fresh by the installer, never copied in.
+.git
+bin/dotfiles/.oh-my-zsh
+*.deb
+*.gpg
