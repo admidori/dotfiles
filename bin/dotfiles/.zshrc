@@ -156,6 +156,9 @@ export PATH="$N_PREFIX/bin:$PATH"
 # fallback させると GLEW が通り 3D ウィンドウが出る。XDG_RUNTIME_DIR は本物のまま
 # (音声/dbus 無傷)。MESA_LOADER_DRIVER_OVERRIDE=d3d12 で Ryzen 780M を使用。
 # 注意: session 全体で Wayland 無効化 (全GUIは X11/Xwayland 経由になる)。
-export WAYLAND_DISPLAY=invalid-force-x11
-export MESA_LOADER_DRIVER_OVERRIDE=d3d12
+# WSL 環境でのみ適用し、非WSL環境の GUI には影響を与えない。
+if [[ -n "$WSL_DISTRO_NAME" ]] || grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null; then
+	export WAYLAND_DISPLAY=invalid-force-x11
+	export MESA_LOADER_DRIVER_OVERRIDE=d3d12
+fi
 # DISPLAY=:0 は WSLg が設定済。GPUで不具合時は `LIBGL_ALWAYS_SOFTWARE=1` を一時付与。
