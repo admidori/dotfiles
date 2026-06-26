@@ -128,7 +128,7 @@ if [ -d "/usr/local/go/bin" ] ; then
 	    PATH="/usr/local/go/bin:$PATH"
 fi
 export PATH="$HOME/.local/bin:$PATH"
-eval "$(uv generate-shell-completion zsh)"
+command -v uv >/dev/null 2>&1 && eval "$(uv generate-shell-completion zsh)"
 
 # Key-agent
 if [ -n "$SSH_AUTH_SOCK" ] && [ "$SSH_AUTH_SOCK" != "$HOME/.ssh/ssh_auth_sock" ]; then
@@ -143,9 +143,11 @@ export PATH=$HOME/bin:$PATH
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 
 # >>> android-dev-env >>>
-export ANDROID_HOME="$HOME/Android/Sdk"
-export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
-export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$HOME/android-studio/bin"
+if [ -d "$HOME/Android/Sdk" ]; then
+	export ANDROID_HOME="$HOME/Android/Sdk"
+	export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
+	export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$HOME/android-studio/bin"
+fi
 # <<< android-dev-env <<<
 
 # n (Node.js version manager): install into a user-owned prefix so `n` works without sudo
