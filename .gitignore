@@ -4,3 +4,6 @@
 *.deb.?
 *.gpg.?
 tmux-*
+
+# oh-my-zsh is installed fresh by the installer, not vendored in this repo.
+/bin/dotfiles/.oh-my-zsh/
