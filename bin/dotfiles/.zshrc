@@ -86,6 +86,10 @@ z
 
 source $ZSH/oh-my-zsh.sh
 
+# Keep $PATH entries unique no matter how many times they get appended below
+# (also collapses any duplicates inherited from .zprofile).
+typeset -U path PATH
+
 # User configuration
 
 # export MANPATH="/usr/local/man:$MANPATH"
@@ -115,16 +119,12 @@ source $ZSH/oh-my-zsh.sh
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-
 # Golang
 if [ -d "/usr/local/go/bin" ] ; then
 	    PATH="/usr/local/go/bin:$PATH"
 fi
-export PATH="/home/admidori/.local/bin:$PATH"
-eval "$(uv generate-shell-completion zsh)"
+export PATH="$HOME/.local/bin:$PATH"
+command -v uv >/dev/null 2>&1 && eval "$(uv generate-shell-completion zsh)"
 
 # Key-agent
 if [ -n "$SSH_AUTH_SOCK" ] && [ "$SSH_AUTH_SOCK" != "$HOME/.ssh/ssh_auth_sock" ]; then
@@ -139,9 +139,11 @@ export PATH=$HOME/bin:$PATH
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 
 # >>> android-dev-env >>>
-export ANDROID_HOME="$HOME/Android/Sdk"
-export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
-export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$HOME/android-studio/bin"
+if [ -d "$HOME/Android/Sdk" ]; then
+	export ANDROID_HOME="$HOME/Android/Sdk"
+	export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
+	export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$HOME/android-studio/bin"
+fi
 # <<< android-dev-env <<<
 
 # n (Node.js version manager): install into a user-owned prefix so `n` works without sudo
@@ -154,6 +156,9 @@ export PATH="$N_PREFIX/bin:$PATH"
 # fallback させると GLEW が通り 3D ウィンドウが出る。XDG_RUNTIME_DIR は本物のまま
 # (音声/dbus 無傷)。MESA_LOADER_DRIVER_OVERRIDE=d3d12 で Ryzen 780M を使用。
 # 注意: session 全体で Wayland 無効化 (全GUIは X11/Xwayland 経由になる)。
-export WAYLAND_DISPLAY=invalid-force-x11
-export MESA_LOADER_DRIVER_OVERRIDE=d3d12
+# WSL 環境でのみ適用し、非WSL環境の GUI には影響を与えない。
+if [[ -n "$WSL_DISTRO_NAME" ]] || grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null; then
+	export WAYLAND_DISPLAY=invalid-force-x11
+	export MESA_LOADER_DRIVER_OVERRIDE=d3d12
+fi
 # DISPLAY=:0 は WSLg が設定済。GPUで不具合時は `LIBGL_ALWAYS_SOFTWARE=1` を一時付与。
