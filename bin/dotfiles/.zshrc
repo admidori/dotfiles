@@ -143,3 +143,17 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
 export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$HOME/android-studio/bin"
 # <<< android-dev-env <<<
+
+# n (Node.js version manager): install into a user-owned prefix so `n` works without sudo
+export N_PREFIX="$HOME/.n"
+export PATH="$N_PREFIX/bin:$PATH"
+
+# === Open3D 3D window on WSLg (Wayland→X11/Xwayland fallback) ===
+# Open3D legacy Visualizer は GLEW(=GLX前提) を使うため Wayland では落ちる。
+# WAYLAND_DISPLAY を無効名にして libwayland 接続を失敗させ、GLFW を X11(Xwayland) へ
+# fallback させると GLEW が通り 3D ウィンドウが出る。XDG_RUNTIME_DIR は本物のまま
+# (音声/dbus 無傷)。MESA_LOADER_DRIVER_OVERRIDE=d3d12 で Ryzen 780M を使用。
+# 注意: session 全体で Wayland 無効化 (全GUIは X11/Xwayland 経由になる)。
+export WAYLAND_DISPLAY=invalid-force-x11
+export MESA_LOADER_DRIVER_OVERRIDE=d3d12
+# DISPLAY=:0 は WSLg が設定済。GPUで不具合時は `LIBGL_ALWAYS_SOFTWARE=1` を一時付与。
