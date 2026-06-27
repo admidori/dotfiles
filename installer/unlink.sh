@@ -8,6 +8,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOTFILES_DIR="$REPO_ROOT/bin/dotfiles"
+# shellcheck source=common.sh
+. "$SCRIPT_DIR/common.sh"
 
 echo "########################"
 echo "# UNLINK SYMBOLIC LINK #"
@@ -26,33 +28,24 @@ unlink_if_managed() {
   fi
 }
 
+# Mirror of link.sh's link_tool_config_dir: remove only the per-file symlinks
+# this repo created under an AI tool dir, leaving runtime data in place.
+unlink_tool_config_dir() {
+  tool_dir="$1"
+  for src in "$DOTFILES_DIR/$tool_dir"/.* "$DOTFILES_DIR/$tool_dir"/*; do
+    [ -e "$src" ] || continue
+    name="$(basename "$src")"
+    case "$name" in
+      .|..) continue ;;
+    esac
+    unlink_if_managed "$HOME/$tool_dir/$name"
+  done
+}
+
 for src in "$DOTFILES_DIR"/.??*; do
   unlink_if_managed "$HOME/$(basename "$src")"
 done
 
-for src in "$DOTFILES_DIR"/.claude/.* "$DOTFILES_DIR"/.claude/*; do
-  [ -e "$src" ] || continue
-  name="$(basename "$src")"
-  case "$name" in
-    .|..) continue ;;
-  esac
-  unlink_if_managed "$HOME/.claude/$name"
-done
-
-for src in "$DOTFILES_DIR"/.codex/.* "$DOTFILES_DIR"/.codex/*; do
-  [ -e "$src" ] || continue
-  name="$(basename "$src")"
-  case "$name" in
-    .|..) continue ;;
-  esac
-  unlink_if_managed "$HOME/.codex/$name"
-done
-
-for src in "$DOTFILES_DIR"/.gemini/.* "$DOTFILES_DIR"/.gemini/*; do
-  [ -e "$src" ] || continue
-  name="$(basename "$src")"
-  case "$name" in
-    .|..) continue ;;
-  esac
-  unlink_if_managed "$HOME/.gemini/$name"
+for tool in "${TOOL_DIRS[@]}"; do
+  unlink_tool_config_dir "$tool"
 done

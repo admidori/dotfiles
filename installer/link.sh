@@ -8,6 +8,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOTFILES_DIR="$REPO_ROOT/bin/dotfiles"
+# shellcheck source=common.sh
+. "$SCRIPT_DIR/common.sh"
 
 echo "########################"
 echo "#  MAKE SYMBOLIC LINK  #"
@@ -18,8 +20,9 @@ echo "########################"
 for src in "$DOTFILES_DIR"/.??*; do
   name="$(basename "$src")"
   case "$name" in
-    .gitignore|.claude|.codex|.gemini|.oh-my-zsh) continue ;;
+    .gitignore|.oh-my-zsh) continue ;;
   esac
+  is_tool_dir "$name" && continue
   ln -snf "$src" "$HOME/$name"
   echo "linked $name"
 done
@@ -46,6 +49,6 @@ link_tool_config_dir() {
 
 # Link AI tool config files individually so we never clobber runtime data
 # (auth, history, projects, state databases, etc.) in those directories.
-link_tool_config_dir ".claude"
-link_tool_config_dir ".codex"
-link_tool_config_dir ".gemini"
+for tool in "${TOOL_DIRS[@]}"; do
+  link_tool_config_dir "$tool"
+done
