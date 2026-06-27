@@ -6,7 +6,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "########################"
 echo "#   INSTALL DOTFILES   #"
@@ -56,11 +55,22 @@ fi
 
 # --- CLI compatibility shims -------------------------------------------------
 mkdir -p "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
 if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
   FDFIND_PATH="$(command -v fdfind)"
   ln -snf "$FDFIND_PATH" "$HOME/.local/bin/fd"
   $SUDO mkdir -p /usr/local/bin
   $SUDO ln -snf "$FDFIND_PATH" /usr/local/bin/fd
+fi
+
+# --- user-scoped developer CLIs ---------------------------------------------
+if ! command -v uv >/dev/null 2>&1; then
+  if command -v pipx >/dev/null 2>&1; then
+    echo "Installing uv via pipx ..."
+    pipx install uv
+  else
+    echo "WARN: pipx not found; skipping uv install." >&2
+  fi
 fi
 
 # --- symlink the dotfiles -----------------------------------------------------

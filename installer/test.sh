@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #
+# shellcheck disable=SC2088
+#
 # End-to-end test of the installer. Designed to run inside the Debian
 # container built from ./Dockerfile (see `make test`), but also runnable
 # on any throwaway Debian/Ubuntu box.
@@ -45,7 +47,8 @@ check "~/.oh-my-zsh is NOT a symlink"  test ! -L "$HOME/.oh-my-zsh"
 check "zsh-autosuggestions installed"  test -d "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
 
 echo "==> Verifying AI-native CLI tools"
-for cmd in jq rg fd fzf gh shellcheck direnv node npm npx python3 pipx; do
+export PATH="$HOME/.local/bin:$PATH"
+for cmd in jq rg fd fzf gh shellcheck direnv node npm npx python3 pipx uv; do
   check "$cmd is available" command -v "$cmd"
 done
 
