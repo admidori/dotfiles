@@ -18,7 +18,7 @@ echo "########################"
 for src in "$DOTFILES_DIR"/.??*; do
   name="$(basename "$src")"
   case "$name" in
-    .gitignore|.claude|.codex|.oh-my-zsh) continue ;;
+    .gitignore|.claude|.codex|.gemini|.oh-my-zsh) continue ;;
   esac
   ln -snf "$src" "$HOME/$name"
   echo "linked $name"
@@ -48,3 +48,4 @@ link_tool_config_dir() {
 # (auth, history, projects, state databases, etc.) in those directories.
 link_tool_config_dir ".claude"
 link_tool_config_dir ".codex"
+link_tool_config_dir ".gemini"
