@@ -38,6 +38,11 @@ check "~/.oh-my-zsh exists"            test -d "$HOME/.oh-my-zsh"
 check "~/.oh-my-zsh is NOT a symlink"  test ! -L "$HOME/.oh-my-zsh"
 check "zsh-autosuggestions installed"  test -d "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
 
+echo "==> Verifying AI-native CLI tools"
+for cmd in jq rg fd fzf gh shellcheck direnv node npm npx; do
+  check "$cmd is available" command -v "$cmd"
+done
+
 echo "==> Verifying zsh starts and sources .zshrc cleanly"
 # TERM_PROGRAM=vscode disables the tmux auto-start branch in .zshrc so the
 # smoke test does not spawn an interactive tmux session.

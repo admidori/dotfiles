@@ -29,7 +29,8 @@ if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   $SUDO apt-get update
   $SUDO apt-get install -y --no-install-recommends \
-    zsh tmux git curl ca-certificates locales vim
+    zsh tmux git curl ca-certificates locales vim \
+    jq ripgrep fd-find fzf gh shellcheck direnv nodejs npm
 else
   echo "WARN: apt-get not found; skipping system package install." >&2
 fi
@@ -50,6 +51,12 @@ if [ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
   echo "Installing zsh-autosuggestions ..."
   git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions \
     "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+fi
+
+# --- CLI compatibility shims -------------------------------------------------
+mkdir -p "$HOME/.local/bin"
+if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
+  ln -snf "$(command -v fdfind)" "$HOME/.local/bin/fd"
 fi
 
 # --- symlink the dotfiles -----------------------------------------------------
