@@ -45,7 +45,7 @@ check "~/.oh-my-zsh is NOT a symlink"  test ! -L "$HOME/.oh-my-zsh"
 check "zsh-autosuggestions installed"  test -d "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
 
 echo "==> Verifying AI-native CLI tools"
-for cmd in jq rg fd fzf gh shellcheck direnv node npm npx; do
+for cmd in jq rg fd fzf gh shellcheck direnv node npm npx python3 pipx; do
   check "$cmd is available" command -v "$cmd"
 done
 

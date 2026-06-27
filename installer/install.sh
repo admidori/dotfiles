@@ -30,7 +30,8 @@ if command -v apt-get >/dev/null 2>&1; then
   $SUDO apt-get update
   $SUDO apt-get install -y --no-install-recommends \
     zsh tmux git curl ca-certificates locales vim \
-    jq ripgrep fd-find fzf gh shellcheck direnv nodejs npm
+    jq ripgrep fd-find fzf gh shellcheck direnv \
+    nodejs npm python3 python3-venv pipx
 else
   echo "WARN: apt-get not found; skipping system package install." >&2
 fi
