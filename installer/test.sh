@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #
+# shellcheck disable=SC2088
+#
 # End-to-end test of the installer. Designed to run inside the Debian
 # container built from ./Dockerfile (see `make test`), but also runnable
 # on any throwaway Debian/Ubuntu box.
@@ -29,11 +31,26 @@ for f in .zshrc .zprofile .tmux.conf .vimrc .gitconfig .latexmkrc; do
   check "~/$f is a symlink" test -L "$HOME/$f"
 done
 check "~/.claude/settings.json is a symlink" test -L "$HOME/.claude/settings.json"
+check "~/.claude/hooks is a symlink" test -L "$HOME/.claude/hooks"
+check "~/.claude/CLAUDE.md is a symlink" test -L "$HOME/.claude/CLAUDE.md"
+check "~/.codex/config.toml is a symlink" test -L "$HOME/.codex/config.toml"
+check "~/.codex/hooks is a symlink" test -L "$HOME/.codex/hooks"
+check "~/.codex/AGENTS.md is a symlink" test -L "$HOME/.codex/AGENTS.md"
+check "~/.codex/hooks/guard-rules.sh resolves to a file" test -f "$HOME/.codex/hooks/guard-rules.sh"
+check "~/.gemini/AGENTS.md is a symlink" test -L "$HOME/.gemini/AGENTS.md"
+check "~/.gemini/AGENTS.md resolves to a file" test -f "$HOME/.gemini/AGENTS.md"
+check "~/.gemini/GEMINI.md is a symlink" test -L "$HOME/.gemini/GEMINI.md"
 
 echo "==> Verifying oh-my-zsh was installed fresh (not vendored)"
 check "~/.oh-my-zsh exists"            test -d "$HOME/.oh-my-zsh"
 check "~/.oh-my-zsh is NOT a symlink"  test ! -L "$HOME/.oh-my-zsh"
 check "zsh-autosuggestions installed"  test -d "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+
+echo "==> Verifying AI-native CLI tools"
+export PATH="$HOME/.local/bin:$PATH"
+for cmd in jq rg fd fzf gh shellcheck direnv node npm npx python3 pipx uv; do
+  check "$cmd is available" command -v "$cmd"
+done
 
 echo "==> Verifying zsh starts and sources .zshrc cleanly"
 # TERM_PROGRAM=vscode disables the tmux auto-start branch in .zshrc so the

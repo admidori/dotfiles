@@ -1,0 +1,7 @@
+# Ignore runtime/sensitive data
+*
+
+# Track only reusable configuration
+!.gitignore
+!AGENTS.md
+!GEMINI.md

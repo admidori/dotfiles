@@ -6,7 +6,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "########################"
 echo "#   INSTALL DOTFILES   #"
@@ -29,7 +28,9 @@ if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   $SUDO apt-get update
   $SUDO apt-get install -y --no-install-recommends \
-    zsh tmux git curl ca-certificates locales vim
+    zsh tmux git curl ca-certificates locales vim \
+    jq ripgrep fd-find fzf gh shellcheck direnv \
+    nodejs npm python3 python3-venv pipx
 else
   echo "WARN: apt-get not found; skipping system package install." >&2
 fi
@@ -50,6 +51,26 @@ if [ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
   echo "Installing zsh-autosuggestions ..."
   git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions \
     "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+fi
+
+# --- CLI compatibility shims -------------------------------------------------
+mkdir -p "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
+if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
+  FDFIND_PATH="$(command -v fdfind)"
+  ln -snf "$FDFIND_PATH" "$HOME/.local/bin/fd"
+  $SUDO mkdir -p /usr/local/bin
+  $SUDO ln -snf "$FDFIND_PATH" /usr/local/bin/fd
+fi
+
+# --- user-scoped developer CLIs ---------------------------------------------
+if ! command -v uv >/dev/null 2>&1; then
+  if command -v pipx >/dev/null 2>&1; then
+    echo "Installing uv via pipx ..."
+    pipx install uv
+  else
+    echo "WARN: pipx not found; skipping uv install." >&2
+  fi
 fi
 
 # --- symlink the dotfiles -----------------------------------------------------

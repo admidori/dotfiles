@@ -1,9 +1,9 @@
 # Ignore runtime/sensitive data
 *
 
-# Track only config files
+# Track only reusable configuration
 !.gitignore
-!CLAUDE.md
-!settings.json
+!AGENTS.md
+!config.toml
 !hooks/
 !hooks/**

@@ -1,3 +1,39 @@
 {
-  "theme": "dark"
+  "theme": "dark",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(make test)",
+      "Bash(zsh -n:*)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)"
+    ],
+    "deny": [
+      "Bash(git reset --hard:*)",
+      "Bash(git clean:*)",
+      "Bash(git push --force:*)",
+      "Bash(rm -rf:*)",
+      "Bash(sudo rm:*)",
+      "Read(**/.env*)",
+      "Read(**/*secret*)",
+      "Read(**/*token*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/bash-guard.sh"
+          }
+        ]
+      }
+    ]
+  }
 }

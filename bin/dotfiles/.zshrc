@@ -121,9 +121,9 @@ typeset -U path PATH
 
 # Golang
 if [ -d "/usr/local/go/bin" ] ; then
-	    PATH="/usr/local/go/bin:$PATH"
+	path=("/usr/local/go/bin" $path)
 fi
-export PATH="$HOME/.local/bin:$PATH"
+[ -d "$HOME/.local/bin" ] && path=("$HOME/.local/bin" $path)
 command -v uv >/dev/null 2>&1 && eval "$(uv generate-shell-completion zsh)"
 
 # Key-agent
@@ -134,9 +134,113 @@ fi
 
 alias tssh='eval $(tmux show-env -s SSH_AUTH_SOCK)'
 
-export PATH=$HOME/bin:$PATH
+_agy_required() {
+	if command -v agy >/dev/null 2>&1; then
+		return 0
+	fi
+	printf 'agy: command not found; ensure ~/.local/bin is in PATH\n' >&2
+	return 127
+}
+
+agy-sandbox() {
+	_agy_required || return
+	command agy --sandbox "$@"
+}
+
+agy-print() {
+	_agy_required || return
+	command agy --print "$@"
+}
+
+agy-continue() {
+	_agy_required || return
+	command agy --continue "$@"
+}
+
+agy-models() {
+	_agy_required || return
+	command agy models "$@"
+}
+
+alias agys='agy-sandbox'
+alias agyp='agy-print'
+alias agyc='agy-continue'
+
+[ -d "$HOME/bin" ] && path=("$HOME/bin" $path)
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+# AI worktree helpers. Keep agent runs isolated by branch, directory, and tmux
+# session so multiple CLI agents can work in parallel.
+_ai_slug() {
+	printf '%s' "$1" | sed -E 's#[^A-Za-z0-9._-]+#-#g; s#^-+##; s#-+$##'
+}
+
+aitmux() {
+	if [ $# -lt 1 ]; then
+		printf 'usage: aitmux <session-name> [directory]\n' >&2
+		return 2
+	fi
+	local raw_name="$1"
+	local dir="${2:-$PWD}"
+	local session="ai-$(_ai_slug "$raw_name")"
+
+	if ! command -v tmux >/dev/null 2>&1; then
+		cd "$dir" || return
+		return
+	fi
+
+	if tmux has-session -t "$session" 2>/dev/null; then
+		tmux switch-client -t "$session" 2>/dev/null || tmux attach-session -t "$session"
+		return
+	fi
+
+	tmux new-session -d -s "$session" -n agent -c "$dir"
+	tmux new-window -t "$session:" -n shell -c "$dir"
+	tmux select-window -t "$session:agent"
+	tmux switch-client -t "$session" 2>/dev/null || tmux attach-session -t "$session"
+}
+
+aiwt() {
+	if [ $# -lt 1 ]; then
+		printf 'usage: aiwt <branch-name> [base-ref]\n' >&2
+		return 2
+	fi
+	local branch="$1"
+	local base="${2:-HEAD}"
+	local repo_root repo_name parent slug worktree_dir
+
+	repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+		printf 'aiwt: not inside a git repository\n' >&2
+		return 1
+	}
+	repo_name="$(basename "$repo_root")"
+	parent="$(dirname "$repo_root")"
+	slug="$(_ai_slug "$branch")"
+	worktree_dir="$parent/${repo_name}-${slug}"
+
+	if [ -e "$worktree_dir" ]; then
+		# Distinct branches can slug to the same dir (e.g. feature/x and
+		# feature-x). Refuse to reuse a worktree that is on a different branch
+		# instead of silently opening a session on the wrong tree.
+		local existing_branch
+		existing_branch="$(git -C "$worktree_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+		if [ -n "$existing_branch" ] && [ "$existing_branch" != "$branch" ]; then
+			printf 'aiwt: %s already exists on branch %s, not %s; refusing to reuse\n' \
+				"$worktree_dir" "$existing_branch" "$branch" >&2
+			return 1
+		fi
+		printf 'aiwt: using existing worktree path %s\n' "$worktree_dir" >&2
+	else
+		if git show-ref --verify --quiet "refs/heads/$branch"; then
+			git worktree add "$worktree_dir" "$branch" || return
+		else
+			git worktree add -b "$branch" "$worktree_dir" "$base" || return
+		fi
+	fi
+
+	aitmux "$branch" "$worktree_dir"
+}
 
 # >>> android-dev-env >>>
 if [ -d "$HOME/Android/Sdk" ]; then
