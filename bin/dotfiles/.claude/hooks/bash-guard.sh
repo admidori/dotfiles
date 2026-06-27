@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Shared dangerous-command rules (single source of truth). Reached via the
+# symlinked ~/.claude/hooks directory.
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/guard-rules.sh"
+
 input="$(cat)"
 if command -v jq >/dev/null 2>&1; then
   command="$(printf '%s' "$input" | jq -r '.tool_input.command // ""')"
@@ -10,22 +15,9 @@ else
   exit 0
 fi
 
-deny() {
-  printf 'Blocked by Claude bash guard: %s\n' "$1" >&2
+if ! reason="$(guard_check_command "$command")"; then
+  printf 'Blocked by Claude bash guard: %s\n' "$reason" >&2
   exit 2
-}
-
-case "$command" in
-  *"git reset --hard"*|*"git clean -f"*|*"git clean -d"*|*"git push --force"*|*"git push -f"*)
-    deny "destructive git command"
-    ;;
-  *"rm -rf "*|*"rm -fr "*|*"sudo rm "*|*"chmod -R 777"*)
-    deny "destructive filesystem command"
-    ;;
-esac
-
-if printf '%s' "$command" | grep -Eq '(curl|wget)[^|;&]*(\||;|&&)[[:space:]]*(sh|bash)\b'; then
-  deny "remote script execution"
 fi
 
 exit 0
