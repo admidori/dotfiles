@@ -1,0 +1,24 @@
+{
+  "PreToolUse": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$HOME/.codex/hooks/bash-guard.sh",
+          "timeoutSec": 5,
+          "async": false,
+          "statusMessage": "Checking shell command"
+        }
+      ]
+    }
+  ],
+  "PermissionRequest": [],
+  "PostToolUse": [],
+  "PreCompact": [],
+  "PostCompact": [],
+  "SessionStart": [],
+  "UserPromptSubmit": [],
+  "SubagentStart": [],
+  "SubagentStop": [],
+  "Stop": []
+}

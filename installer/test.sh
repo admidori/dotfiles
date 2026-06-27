@@ -29,6 +29,9 @@ for f in .zshrc .zprofile .tmux.conf .vimrc .gitconfig .latexmkrc; do
   check "~/$f is a symlink" test -L "$HOME/$f"
 done
 check "~/.claude/settings.json is a symlink" test -L "$HOME/.claude/settings.json"
+check "~/.claude/hooks is a symlink" test -L "$HOME/.claude/hooks"
+check "~/.codex/config.toml is a symlink" test -L "$HOME/.codex/config.toml"
+check "~/.codex/hooks is a symlink" test -L "$HOME/.codex/hooks"
 
 echo "==> Verifying oh-my-zsh was installed fresh (not vendored)"
 check "~/.oh-my-zsh exists"            test -d "$HOME/.oh-my-zsh"

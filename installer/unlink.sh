@@ -38,3 +38,12 @@ for src in "$DOTFILES_DIR"/.claude/.* "$DOTFILES_DIR"/.claude/*; do
   esac
   unlink_if_managed "$HOME/.claude/$name"
 done
+
+for src in "$DOTFILES_DIR"/.codex/.* "$DOTFILES_DIR"/.codex/*; do
+  [ -e "$src" ] || continue
+  name="$(basename "$src")"
+  case "$name" in
+    .|..) continue ;;
+  esac
+  unlink_if_managed "$HOME/.codex/$name"
+done

@@ -1,0 +1,15 @@
+# CLI-native defaults for AI-driven development.
+# Personal auth, rollout state, and thread databases stay in ~/.codex and are not tracked.
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[features]
+hooks = true
+
+[mcp_servers.context7]
+url = "https://mcp.context7.com/mcp"
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]

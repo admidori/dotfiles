@@ -1,0 +1,8 @@
+# Ignore runtime/sensitive data
+*
+
+# Track only reusable configuration
+!.gitignore
+!config.toml
+!hooks/
+!hooks/**
