@@ -4,3 +4,5 @@
 # Track only config files
 !.gitignore
 !settings.json
+!hooks/
+!hooks/**
