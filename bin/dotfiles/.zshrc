@@ -121,9 +121,9 @@ typeset -U path PATH
 
 # Golang
 if [ -d "/usr/local/go/bin" ] ; then
-	    PATH="/usr/local/go/bin:$PATH"
+	path=("/usr/local/go/bin" $path)
 fi
-export PATH="$HOME/.local/bin:$PATH"
+[ -d "$HOME/.local/bin" ] && path=("$HOME/.local/bin" $path)
 command -v uv >/dev/null 2>&1 && eval "$(uv generate-shell-completion zsh)"
 
 # Key-agent
@@ -134,7 +134,39 @@ fi
 
 alias tssh='eval $(tmux show-env -s SSH_AUTH_SOCK)'
 
-export PATH=$HOME/bin:$PATH
+_agy_required() {
+	if command -v agy >/dev/null 2>&1; then
+		return 0
+	fi
+	printf 'agy: command not found; ensure ~/.local/bin is in PATH\n' >&2
+	return 127
+}
+
+agy-sandbox() {
+	_agy_required || return
+	command agy --sandbox "$@"
+}
+
+agy-print() {
+	_agy_required || return
+	command agy --print "$@"
+}
+
+agy-continue() {
+	_agy_required || return
+	command agy --continue "$@"
+}
+
+agy-models() {
+	_agy_required || return
+	command agy models "$@"
+}
+
+alias agys='agy-sandbox'
+alias agyp='agy-print'
+alias agyc='agy-continue'
+
+[ -d "$HOME/bin" ] && path=("$HOME/bin" $path)
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 
