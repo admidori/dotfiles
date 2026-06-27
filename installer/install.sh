@@ -56,7 +56,10 @@ fi
 # --- CLI compatibility shims -------------------------------------------------
 mkdir -p "$HOME/.local/bin"
 if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
-  ln -snf "$(command -v fdfind)" "$HOME/.local/bin/fd"
+  FDFIND_PATH="$(command -v fdfind)"
+  ln -snf "$FDFIND_PATH" "$HOME/.local/bin/fd"
+  $SUDO mkdir -p /usr/local/bin
+  $SUDO ln -snf "$FDFIND_PATH" /usr/local/bin/fd
 fi
 
 # --- symlink the dotfiles -----------------------------------------------------
