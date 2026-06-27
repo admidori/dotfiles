@@ -220,6 +220,16 @@ aiwt() {
 	worktree_dir="$parent/${repo_name}-${slug}"
 
 	if [ -e "$worktree_dir" ]; then
+		# Distinct branches can slug to the same dir (e.g. feature/x and
+		# feature-x). Refuse to reuse a worktree that is on a different branch
+		# instead of silently opening a session on the wrong tree.
+		local existing_branch
+		existing_branch="$(git -C "$worktree_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+		if [ -n "$existing_branch" ] && [ "$existing_branch" != "$branch" ]; then
+			printf 'aiwt: %s already exists on branch %s, not %s; refusing to reuse\n' \
+				"$worktree_dir" "$existing_branch" "$branch" >&2
+			return 1
+		fi
 		printf 'aiwt: using existing worktree path %s\n' "$worktree_dir" >&2
 	else
 		if git show-ref --verify --quiet "refs/heads/$branch"; then
