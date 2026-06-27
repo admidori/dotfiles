@@ -49,6 +49,15 @@ the commit or PR. Antigravity is pulled in for parallel exploration or big proto
   - Keep the description imperative, lowercase, and without a trailing period.
   - Signal breaking changes with `!` after the type/scope (`feat!: ...`) and/or a
     `BREAKING CHANGE:` footer.
+- Always write a descriptive body, not a header alone: explain *what* changed and *why*
+  in enough detail that the message stands on its own in `git log` months later. Only
+  genuinely trivial changes (a typo fix, a version bump) may be header-only.
+  - When a commit spans multiple files or concerns, use a bullet list in the body — one
+    bullet per distinct change — mirroring the structure of the work.
+  - Lead with the intent (the problem solved or the reason), then the specifics; don't
+    just restate the diff line by line.
+  - Wrap the header at ~50 characters and body lines at ~72, with a blank line between
+    header, body, and footer.
 - Every commit an AI agent makes MUST carry a `Co-authored-by:` trailer so AI-assisted
   work is distinguishable from purely human commits. The human stays the commit author;
   the agent is the co-author. Include the specific model version you are running so the
