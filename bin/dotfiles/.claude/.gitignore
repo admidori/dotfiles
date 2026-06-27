@@ -3,6 +3,7 @@
 
 # Track only config files
 !.gitignore
+!CLAUDE.md
 !settings.json
 !hooks/
 !hooks/**

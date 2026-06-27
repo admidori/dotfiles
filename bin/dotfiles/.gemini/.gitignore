@@ -4,6 +4,4 @@
 # Track only reusable configuration
 !.gitignore
 !AGENTS.md
-!config.toml
-!hooks/
-!hooks/**
+!GEMINI.md
