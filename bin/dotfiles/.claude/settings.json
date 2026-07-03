@@ -1,5 +1,4 @@
 {
-  "theme": "dark",
   "permissions": {
     "allow": [
       "Bash(git status:*)",
@@ -23,6 +22,7 @@
       "Read(**/*token*)"
     ]
   },
+  "model": "sonnet[1m]",
   "hooks": {
     "PreToolUse": [
       {
@@ -35,5 +35,7 @@
         ]
       }
     ]
-  }
+  },
+  "theme": "dark",
+  "skipWorkflowUsageWarning": true
 }
