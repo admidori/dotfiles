@@ -61,6 +61,23 @@ link_dir_contents() {
       continue
     fi
     dest="$dest_dir/$name"
+    if is_copy_once_file "$label/$name"; then
+      # A prior run may have symlinked this before it became a copy-once
+      # file; drop that self-managed symlink so the seed step below can
+      # replace it with a real, independently-writable file.
+      if [ -L "$dest" ]; then
+        case "$(readlink "$dest")" in
+          "$DOTFILES_DIR"/*) rm "$dest" ;;
+        esac
+      fi
+      if [ -e "$dest" ]; then
+        echo "$label/$name already exists locally; leaving it as-is"
+      else
+        cp "$src" "$dest"
+        echo "seeded $label/$name (one-time copy, not kept in sync)"
+      fi
+      continue
+    fi
     if [ -e "$dest" ] && [ ! -L "$dest" ]; then
       backup="$dest.pre-dotfiles.$(date +%Y%m%d%H%M%S)"
       mv "$dest" "$backup"

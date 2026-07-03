@@ -23,6 +23,10 @@ check() {
   fi
 }
 
+not() {
+  ! "$@"
+}
+
 echo "==> Seeding a pre-existing (non-dotfiles) Claude skill"
 mkdir -p "$HOME/.claude/skills/third-party-skill"
 echo "not managed by dotfiles" > "$HOME/.claude/skills/third-party-skill/SKILL.md"
@@ -37,7 +41,10 @@ done
 check "~/.claude/settings.json is a symlink" test -L "$HOME/.claude/settings.json"
 check "~/.claude/hooks is a symlink" test -L "$HOME/.claude/hooks"
 check "~/.claude/CLAUDE.md is a symlink" test -L "$HOME/.claude/CLAUDE.md"
-check "~/.codex/config.toml is a symlink" test -L "$HOME/.codex/config.toml"
+check "~/.codex/config.toml is a real file (copy-once, not synced)" test -f "$HOME/.codex/config.toml"
+check "~/.codex/config.toml is NOT a symlink" test ! -L "$HOME/.codex/config.toml"
+check "~/.codex/config.toml seeded from the tracked template" \
+  cmp -s "$HOME/.codex/config.toml" "$REPO_ROOT/bin/dotfiles/.codex/config.toml"
 check "~/.codex/hooks is a symlink" test -L "$HOME/.codex/hooks"
 check "~/.codex/AGENTS.md is a symlink" test -L "$HOME/.codex/AGENTS.md"
 check "~/.codex/hooks/guard-rules.sh resolves to a file" test -f "$HOME/.codex/hooks/guard-rules.sh"
@@ -49,6 +56,14 @@ echo "==> Verifying merged skills dir (dotfiles + third-party content coexist)"
 check "~/.claude/skills is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/skills"
 check "~/.claude/skills/handoff-to-codex is a symlink" test -L "$HOME/.claude/skills/handoff-to-codex"
 check "pre-existing third-party skill survives untouched" test -f "$HOME/.claude/skills/third-party-skill/SKILL.md"
+
+echo "==> Verifying copy-once config survives a second install untouched"
+printf '\n[projects."/fake/local/project"]\ntrust_level = "trusted"\n' >> "$HOME/.codex/config.toml"
+make -C "$REPO_ROOT" link
+check "locally-appended trust entry survives re-running the installer" \
+  grep -q "fake/local/project" "$HOME/.codex/config.toml"
+check "tracked config.toml itself was not touched" \
+  not grep -q "fake/local/project" "$REPO_ROOT/bin/dotfiles/.codex/config.toml"
 
 echo "==> Verifying oh-my-zsh was installed fresh (not vendored)"
 check "~/.oh-my-zsh exists"            test -d "$HOME/.oh-my-zsh"
