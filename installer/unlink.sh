@@ -16,7 +16,8 @@ echo "# UNLINK SYMBOLIC LINK #"
 echo "########################"
 
 unlink_if_managed() {
-  link="$1"
+  local link="$1"
+  local target
   if [ -L "$link" ]; then
     target="$(readlink "$link")"
     case "$target" in
@@ -33,9 +34,10 @@ unlink_if_managed() {
 # Recurses into MERGE_DIRS the same way link.sh does, since those entries
 # were linked one level deeper rather than as a single directory symlink.
 unlink_dir_contents() {
-  src_dir="$1"
-  dest_dir="$2"
-  label="$3"
+  local src_dir="$1"
+  local dest_dir="$2"
+  local label="$3"
+  local src name
   for src in "$src_dir"/.* "$src_dir"/*; do
     [ -e "$src" ] || continue
     name="$(basename "$src")"

@@ -34,9 +34,10 @@ done
 # linking the whole entry when <label>/<name> is a merge dir (see common.sh),
 # so mixed-ownership subdirectories merge rather than get clobbered.
 link_dir_contents() {
-  src_dir="$1"
-  dest_dir="$2"
-  label="$3"
+  local src_dir="$1"
+  local dest_dir="$2"
+  local label="$3"
+  local src name dest backup
   mkdir -p "$dest_dir"
   for src in "$src_dir"/.* "$src_dir"/*; do
     [ -e "$src" ] || continue
@@ -45,7 +46,18 @@ link_dir_contents() {
       .|..|.gitignore) continue ;;
     esac
     if is_merge_dir "$label/$name"; then
-      link_dir_contents "$src" "$dest_dir/$name" "$label/$name"
+      dest="$dest_dir/$name"
+      if [ -L "$dest" ]; then
+        # A prior run may have linked this whole directory as one symlink
+        # before it became a merge dir; drop it so a real, per-entry-linked
+        # directory can take its place below.
+        rm "$dest"
+      elif [ -e "$dest" ] && [ ! -d "$dest" ]; then
+        backup="$dest.pre-dotfiles.$(date +%Y%m%d%H%M%S)"
+        mv "$dest" "$backup"
+        echo "backed up existing $label/$name to $backup"
+      fi
+      link_dir_contents "$src" "$dest" "$label/$name"
       continue
     fi
     dest="$dest_dir/$name"
