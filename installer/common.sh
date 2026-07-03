@@ -19,3 +19,20 @@ is_tool_dir() {
   done
   return 1
 }
+
+# Nested directories, relative to a tool dir, that mix dotfiles-tracked
+# content with content this repo doesn't own — e.g. ~/.claude/skills holds
+# both our tracked skills and marketplace-installed ones. These need the same
+# file-by-file linking as a tool dir itself, one level deeper, instead of
+# being replaced by a single directory symlink.
+MERGE_DIRS=(.claude/skills)
+
+# is_merge_dir <tool_dir>/<name> — true if that path must be linked
+# file-by-file rather than as a single directory symlink.
+is_merge_dir() {
+  local d
+  for d in "${MERGE_DIRS[@]}"; do
+    [ "$1" = "$d" ] && return 0
+  done
+  return 1
+}

@@ -28,17 +28,25 @@ unlink_if_managed() {
   fi
 }
 
-# Mirror of link.sh's link_tool_config_dir: remove only the per-file symlinks
+# Mirror of link.sh's link_dir_contents: remove only the per-file symlinks
 # this repo created under an AI tool dir, leaving runtime data in place.
-unlink_tool_config_dir() {
-  tool_dir="$1"
-  for src in "$DOTFILES_DIR/$tool_dir"/.* "$DOTFILES_DIR/$tool_dir"/*; do
+# Recurses into MERGE_DIRS the same way link.sh does, since those entries
+# were linked one level deeper rather than as a single directory symlink.
+unlink_dir_contents() {
+  src_dir="$1"
+  dest_dir="$2"
+  label="$3"
+  for src in "$src_dir"/.* "$src_dir"/*; do
     [ -e "$src" ] || continue
     name="$(basename "$src")"
     case "$name" in
       .|..) continue ;;
     esac
-    unlink_if_managed "$HOME/$tool_dir/$name"
+    if is_merge_dir "$label/$name"; then
+      unlink_dir_contents "$src" "$dest_dir/$name" "$label/$name"
+      continue
+    fi
+    unlink_if_managed "$dest_dir/$name"
   done
 }
 
@@ -47,5 +55,5 @@ for src in "$DOTFILES_DIR"/.??*; do
 done
 
 for tool in "${TOOL_DIRS[@]}"; do
-  unlink_tool_config_dir "$tool"
+  unlink_dir_contents "$DOTFILES_DIR/$tool" "$HOME/$tool" "$tool"
 done

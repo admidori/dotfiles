@@ -27,28 +27,40 @@ for src in "$DOTFILES_DIR"/.??*; do
   echo "linked $name"
 done
 
-link_tool_config_dir() {
-  tool_dir="$1"
-  mkdir -p "$HOME/$tool_dir"
-  for src in "$DOTFILES_DIR/$tool_dir"/.* "$DOTFILES_DIR/$tool_dir"/*; do
+# link_dir_contents <src_dir> <dest_dir> <label>
+# Symlinks each entry of src_dir into dest_dir individually, backing up any
+# pre-existing non-symlink entry first. <label> is the dest path relative to
+# $HOME, used both for logging and to check MERGE_DIRS. Recurses instead of
+# linking the whole entry when <label>/<name> is a merge dir (see common.sh),
+# so mixed-ownership subdirectories merge rather than get clobbered.
+link_dir_contents() {
+  src_dir="$1"
+  dest_dir="$2"
+  label="$3"
+  mkdir -p "$dest_dir"
+  for src in "$src_dir"/.* "$src_dir"/*; do
     [ -e "$src" ] || continue
     name="$(basename "$src")"
     case "$name" in
       .|..|.gitignore) continue ;;
     esac
-    dest="$HOME/$tool_dir/$name"
+    if is_merge_dir "$label/$name"; then
+      link_dir_contents "$src" "$dest_dir/$name" "$label/$name"
+      continue
+    fi
+    dest="$dest_dir/$name"
     if [ -e "$dest" ] && [ ! -L "$dest" ]; then
       backup="$dest.pre-dotfiles.$(date +%Y%m%d%H%M%S)"
       mv "$dest" "$backup"
-      echo "backed up existing $tool_dir/$name to $backup"
+      echo "backed up existing $label/$name to $backup"
     fi
     ln -snf "$src" "$dest"
-    echo "linked $tool_dir/$name"
+    echo "linked $label/$name"
   done
 }
 
 # Link AI tool config files individually so we never clobber runtime data
 # (auth, history, projects, state databases, etc.) in those directories.
 for tool in "${TOOL_DIRS[@]}"; do
-  link_tool_config_dir "$tool"
+  link_dir_contents "$DOTFILES_DIR/$tool" "$HOME/$tool" "$tool"
 done

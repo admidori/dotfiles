@@ -23,6 +23,10 @@ check() {
   fi
 }
 
+echo "==> Seeding a pre-existing (non-dotfiles) Claude skill"
+mkdir -p "$HOME/.claude/skills/third-party-skill"
+echo "not managed by dotfiles" > "$HOME/.claude/skills/third-party-skill/SKILL.md"
+
 echo "==> Running 'make install'"
 make -C "$REPO_ROOT" install
 
@@ -40,6 +44,11 @@ check "~/.codex/hooks/guard-rules.sh resolves to a file" test -f "$HOME/.codex/h
 check "~/.gemini/AGENTS.md is a symlink" test -L "$HOME/.gemini/AGENTS.md"
 check "~/.gemini/AGENTS.md resolves to a file" test -f "$HOME/.gemini/AGENTS.md"
 check "~/.gemini/GEMINI.md is a symlink" test -L "$HOME/.gemini/GEMINI.md"
+
+echo "==> Verifying merged skills dir (dotfiles + third-party content coexist)"
+check "~/.claude/skills is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/skills"
+check "~/.claude/skills/handoff-to-codex is a symlink" test -L "$HOME/.claude/skills/handoff-to-codex"
+check "pre-existing third-party skill survives untouched" test -f "$HOME/.claude/skills/third-party-skill/SKILL.md"
 
 echo "==> Verifying oh-my-zsh was installed fresh (not vendored)"
 check "~/.oh-my-zsh exists"            test -d "$HOME/.oh-my-zsh"
