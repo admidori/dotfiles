@@ -75,6 +75,12 @@ the commit or PR. Antigravity is pulled in for parallel exploration or big proto
   history rewrites) unless explicitly asked.
 - Don't commit or push unless asked. If on the default branch, create a branch first.
 - Before deleting a branch, confirm its work is merged or intentionally preserved.
+- Before implementing anything, check `git rev-parse --abbrev-ref HEAD` and confirm it is
+  not the main/default branch (`main`/`master`). If it is, create and switch to a feature
+  branch before making any change — never implement directly on main.
+- Direct `git push` to the main/default branch is prohibited. Integrate changes only via
+  a branch and a reviewed merge/PR; if a push target resolves to main, stop and ask
+  instead of pushing.
 
 ## Branching and worktrees
 
