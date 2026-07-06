@@ -75,6 +75,51 @@ the commit or PR. Antigravity is pulled in for parallel exploration or big proto
   history rewrites) unless explicitly asked.
 - Don't commit or push unless asked. If on the default branch, create a branch first.
 - Before deleting a branch, confirm its work is merged or intentionally preserved.
+- Before implementing anything, check `git rev-parse --abbrev-ref HEAD` and confirm it is
+  not the main/default branch (`main`/`master`). If it is, create and switch to a feature
+  branch before making any change — never implement directly on main.
+- Direct `git push` to the main/default branch is prohibited. Integrate changes only via
+  a branch and a reviewed merge/PR; if a push target resolves to main, stop and ask
+  instead of pushing.
+
+## Branching and worktrees
+
+- Create new feature branches and `aiwt` worktrees from the intended
+  integration branch (normally `main`), not from whatever branch happens to
+  be checked out. Before running `aiwt <branch>` or `git checkout -b`, check
+  `git rev-parse --abbrev-ref HEAD` — if it is not the integration branch,
+  pass the base explicitly (`aiwt <branch> main`) instead of letting it
+  default to the current HEAD.
+- Don't stack a new feature branch on top of another in-flight, unmerged
+  feature branch without saying so. A branch based on unmerged work can't be
+  merged independently until the base lands — flag this tradeoff to the
+  operator instead of doing it silently.
+- A branch/worktree has a lifecycle: once its work is merged or rebased
+  elsewhere, remove the worktree (`git worktree remove`) and delete the
+  branch, or explicitly tell the operator it's staying open. Don't leave
+  parallel worktrees for the same underlying task running for days —
+  `git worktree list` / `git branch -a` should be checked before opening a
+  new one, and stale entries should be called out, not ignored.
+- Before resuming a long-lived feature branch, check whether the base branch
+  has moved and whether a sibling branch already holds overlapping unmerged
+  work (`git log <base>..<branch>`, `git log <branch>..<base>`). Unexplained
+  divergence is a signal to stop and ask, not to keep committing.
+
+## Pre-implementation confirmation
+
+- Before writing or changing any non-trivial code (more than a one-line
+  fix, a rename, or a mechanical formatting change), state a short summary
+  of what you're about to implement — the approach, the files you expect
+  to touch, and anything risky or ambiguous — and wait for the operator's
+  go-ahead before making the change. Trivial, obviously-scoped fixes don't
+  need this; when unsure whether something qualifies, ask.
+- This applies regardless of which agent is about to implement: if Codex is
+  being invoked to do the implementation (see the handoff skill), the
+  summary must be shown and confirmed *before* `codex exec` runs, not
+  after Codex has already produced a diff.
+- A prior confirmation does not carry over to a materially different
+  follow-up change. Re-confirm when the plan changes, not just once per
+  session.
 
 ## Secrets and data
 

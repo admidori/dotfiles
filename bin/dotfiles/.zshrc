@@ -207,13 +207,28 @@ aiwt() {
 		return 2
 	fi
 	local branch="$1"
-	local base="${2:-HEAD}"
+	local base="$2"
 	local repo_root repo_name parent slug worktree_dir
 
 	repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 		printf 'aiwt: not inside a git repository\n' >&2
 		return 1
 	}
+
+	if [ -z "$base" ]; then
+		# Default to the repo's default branch, not "wherever we happen to be
+		# checked out". Basing a new feature branch on another in-flight
+		# feature branch silently forks it from history it can't merge
+		# independently of. Pass a base explicitly to opt into that on purpose.
+		base="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"
+		base="${base:-HEAD}"
+		local current_branch
+		current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+		if [ -n "$current_branch" ] && [ "$current_branch" != "$base" ] && [ "$current_branch" != "HEAD" ]; then
+			printf 'aiwt: currently on %s; branching %s from %s (pass a base-ref to override)\n' \
+				"$current_branch" "$branch" "$base" >&2
+		fi
+	fi
 	repo_name="$(basename "$repo_root")"
 	parent="$(dirname "$repo_root")"
 	slug="$(_ai_slug "$branch")"
