@@ -99,6 +99,22 @@ the commit or PR. Antigravity is pulled in for parallel exploration or big proto
   work (`git log <base>..<branch>`, `git log <branch>..<base>`). Unexplained
   divergence is a signal to stop and ask, not to keep committing.
 
+## Pre-implementation confirmation
+
+- Before writing or changing any non-trivial code (more than a one-line
+  fix, a rename, or a mechanical formatting change), state a short summary
+  of what you're about to implement — the approach, the files you expect
+  to touch, and anything risky or ambiguous — and wait for the operator's
+  go-ahead before making the change. Trivial, obviously-scoped fixes don't
+  need this; when unsure whether something qualifies, ask.
+- This applies regardless of which agent is about to implement: if Codex is
+  being invoked to do the implementation (see the handoff skill), the
+  summary must be shown and confirmed *before* `codex exec` runs, not
+  after Codex has already produced a diff.
+- A prior confirmation does not carry over to a materially different
+  follow-up change. Re-confirm when the plan changes, not just once per
+  session.
+
 ## Secrets and data
 
 - Never commit secrets, tokens, credentials, shell history, runtime state, or caches.
