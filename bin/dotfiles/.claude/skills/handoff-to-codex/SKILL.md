@@ -7,9 +7,9 @@ Runs the design → Codex-implements → Claude-reviews handoff non-interactivel
 
 ## Steps
 
-1. **Confirm the design is final.** This skill hands off a concrete plan, not a vague request. If the design hasn't been agreed with the user yet in this conversation, produce it first and get explicit go-ahead before invoking Codex.
+1. **Confirm the design is final.** This skill hands off a concrete plan, not a vague request. If the design hasn't been agreed with the user yet in this conversation, produce it first and get explicit go-ahead before invoking Codex. If a previous handoff's result on this same branch is being substantially reworked or reverted, treat that as a sign the design wasn't actually final — pause and re-confirm with the operator rather than issuing another ad-hoc handoff.
 
-2. **Pick the target directory.** Prefer an existing `aiwt`-created worktree for the task's branch. If none exists and the change is non-trivial, ask whether to create one (`aiwt <branch>`) rather than running against the current checkout. Never target a directory with uncommitted unrelated changes — check `git -C <dir> status` first.
+2. **Pick the target directory.** Prefer an existing `aiwt`-created worktree for the task's branch. If none exists and the change is non-trivial, ask whether to create one. Before running `aiwt <branch>`, check the branch currently checked out where you'd run it (`git rev-parse --abbrev-ref HEAD`) — if it isn't `main` (or the repo's stated integration branch), don't let `aiwt` default its base to that HEAD; pass the base explicitly (`aiwt <branch> main`) or `cd` to an integration-branch checkout first. Never target a directory with uncommitted unrelated changes — check `git -C <dir> status` first.
 
 3. **Invoke Codex non-interactively:**
    ```
@@ -27,3 +27,5 @@ Runs the design → Codex-implements → Claude-reviews handoff non-interactivel
 6. **If Codex's output shows a sandbox/permission denial**, call this out explicitly to the user as a blocked step needing a decision — don't silently retry with a wider sandbox or ignore it.
 
 7. **Report findings and stop.** Do not commit, amend, or push on the user's behalf as part of this flow — Codex may have committed locally inside the worktree, but pushing or merging still requires the user's explicit instruction, per this project's normal git safety rules.
+
+8. **Close the loop on the worktree/branch.** Once the operator has merged or rebased this branch's work elsewhere, remove the worktree (`git worktree remove <dir>`) and delete the branch — or say explicitly that it's staying open for follow-up. Before starting a new handoff, check `git worktree list` / `git branch -a` for stale or overlapping branches left over from earlier handoffs on this same task.

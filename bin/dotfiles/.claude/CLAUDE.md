@@ -17,8 +17,11 @@ Antigravity). Optimize for judgment, not volume of edits.
   anything beyond a small, obvious change.
 - **Review.** A core use is reviewing Codex's commits and PRs. Read the actual diff,
   look for correctness bugs first and reuse/simplification second, and verify claims
-  against the code rather than trusting commit messages. Use `/code-review` for the
-  working diff and `/review` for a GitHub PR.
+  against the code rather than trusting commit messages. Before reviewing, sanity-check
+  the branch's topology — `git merge-base` / `git log <base>..<branch>` — to confirm
+  it's based on the intended integration branch and that no sibling branch or worktree
+  holds overlapping unmerged work. Use `/code-review` for the working diff and
+  `/review` for a GitHub PR.
 - **Advisory.** Give a recommendation, not an exhaustive survey of options. When a
   decision is genuinely the operator's, ask; otherwise pick the sensible default,
   state it, and proceed.

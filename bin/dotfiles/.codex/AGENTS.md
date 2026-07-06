@@ -76,6 +76,29 @@ the commit or PR. Antigravity is pulled in for parallel exploration or big proto
 - Don't commit or push unless asked. If on the default branch, create a branch first.
 - Before deleting a branch, confirm its work is merged or intentionally preserved.
 
+## Branching and worktrees
+
+- Create new feature branches and `aiwt` worktrees from the intended
+  integration branch (normally `main`), not from whatever branch happens to
+  be checked out. Before running `aiwt <branch>` or `git checkout -b`, check
+  `git rev-parse --abbrev-ref HEAD` — if it is not the integration branch,
+  pass the base explicitly (`aiwt <branch> main`) instead of letting it
+  default to the current HEAD.
+- Don't stack a new feature branch on top of another in-flight, unmerged
+  feature branch without saying so. A branch based on unmerged work can't be
+  merged independently until the base lands — flag this tradeoff to the
+  operator instead of doing it silently.
+- A branch/worktree has a lifecycle: once its work is merged or rebased
+  elsewhere, remove the worktree (`git worktree remove`) and delete the
+  branch, or explicitly tell the operator it's staying open. Don't leave
+  parallel worktrees for the same underlying task running for days —
+  `git worktree list` / `git branch -a` should be checked before opening a
+  new one, and stale entries should be called out, not ignored.
+- Before resuming a long-lived feature branch, check whether the base branch
+  has moved and whether a sibling branch already holds overlapping unmerged
+  work (`git log <base>..<branch>`, `git log <branch>..<base>`). Unexplained
+  divergence is a signal to stop and ask, not to keep committing.
+
 ## Secrets and data
 
 - Never commit secrets, tokens, credentials, shell history, runtime state, or caches.
