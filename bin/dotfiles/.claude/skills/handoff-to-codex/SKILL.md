@@ -13,10 +13,11 @@ Runs the design → Codex-implements → Claude-reviews handoff non-interactivel
 
 3. **Invoke Codex non-interactively:**
    ```
-   codex exec -C <dir> -s workspace-write -a never "<design>"
+   codex exec -C <dir> -s workspace-write "<design>" < /dev/null
    ```
    - `-s workspace-write`: Codex can edit files and run commands inside `<dir>` without asking.
-   - `-a never`: no approval prompts are attempted; anything outside the sandbox fails back to Codex as an error instead of hanging on an approval nobody can answer.
+   - No `-a`/`--ask-for-approval` flag: `exec` has no such flag at all (as of v0.142.5) — it's non-interactive by design and never prompts for approval. That flag exists only on the top-level interactive `codex` command; passing it to `exec` is a hard CLI error. Anything `workspace-write` can't do surfaces back as a failure instead of an approval prompt.
+   - `< /dev/null`: required. `codex exec` reads stdin to append to the prompt ("Reading additional input from stdin..."), and under the Bash tool — especially `run_in_background` — stdin is never closed, so without this redirect the process hangs forever waiting for EOF instead of finishing. If a past invocation is found hanging, check `git -C <dir> status`/`diff` before killing it (Codex may not have written anything yet, or may be mid-edit), then kill it and rerun with the redirect.
    - Never add `--dangerously-bypass-approvals-and-sandbox`. If Codex needs something outside the sandbox, that must surface as a failure for a human to decide on, not be auto-granted.
    - This call blocks until Codex finishes. Use a generous Bash timeout, or `run_in_background` for tasks likely to run long.
 
