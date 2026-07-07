@@ -52,3 +52,64 @@ COPY_ONCE_FILES=(.codex/config.toml)
 is_copy_once_file() {
   contains "$1" "${COPY_ONCE_FILES[@]}"
 }
+
+# link_dir_contents <src_dir> <dest_dir> <label>
+# Symlinks each entry of src_dir into dest_dir individually, backing up any
+# pre-existing non-symlink entry first. <label> is the dest path relative to
+# $HOME, used both for logging and to check MERGE_DIRS. Recurses instead of
+# linking the whole entry when <label>/<name> is a merge dir (see MERGE_DIRS),
+# so mixed-ownership subdirectories merge rather than get clobbered.
+link_dir_contents() {
+  local src_dir="$1"
+  local dest_dir="$2"
+  local label="$3"
+  local src name dest backup
+  mkdir -p "$dest_dir"
+  for src in "$src_dir"/.* "$src_dir"/*; do
+    [ -e "$src" ] || continue
+    name="$(basename "$src")"
+    case "$name" in
+      .|..|.gitignore) continue ;;
+    esac
+    if is_merge_dir "$label/$name"; then
+      dest="$dest_dir/$name"
+      if [ -L "$dest" ]; then
+        # A prior run may have linked this whole directory as one symlink
+        # before it became a merge dir; drop it so a real, per-entry-linked
+        # directory can take its place below.
+        rm "$dest"
+      elif [ -e "$dest" ] && [ ! -d "$dest" ]; then
+        backup="$dest.pre-dotfiles.$(date +%Y%m%d%H%M%S)"
+        mv "$dest" "$backup"
+        echo "backed up existing $label/$name to $backup"
+      fi
+      link_dir_contents "$src" "$dest" "$label/$name"
+      continue
+    fi
+    dest="$dest_dir/$name"
+    if is_copy_once_file "$label/$name"; then
+      # A prior run may have symlinked this before it became a copy-once
+      # file; drop that self-managed symlink so the seed step below can
+      # replace it with a real, independently-writable file.
+      if [ -L "$dest" ]; then
+        case "$(readlink "$dest")" in
+          "$DOTFILES_DIR"/*) rm "$dest" ;;
+        esac
+      fi
+      if [ -e "$dest" ]; then
+        echo "$label/$name already exists locally; leaving it as-is"
+      else
+        cp "$src" "$dest"
+        echo "seeded $label/$name (one-time copy, not kept in sync)"
+      fi
+      continue
+    fi
+    if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+      backup="$dest.pre-dotfiles.$(date +%Y%m%d%H%M%S)"
+      mv "$dest" "$backup"
+      echo "backed up existing $label/$name to $backup"
+    fi
+    ln -snf "$src" "$dest"
+    echo "linked $label/$name"
+  done
+}

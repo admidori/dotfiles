@@ -8,6 +8,9 @@ install: ## Install software, oh-my-zsh, and symlinks.
 link: ## Create & update symbolic links.
 	@cd installer && chmod +x link.sh && ./link.sh
 
+link-ai: ## Create & update AI tool symbolic links only.
+	@cd installer && chmod +x link-ai.sh && ./link-ai.sh
+
 unlink: ## Remove symbolic links created by this repo.
 	@cd installer && chmod +x unlink.sh && ./unlink.sh
 
@@ -16,11 +19,12 @@ test: ## Run the installer in a clean Debian container (needs Docker).
 	docker run --rm $(TEST_IMAGE)
 
 .DEFAULT_GOAL := help
-.PHONY: help install link unlink test
+.PHONY: help install link link-ai unlink test
 
 help:  ## You can read help about this Makefile.
 	@echo "***admidori/dotfiles***"
 	@echo "You can install dotfiles for Debian/Ubuntu."
+	@echo "On macOS, use \`make link-ai\` to link only AI tool configs."
 	@echo "[e.g.] $$ make install"
 	@echo ""
 	@grep -E '^[0-9a-zA-Z_-]+[[:blank:]]*:.*?## .*$$' $(MAKEFILE_LIST) | sort \
