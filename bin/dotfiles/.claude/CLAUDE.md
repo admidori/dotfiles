@@ -54,5 +54,7 @@ line shows a yellow `*|*` marker next to the branch when you are in one.
 - Leave a worktree only when the operator asks (`ExitWorktree`; keep to preserve the
   branch, remove to discard). Don't exit or remove one proactively.
 - When handing implementation to Codex, Codex gets its own worktree branched from this
-  task branch — see the handoff-to-codex skill — so its work stays isolated from this
-  session's tree for a clean review.
+  task branch and makes edits only; you then review, polish anything rough, and make one
+  clean commit crediting both Claude and Codex as co-authors. Codex does not commit — its
+  worktree's git metadata is outside its sandbox, and reviewing before committing keeps
+  history clean. See the `accept` skill.
