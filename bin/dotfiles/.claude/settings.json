@@ -36,6 +36,10 @@
       }
     ]
   },
+  "skipWorkflowUsageWarning": true,
   "theme": "dark",
-  "skipWorkflowUsageWarning": true
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/.claude/statusline-command.sh"
+  }
 }

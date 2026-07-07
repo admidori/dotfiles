@@ -7,3 +7,8 @@ tmux-*
 
 # oh-my-zsh is installed fresh by the installer, not vendored in this repo.
 /bin/dotfiles/.oh-my-zsh/
+
+# Claude Code creates task worktrees under a repo-root .claude/ (EnterWorktree);
+# it's session scratch, not repo content. Root-anchored so it never shadows the
+# tracked bin/dotfiles/.claude/ configs.
+/.claude/
