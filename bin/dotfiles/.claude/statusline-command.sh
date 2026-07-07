@@ -6,6 +6,12 @@
 # home-relative working directory in cyan. No explicit PS1 was set in
 # ~/.zshrc, so this reproduces the effective PROMPT from
 # ~/.oh-my-zsh/themes/eastwood.zsh-theme instead.
+#
+# Beyond the eastwood prompt, a yellow "*|*" tree marker is appended
+# inside the branch bracket when the cwd is a linked git worktree (i.e.
+# git-dir != git-common-dir). This is intentional for the multi-pane
+# workflow: each Claude works in its own task worktree, so the marker
+# tells at a glance which panes are in a worktree versus the main repo.
 set -euo pipefail
 
 input="$(cat)"
@@ -20,7 +26,16 @@ if git -C "$cwd" --no-optional-locks rev-parse --is-inside-work-tree >/dev/null 
 		if [ -n "$(git -C "$cwd" --no-optional-locks status --porcelain 2>/dev/null)" ]; then
 			dirty="$(printf '\033[31m*\033[0m')"
 		fi
-		git_info="${dirty}$(printf '\033[32m[%s]\033[0m ' "$branch")"
+		# Linked worktree marker: git-dir differs from git-common-dir only
+		# in a linked worktree. Yellow "*|*" reopens green so the closing
+		# bracket stays the branch color.
+		wt=""
+		gitdir="$(git -C "$cwd" --no-optional-locks rev-parse --git-dir 2>/dev/null || true)"
+		commondir="$(git -C "$cwd" --no-optional-locks rev-parse --git-common-dir 2>/dev/null || true)"
+		if [ -n "$gitdir" ] && [ "$gitdir" != "$commondir" ]; then
+			wt="$(printf ' \033[33m*|*\033[0m\033[32m')"
+		fi
+		git_info="${dirty}$(printf '\033[32m[%s%s]\033[0m ' "$branch" "$wt")"
 	fi
 fi
 
