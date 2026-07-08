@@ -75,9 +75,9 @@ else
 			ZSH_TMUX_AUTOSTART=false
 fi
 export ZSH_TMUX_FIXTERM=true
-# Attach new shells to a dedicated "main" session instead of the most
-# recently used one, so they don't land inside an ai-* agent window.
-ZSH_TMUX_DEFAULT_SESSION_NAME=main
+# Attach new shells to tmux-resurrect's default bootstrap session instead of
+# the most recently used one, so they don't land inside an ai-* agent window.
+ZSH_TMUX_DEFAULT_SESSION_NAME=0
 
 plugins=(
 git
