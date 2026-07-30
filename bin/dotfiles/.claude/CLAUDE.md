@@ -63,7 +63,9 @@ line shows a yellow `*|*` marker next to the branch when you are in one.
   reviewing there, leave that worktree open and remove only the throwaway impl worktree
   from a Codex handoff.
 - When handing implementation to Codex, Codex gets its own worktree branched from this
-  task branch and makes edits only; you then review, polish anything rough, and make one
-  clean commit crediting both Claude and Codex as co-authors. Codex does not commit — its
-  worktree's git metadata is outside its sandbox, and reviewing before committing keeps
-  history clean. See the `accept` skill.
+  task branch and makes edits only. Decompose the design into small, independently
+  committable tasks first and hand them over one at a time: for each task you review,
+  polish anything rough, and commit that task alone crediting both Claude and Codex as
+  co-authors, before the next task goes to Codex. Codex does not commit — its worktree's
+  git metadata is outside its sandbox, and reviewing before committing keeps history
+  clean. See the `accept` skill.
