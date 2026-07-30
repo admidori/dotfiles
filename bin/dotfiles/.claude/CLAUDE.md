@@ -68,4 +68,6 @@ line shows a yellow `*|*` marker next to the branch when you are in one.
   polish anything rough, and commit that task alone crediting both Claude and Codex as
   co-authors, before the next task goes to Codex. Codex does not commit — its worktree's
   git metadata is outside its sandbox, and reviewing before committing keeps history
-  clean. See the `accept` skill.
+  clean. When the implementation is done, fast-forward Codex's branch into your task
+  branch (`git merge --ff-only`) and remove Codex's worktree; it is a scratch sandbox and
+  must not outlive the handoff. See the `accept` skill.
