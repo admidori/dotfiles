@@ -51,10 +51,23 @@ line shows a yellow `*|*` marker next to the branch when you are in one.
   answering a question, or finishing uncommitted work in the current tree all stay where
   they are — a fresh worktree branched from main would only lose that context.
 - When it's unclear whether a task warrants its own worktree, ask rather than guessing.
-- Leave a worktree only when the operator asks (`ExitWorktree`; keep to preserve the
-  branch, remove to discard). Don't exit or remove one proactively.
+- Once the task's work is committed and handed to the operator for review, remove the
+  worktree so the operator can check the branch out. Git refuses to check out a branch
+  that a worktree still holds, so a lingering worktree blocks review in the main tree.
+  Removal (`ExitWorktree` with remove, or `git worktree remove`) frees the checkout while
+  keeping the branch and its commits intact, and is fully reversible
+  (`git worktree add <dir> <branch>` re-creates it if review needs rework). Only remove a
+  clean worktree — never pass `--force`; a refusal means something is still uncommitted.
+  Keep it open only when follow-up work is expected, and say so when you do. Removing your
+  own task worktree returns this session to the shared main tree, so if the operator is
+  reviewing there, leave that worktree open and remove only the throwaway impl worktree
+  from a Codex handoff.
 - When handing implementation to Codex, Codex gets its own worktree branched from this
-  task branch and makes edits only; you then review, polish anything rough, and make one
-  clean commit crediting both Claude and Codex as co-authors. Codex does not commit — its
-  worktree's git metadata is outside its sandbox, and reviewing before committing keeps
-  history clean. See the `accept` skill.
+  task branch and makes edits only. Decompose the design into small, independently
+  committable tasks first and hand them over one at a time: for each task you review,
+  polish anything rough, and commit that task alone crediting both Claude and Codex as
+  co-authors, before the next task goes to Codex. Codex does not commit — its worktree's
+  git metadata is outside its sandbox, and reviewing before committing keeps history
+  clean. When the implementation is done, fast-forward Codex's branch into your task
+  branch (`git merge --ff-only`) and remove Codex's worktree; it is a scratch sandbox and
+  must not outlive the handoff. See the `accept` skill.
