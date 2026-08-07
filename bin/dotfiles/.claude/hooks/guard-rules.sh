@@ -40,6 +40,20 @@ guard_check_command() {
       printf 'destructive filesystem command'; return 1 ;;
   esac
 
+  # Commit author identity override. The repo's git config is the only correct
+  # source for author/committer; an agent substituting an address it read from
+  # its own session context silently splits one human across two accounts in
+  # `git log`, and undoing it after a push needs a history rewrite. Covers
+  # `git -c user.email=...` (also the quoted form) and the GIT_AUTHOR_* /
+  # GIT_COMMITTER_* environment prefix. Deliberately NOT covered:
+  # `git commit --author=`, a legitimate attribution to someone else.
+  if printf '%s' "$norm" | grep -Eq -- "-c[[:space:]]+['\"]?user\.(name|email)="; then
+    printf 'git author identity override (let the repo git config supply it)'; return 1
+  fi
+  if printf '%s' "$norm" | grep -Eq 'GIT_(AUTHOR|COMMITTER)_(NAME|EMAIL)='; then
+    printf 'git author identity override via environment'; return 1
+  fi
+
   # Remote script execution: curl/wget piped (optionally via sudo) into a shell.
   if printf '%s' "$norm" \
       | grep -Eq '(curl|wget)[^|;&]*(\||;|&&)[[:space:]]*(sudo[[:space:]]+)?(sh|bash|zsh)\b'; then
