@@ -90,7 +90,7 @@ z
 source $ZSH/oh-my-zsh.sh
 
 # Keep $PATH entries unique no matter how many times they get appended below
-# (also collapses any duplicates inherited from .zprofile).
+# (also collapses any duplicates inherited from .zshenv).
 typeset -U path PATH
 
 # n (Node.js version manager): install into a user-owned prefix so `n` works
@@ -100,7 +100,7 @@ export N_PREFIX="$HOME/.n"
 # PATH precedence lives in this one list, highest priority first, so priority
 # is a property of the list rather than a side effect of where in this file a
 # prepend happens to sit. Deliberately not [ -d ]-guarded: a non-existent entry
-# is harmless and typeset -U dedups, same convention as .zprofile.
+# is harmless and typeset -U dedups, same convention as .zshenv.
 path=(
 	"$N_PREFIX/bin"
 	"$HOME/bin"

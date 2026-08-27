@@ -35,7 +35,7 @@ echo "==> Running 'make install'"
 make -C "$REPO_ROOT" install
 
 echo "==> Verifying dotfile symlinks"
-for f in .zshrc .zprofile .tmux.conf .vimrc .gitconfig .latexmkrc; do
+for f in .zshenv .zshrc .tmux.conf .vimrc .gitconfig .latexmkrc; do
   check "~/$f is a symlink" test -L "$HOME/$f"
 done
 check "~/.claude/settings.json is a symlink" test -L "$HOME/.claude/settings.json"
