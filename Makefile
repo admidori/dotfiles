@@ -14,9 +14,15 @@ link-ai: ## Create & update AI tool symbolic links only.
 unlink: ## Remove symbolic links created by this repo.
 	@cd installer && chmod +x unlink.sh && ./unlink.sh
 
+# `docker run -t` allocates a pty. The suite ends by checking that an
+# interactive zsh loads cleanly, and a real interactive shell has a terminal.
+# Without one, anything touching zle warns (fzf's key bindings save and
+# restore every shell option, and zle is settable only at startup with a
+# terminal attached), and .zshrc's tty-gated branches take the path no
+# interactive user ever hits.
 test: ## Run the installer in a clean Debian container (needs Docker).
 	docker build -t $(TEST_IMAGE) -f Dockerfile .
-	docker run --rm $(TEST_IMAGE)
+	docker run --rm -t $(TEST_IMAGE)
 
 .DEFAULT_GOAL := help
 .PHONY: help install link link-ai unlink test
