@@ -93,6 +93,22 @@ source $ZSH/oh-my-zsh.sh
 # (also collapses any duplicates inherited from .zprofile).
 typeset -U path PATH
 
+# n (Node.js version manager): install into a user-owned prefix so `n` works
+# without sudo. Set here because the PATH list below reads it.
+export N_PREFIX="$HOME/.n"
+
+# PATH precedence lives in this one list, highest priority first, so priority
+# is a property of the list rather than a side effect of where in this file a
+# prepend happens to sit. Deliberately not [ -d ]-guarded: a non-existent entry
+# is harmless and typeset -U dedups, same convention as .zprofile.
+path=(
+	"$N_PREFIX/bin"
+	"$HOME/bin"
+	"$HOME/.local/bin"
+	"/usr/local/go/bin"
+	$path
+)
+
 # User configuration
 
 # export MANPATH="/usr/local/man:$MANPATH"
@@ -122,11 +138,6 @@ typeset -U path PATH
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 
-# Golang
-if [ -d "/usr/local/go/bin" ] ; then
-	path=("/usr/local/go/bin" $path)
-fi
-[ -d "$HOME/.local/bin" ] && path=("$HOME/.local/bin" $path)
 command -v uv >/dev/null 2>&1 && eval "$(uv generate-shell-completion zsh)"
 
 # Key-agent
@@ -168,8 +179,6 @@ agy-models() {
 alias agys='agy-sandbox'
 alias agyp='agy-print'
 alias agyc='agy-continue'
-
-[ -d "$HOME/bin" ] && path=("$HOME/bin" $path)
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 
@@ -264,13 +273,13 @@ aiwt() {
 if [ -d "$HOME/Android/Sdk" ]; then
 	export ANDROID_HOME="$HOME/Android/Sdk"
 	export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
-	export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"
+	# Appended, not prepended: SDK tools must not shadow system binaries.
+	path+=(
+		"$ANDROID_HOME/platform-tools"
+		"$ANDROID_HOME/cmdline-tools/latest/bin"
+	)
 fi
 # <<< android-dev-env <<<
-
-# n (Node.js version manager): install into a user-owned prefix so `n` works without sudo
-export N_PREFIX="$HOME/.n"
-export PATH="$N_PREFIX/bin:$PATH"
 
 # === Open3D 3D window on WSLg (Wayland→X11/Xwayland fallback) ===
 # Open3D legacy Visualizer は GLEW(=GLX前提) を使うため Wayland では落ちる。

@@ -5,4 +5,3 @@ typeset -U path PATH
 # the dir is created after login. A non-existent entry is harmless; typeset -U
 # dedups it.
 path=("$HOME/.local/bin" $path)
-export PATH="$HOME/.local/bin:$PATH"
