@@ -69,10 +69,18 @@ ZSH_THEME="eastwood"
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
 
-if [[ "$TERM_PROGRAM" != "vscode" ]]; then
-	  ZSH_TMUX_AUTOSTART=true
+# Auto-start tmux only for a real terminal session. The oh-my-zsh tmux plugin
+# gates on $TMUX and a handful of editor variables but never on whether a tty
+# is attached, so without this guard a pty-less interactive shell — Codex over
+# ssh, a CI runner, any `zsh -i` with redirected stdio — runs `tmux attach`,
+# fails with "open terminal failed: not a terminal", then falls back to
+# `new-session -s $ZSH_TMUX_DEFAULT_SESSION_NAME` and fails again with
+# "duplicate session: 0". The vscode check stays: its integrated terminal does
+# have a tty, so the tty test alone would not exclude it.
+if [[ -t 0 && -t 1 && "$TERM_PROGRAM" != "vscode" ]]; then
+	ZSH_TMUX_AUTOSTART=true
 else
-			ZSH_TMUX_AUTOSTART=false
+	ZSH_TMUX_AUTOSTART=false
 fi
 export ZSH_TMUX_FIXTERM=true
 # Attach new shells to tmux-resurrect's default bootstrap session instead of
