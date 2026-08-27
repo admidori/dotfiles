@@ -264,7 +264,7 @@ aiwt() {
 if [ -d "$HOME/Android/Sdk" ]; then
 	export ANDROID_HOME="$HOME/Android/Sdk"
 	export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
-	export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$HOME/android-studio/bin"
+	export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"
 fi
 # <<< android-dev-env <<<
 
