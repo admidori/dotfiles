@@ -301,4 +301,6 @@ if [[ -n "$WSL_DISTRO_NAME" ]] || grep -qiE '(microsoft|wsl)' /proc/version 2>/d
 	export MESA_LOADER_DRIVER_OVERRIDE=d3d12
 fi
 # DISPLAY=:0 は WSLg が設定済。GPUで不具合時は `LIBGL_ALWAYS_SOFTWARE=1` を一時付与。
-eval "$(~/.local/bin/mise activate zsh)"
+# Guarded: the installer does not set up mise, so on a machine without it an
+# unguarded eval prints an error on every single shell start.
+[ -x "$HOME/.local/bin/mise" ] && eval "$("$HOME/.local/bin/mise" activate zsh)"

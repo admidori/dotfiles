@@ -5,6 +5,15 @@ FROM debian:bookworm-slim
 ENV LANG=C.UTF-8 \
     DEBIAN_FRONTEND=noninteractive
 
+# The slim image ships a dpkg path-exclude for /usr/share/doc/*, but dpkg
+# still creates the excluded directories. Software that reads its own docs
+# back then sees a directory with the file missing: the oh-my-zsh fzf plugin
+# probes for /usr/share/doc/fzf/examples, finds it, and its unguarded source
+# of key-bindings.zsh fails. Re-including the path (this file sorts after
+# dpkg.cfg.d/docker, and the last match wins) makes the container behave like
+# a real Debian box, which is what this harness is meant to prove.
+RUN printf 'path-include /usr/share/doc/*\n' > /etc/dpkg/dpkg.cfg.d/zz-restore-docs
+
 # Only the bootstrap minimum. The installer itself pulls in zsh/tmux/etc.,
 # so this proves install.sh works on a near-clean Debian box.
 RUN apt-get update \
