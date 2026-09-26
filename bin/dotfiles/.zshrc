@@ -75,9 +75,12 @@ ZSH_THEME="eastwood"
 # ssh, a CI runner, any `zsh -i` with redirected stdio — runs `tmux attach`,
 # fails with "open terminal failed: not a terminal", then falls back to
 # `new-session -s $ZSH_TMUX_DEFAULT_SESSION_NAME` and fails again with
-# "duplicate session: 0". The vscode check stays: its integrated terminal does
-# have a tty, so the tty test alone would not exclude it.
-if [[ -t 0 && -t 1 && "$TERM_PROGRAM" != "vscode" ]]; then
+# "duplicate session: 0". Editor terminals do have a tty, so the tty test alone
+# would not exclude them: VS Code and the Antigravity IDE set TERM_PROGRAM=vscode,
+# and the Antigravity desktop app launches its WSL backend with
+# ANTIGRAVITY_VSCODE_HOST=1, which every shell it spawns inherits. Without that
+# check those shells attach to session 0 and steal it from the real terminal.
+if [[ -t 0 && -t 1 && "$TERM_PROGRAM" != "vscode" && -z "$ANTIGRAVITY_VSCODE_HOST" ]]; then
 	ZSH_TMUX_AUTOSTART=true
 else
 	ZSH_TMUX_AUTOSTART=false
