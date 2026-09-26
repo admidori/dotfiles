@@ -44,10 +44,12 @@ is_merge_dir() {
 
 # Files, relative to a tool dir, that the tool itself writes local/private
 # state back into (e.g. Codex writes per-project trust decisions and a UI
-# nux counter directly into ~/.codex/config.toml). Symlinking these would
+# nux counter directly into ~/.codex/config.toml, and Claude Code plus
+# third-party installers like Clawd merge hooks and UI state into
+# ~/.claude/settings.json). Symlinking these would
 # send every such write straight into this tracked repo, so they're seeded
 # once via a real copy instead and left alone on every later install.
-COPY_ONCE_FILES=(.codex/config.toml)
+COPY_ONCE_FILES=(.codex/config.toml .claude/settings.json)
 
 # is_copy_once_file <tool_dir>/<name> — true if that path must be seeded
 # once via a copy instead of kept in sync via a symlink.

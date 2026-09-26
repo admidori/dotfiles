@@ -40,7 +40,10 @@ echo "==> Verifying dotfile symlinks"
 for f in .zshenv .zshrc .tmux.conf .vimrc .gitconfig .latexmkrc; do
   check "~/$f is a symlink" test -L "$HOME/$f"
 done
-check "~/.claude/settings.json is a symlink" test -L "$HOME/.claude/settings.json"
+check "~/.claude/settings.json is a real file (copy-once, not synced)" test -f "$HOME/.claude/settings.json"
+check "~/.claude/settings.json is NOT a symlink" test ! -L "$HOME/.claude/settings.json"
+check "~/.claude/settings.json seeded from the tracked template" \
+  cmp -s "$HOME/.claude/settings.json" "$REPO_ROOT/bin/dotfiles/.claude/settings.json"
 check "~/.claude/CLAUDE.md is a symlink" test -L "$HOME/.claude/CLAUDE.md"
 check "~/.codex/config.toml is a real file (copy-once, not synced)" test -f "$HOME/.codex/config.toml"
 check "~/.codex/config.toml is NOT a symlink" test ! -L "$HOME/.codex/config.toml"
@@ -72,6 +75,8 @@ check "locally-appended trust entry survives re-running the installer" \
   grep -q "fake/local/project" "$HOME/.codex/config.toml"
 check "tracked config.toml itself was not touched" \
   not grep -q "fake/local/project" "$REPO_ROOT/bin/dotfiles/.codex/config.toml"
+check "~/.claude/settings.json is still a real file after re-install" \
+  test ! -L "$HOME/.claude/settings.json"
 
 echo "==> Verifying oh-my-zsh was installed fresh (not vendored)"
 check "~/.oh-my-zsh exists"            test -d "$HOME/.oh-my-zsh"
