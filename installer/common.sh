@@ -13,10 +13,12 @@ TOOL_DIRS=(.claude .codex .gemini)
 
 # Nested directories, relative to a tool dir, that mix dotfiles-tracked
 # content with content this repo doesn't own — e.g. ~/.claude/skills holds
-# both our tracked skills and marketplace-installed ones. These need the same
+# both our tracked skills and marketplace-installed ones, and ~/.claude/hooks
+# holds our guard scripts alongside hook files that third-party apps (e.g. the
+# Clawd desktop pet) install there. These need the same
 # file-by-file linking as a tool dir itself, one level deeper, instead of
 # being replaced by a single directory symlink.
-MERGE_DIRS=(.claude/skills)
+MERGE_DIRS=(.claude/skills .claude/hooks)
 
 # contains <needle> <haystack...> — true if needle is one of the remaining args.
 contains() {
