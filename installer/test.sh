@@ -27,9 +27,11 @@ not() {
   ! "$@"
 }
 
-echo "==> Seeding a pre-existing (non-dotfiles) Claude skill"
+echo "==> Seeding a pre-existing (non-dotfiles) Claude skill and hook"
 mkdir -p "$HOME/.claude/skills/third-party-skill"
 echo "not managed by dotfiles" > "$HOME/.claude/skills/third-party-skill/SKILL.md"
+mkdir -p "$HOME/.claude/hooks"
+echo "// not managed by dotfiles" > "$HOME/.claude/hooks/third-party-hook.js"
 
 echo "==> Running 'make install'"
 make -C "$REPO_ROOT" install
@@ -38,8 +40,10 @@ echo "==> Verifying dotfile symlinks"
 for f in .zshenv .zshrc .tmux.conf .vimrc .gitconfig .latexmkrc; do
   check "~/$f is a symlink" test -L "$HOME/$f"
 done
-check "~/.claude/settings.json is a symlink" test -L "$HOME/.claude/settings.json"
-check "~/.claude/hooks is a symlink" test -L "$HOME/.claude/hooks"
+check "~/.claude/settings.json is a real file (copy-once, not synced)" test -f "$HOME/.claude/settings.json"
+check "~/.claude/settings.json is NOT a symlink" test ! -L "$HOME/.claude/settings.json"
+check "~/.claude/settings.json seeded from the tracked template" \
+  cmp -s "$HOME/.claude/settings.json" "$REPO_ROOT/bin/dotfiles/.claude/settings.json"
 check "~/.claude/CLAUDE.md is a symlink" test -L "$HOME/.claude/CLAUDE.md"
 check "~/.codex/config.toml is a real file (copy-once, not synced)" test -f "$HOME/.codex/config.toml"
 check "~/.codex/config.toml is NOT a symlink" test ! -L "$HOME/.codex/config.toml"
@@ -58,6 +62,12 @@ check "~/.claude/skills/accept is a symlink" test -L "$HOME/.claude/skills/accep
 check "~/.claude/skills/clean is a symlink" test -L "$HOME/.claude/skills/clean"
 check "pre-existing third-party skill survives untouched" test -f "$HOME/.claude/skills/third-party-skill/SKILL.md"
 
+echo "==> Verifying merged hooks dir (dotfiles + third-party content coexist)"
+check "~/.claude/hooks is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/hooks"
+check "~/.claude/hooks/bash-guard.sh is a symlink" test -L "$HOME/.claude/hooks/bash-guard.sh"
+check "~/.claude/hooks/guard-rules.sh is a symlink" test -L "$HOME/.claude/hooks/guard-rules.sh"
+check "pre-existing third-party hook survives untouched" test -f "$HOME/.claude/hooks/third-party-hook.js"
+
 echo "==> Verifying copy-once config survives a second install untouched"
 printf '\n[projects."/fake/local/project"]\ntrust_level = "trusted"\n' >> "$HOME/.codex/config.toml"
 make -C "$REPO_ROOT" link
@@ -65,6 +75,8 @@ check "locally-appended trust entry survives re-running the installer" \
   grep -q "fake/local/project" "$HOME/.codex/config.toml"
 check "tracked config.toml itself was not touched" \
   not grep -q "fake/local/project" "$REPO_ROOT/bin/dotfiles/.codex/config.toml"
+check "~/.claude/settings.json is still a real file after re-install" \
+  test ! -L "$HOME/.claude/settings.json"
 
 echo "==> Verifying oh-my-zsh was installed fresh (not vendored)"
 check "~/.oh-my-zsh exists"            test -d "$HOME/.oh-my-zsh"
