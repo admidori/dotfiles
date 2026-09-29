@@ -110,6 +110,9 @@ refresh() {
   fi
   mkdir "$lock" 2>/dev/null || return 0
   trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+  # A failed fetch leaves fetched_at alone, so the attempt time is what keeps
+  # render-all from relaunching a failing probe on every status tick.
+  touch "$CACHE_DIR/.$agent.attempt"
   if json="$("fetch_$agent")"; then
     write_cache "$agent" "$json"
   fi
@@ -208,10 +211,14 @@ visible_width() {
 }
 
 render_all() {
-  local width="${1:-}" agent fetched full
+  local width="${1:-}" agent last attempt full
   for agent in codex antigravity; do
-    fetched="$(jq -r '.fetched_at // 0' "$CACHE_DIR/$agent.json" 2>/dev/null || echo 0)"
-    [ $(( now - ${fetched:-0} )) -gt "$REFRESH_AFTER" ] && refresh_in_background "$agent"
+    last="$(jq -r '.fetched_at // 0' "$CACHE_DIR/$agent.json" 2>/dev/null || echo 0)"
+    attempt="$(date -r "$CACHE_DIR/.$agent.attempt" +%s 2>/dev/null || echo 0)"
+    [ "$attempt" -gt "${last:-0}" ] && last="$attempt"
+    if [ $(( now - ${last:-0} )) -gt "$REFRESH_AFTER" ]; then
+      refresh_in_background "$agent"
+    fi
   done
   full="$(line 1)"
   if [[ "$width" =~ ^[0-9]+$ ]] && [ "$(visible_width "$full")" -gt "$width" ]; then
