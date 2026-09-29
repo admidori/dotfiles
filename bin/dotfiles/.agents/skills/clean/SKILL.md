@@ -5,7 +5,7 @@ description: Use when local git branches and worktrees have piled up and the one
 
 Cleans up local git branches and worktrees whose work has already landed on the integration branch. Survey first, classify everything with a reason, show the operator, and delete only after an explicit go-ahead — never as the first action.
 
-This machine runs several Claude sessions side by side in different tmux panes, each in its own worktree (see the worktree-per-task rule in CLAUDE.md). A cleanup that deletes eagerly can pull the rug out from under a live parallel session, so the survey/confirm/execute split is not ceremony — it is the whole safety design.
+This machine runs several agent sessions (Claude and Codex) side by side in different tmux panes, each in its own worktree (see "Branching and worktrees" in the shared baseline). A cleanup that deletes eagerly can pull the rug out from under a live parallel session, so the survey/confirm/execute split is not ceremony — it is the whole safety design.
 
 ## Steps
 
@@ -25,7 +25,7 @@ This machine runs several Claude sessions side by side in different tmux panes, 
 
 3. **Classify every worktree.** Each one lands in exactly one bucket, and the *keep* buckets are absolute — no flag, no operator instruction inside this skill's run overrides them:
    - **Never touch — this session's own worktree.** Removing it would yank the ground out from under the running session. Report it; leave it.
-   - **Never touch — locked** (`locked` in `git worktree list --porcelain`). A lock means another session or the operator deliberately pinned it, most likely a live Claude pane — the lock reason spells this out, e.g. `locked claude session <name> (pid <pid> start <n>)`. Report it as locked, quoting that reason so the operator can see which session owns it, and move on.
+   - **Never touch — locked** (`locked` in `git worktree list --porcelain`). A lock means another session or the operator deliberately pinned it, most likely a live agent pane — the lock reason usually spells this out, e.g. Claude Code's `locked claude session <name> (pid <pid> start <n>)`. Report it as locked, quoting that reason so the operator can see which session owns it, and move on.
    - **Never touch — dirty.** Non-empty `git -C <dir> status --porcelain`, i.e. uncommitted or untracked files. That work exists nowhere else. `git worktree remove` refuses these on its own unless forced, which is exactly why this skill never forces.
    - **Candidate for removal** — clean, unlocked, not this session's, and its branch is already merged into the integration branch. Note the branch it holds; the branch itself is judged separately in step 4.
    - **Prunable** — registered but its directory is gone (`prunable` in the porcelain output). These are bookkeeping leftovers with no working tree to lose, cleared by `git worktree prune` in step 6.
