@@ -3,7 +3,7 @@ name: delegate
 description: Use when a design has been agreed with the operator and its implementation should be delegated to Antigravity — the designer (Claude or Codex) writes the design and one brief per step, Antigravity implements each step headlessly via `agy -p` and reports what it did, and the designer reviews, polishes, and commits each step before the next. Every hand-off is a file, so the harness can be inspected and improved. Triggers on "/delegate", "これで実装して", "Antigravityに実装させて", "実装を委譲して", "delegate this to antigravity". Not for changes the operator wants the designer to make directly.
 ---
 
-Runs the delegation loop: agreed design → `design.md` → per step, `brief.md` → Antigravity implements (edits only) and returns a report → the designer verifies, reviews, polishes, and commits → next step.
+Runs the delegation loop: agreed design → `design.md` → per step, `brief.md` → Antigravity implements, runs the verification itself, and returns a report → the designer re-checks, reviews, polishes, and commits → next step.
 
 Two things this skill is built around:
 
@@ -29,6 +29,16 @@ $AGENT_HARNESS_DIR (default: ${XDG_STATE_HOME:-~/.local/state}/agent-harness)
 
 Templates are in `templates/` next to this file; the runner is `scripts/run-task.sh`.
 
+## Prerequisite: the Antigravity sandbox
+
+Antigravity verifies its own work, so it has to be able to run commands without an approval prompt that nobody can answer in a headless run. That depends on the machine-local `~/.gemini/antigravity-cli/settings.json`, which this repo doesn't track:
+
+- `"enableTerminalSandbox": true` and `"toolPermission": "proceed-in-sandbox"`: sandboxed commands run without a prompt. They get no network access, `.git` is read-only, and they can write only to temp dirs and to paths allowed by `write_file(...)`. Commands that need to leave the sandbox are denied in a headless run.
+- `"command(git commit)"` under `permissions.deny`, so the designer stays the only committer whatever the prompt says.
+- `read_file(...)` denies for credential files, since sandboxed commands can otherwise read them.
+
+If the settings are missing, runs still work, but every command is denied. The runner counts those denials, so check them before trusting the report.
+
 ## Setup
 
 1. **Confirm the design is final.** If it hasn't been agreed with the operator in this conversation, produce it first. Immediately before delegating, restate a short summary (approach, files, risks) and get an explicit go-ahead — an earlier open-ended discussion is not that confirmation. If a previous delegation on this branch is being substantially reworked, treat it as a sign the design wasn't final and re-confirm.
@@ -50,18 +60,19 @@ Templates are in `templates/` next to this file; the runner is `scripts/run-task
 
 Repeat for each step in order, one step per run. Never batch steps.
 
-4. **Write `steps/<NN>-<slug>/brief.md`** from `templates/brief.md`. Carry the part of the design this step depends on and what earlier steps already landed — each run is a fresh Antigravity session. State the scope boundary explicitly. The run rules (no confirmation stops, edits only, no git) and the report format are appended by the runner from `templates/report.md`, so don't repeat them.
+4. **Write `steps/<NN>-<slug>/brief.md`** from `templates/brief.md`. Carry the part of the design this step depends on and what earlier steps already landed — each run is a fresh Antigravity session. State the scope boundary explicitly, and list in "Verification" the commands that must pass. They run sandboxed, so leave out anything that needs the network. The run rules (no confirmation stops, verify your own work, no commits) and the report format are appended by the runner from `templates/report.md`, so don't repeat them.
 
 5. **Run the step:**
    ```
    HARNESS_DESIGNER="<you> (<model>)" <skill-dir>/scripts/run-task.sh <step-dir> <impl-worktree>
    ```
-   - The runner uses `--mode accept-edits`: Antigravity may edit files in the workspace, while shell commands stay at their default deny. Never add `--dangerously-skip-permissions`.
+   - The runner uses `--mode accept-edits`, so Antigravity edits files without a prompt, and the sandbox settings above let it run commands. Never add `--dangerously-skip-permissions`: the sandbox is the boundary.
    - Under Codex, `agy` needs network access and writes outside the workspace, so request sandbox escalation for this command rather than widening the sandbox.
    - It blocks until Antigravity finishes (default limit 30m, `AGY_TIMEOUT`). Use a generous timeout or run it in the background.
-   - A non-zero exit means the run did not end with `SUCCESS`: read `stderr-<n>.log` and the tail of `run-<n>.jsonl`, and report a permission or authentication failure to the operator as a blocked step instead of retrying around it.
+   - A non-zero exit means the run did not end with `SUCCESS`, or that it ended without a report. Read `stderr-<n>.log` and the tail of `run-<n>.jsonl`. Report a permission or authentication failure to the operator as a blocked step instead of retrying around it.
+   - The runner prints how many tool calls were denied and records the count in the metrics. Denied calls are commands that couldn't run sandboxed. If there are any, the report's verification may be incomplete.
 
-6. **Verify against the diff, not the report.** Run `git -C <impl-worktree> status` / `diff` — every earlier step is committed, so the working-tree diff is exactly this step. Then run the step's verification commands yourself (`bash -n`, `shellcheck`, tests); Antigravity cannot run shell commands in this mode, so verification is always yours. Changes outside the step's scope are dropped or committed separately — say which.
+6. **Check against the diff, not the report.** Run `git -C <impl-worktree> status` / `diff`. Every earlier step is committed, so the working-tree diff is exactly this step. Then re-run the brief's verification commands yourself and compare the results with the report's "Verification" section. Antigravity running them first saves rework rounds, but its report is a claim, not proof. Checks the report lists as blocked or not verified (anything needing the network, for example) are yours to run. Changes outside the step's scope are dropped or committed separately; say which.
 
 7. **Review and write `review-<n>.md`** from `templates/review.md`. Correctness first, then reuse and simplification. Compare the report with the diff and note anything changed but unreported or reported but not done. Fill in "Harness notes": what in the brief, templates, or instructions caused a problem or helped.
 

@@ -22,12 +22,13 @@ Three agents share this machine in two roles. Stay in your role and defer to the
 operator when a task clearly belongs to the other one.
 
 - **Claude and Codex — designers.** Own a task end to end except the implementation
-  itself: design, decomposition into steps, verification, review, and commits. They
+  itself: design, decomposition into steps, re-checking the implementer's verification,
+  review, and commits. They
   are peers: whichever one the operator gives a task keeps it, and they do not hand
   tasks to each other. Small, obvious edits (a one-line fix, a rename, polishing a
   delegated diff) they make directly.
 - **Antigravity — implementer.** Implements the steps a designer delegates to it,
-  headlessly and one step at a time. Also owns parallel experiments and larger, UI-
+  headlessly and one step at a time, and verifies each one itself inside its sandbox. Also owns parallel experiments and larger, UI-
   or browser-inclusive prototypes when the operator asks for them directly.
 
 Typical flow: the designer agrees the design with the operator → delegates each step

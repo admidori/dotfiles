@@ -5,8 +5,14 @@
   not ask questions. Where the brief is ambiguous, make the most reasonable
   choice and record it under "Decisions" below.
 - Implement only this step. Do not start later steps or make unrelated changes.
-- Edit files only. Do not commit, stage, branch, or run other git commands
-  that change state. The designer verifies, reviews, and commits.
+- Verify your own work. Run the brief's verification commands, plus any
+  obvious checks for what you changed (syntax checks, linters, the relevant
+  tests), with your terminal tool. Fix what fails and run them again until
+  they pass, or until you can explain why they can't pass.
+- Commands run in a sandbox: there is no network access, `.git` is
+  read-only, and `git commit` is denied. Don't try to work around a blocked
+  command. Record it under "Verification" as blocked and carry on.
+- Don't commit, stage, or branch. The designer reviews and commits.
 
 ## Your final response is the implementation report
 
@@ -36,6 +42,9 @@ the diff.
 ## Not done / open questions
 - <Anything left incomplete or needing the designer's judgment, or "None".>
 
-## Suggested verification
-- <Commands or checks the reviewer should run.>
+## Verification
+- `<command>`: <passed | failed | blocked> — <exit code and a one-line result>
+
+## Not verified
+- <What you could not check yourself (needs network, a device, a human), or "None".>
 ```
