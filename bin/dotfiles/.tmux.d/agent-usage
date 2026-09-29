@@ -16,7 +16,8 @@
 # session is running.
 #
 # Each cache is {fetched_at, five_hour, weekly}, where a window is
-# {used_pct, resets_at} (epoch seconds) or null.
+# {used_pct, resets_at} (epoch seconds) or null. The bar shows the remaining
+# share: 100% when a window is fresh, draining toward 0.
 set -euo pipefail
 
 # ${#var} must count characters, not bytes, to measure the line width.
@@ -123,15 +124,17 @@ refresh_in_background() {
   (nohup "${BASH_SOURCE[0]}" refresh "$1" >/dev/null 2>&1 </dev/null &)
 }
 
+# color_for <remaining_pct>
 color_for() {
-  local pct="$1"
-  if [ "$pct" -ge 80 ]; then echo colour160
-  elif [ "$pct" -ge 50 ]; then echo colour214
-  else echo colour71
+  local left="$1"
+  if [ "$left" -le 20 ]; then echo colour160
+  elif [ "$left" -le 50 ]; then echo colour214
+  else echo colour33
   fi
 }
 
-# bar <pct> <color> — BAR_WIDTH cells, eighths resolution.
+# bar <remaining_pct> <color> — BAR_WIDTH cells, eighths resolution, full at
+# 100% left and draining as the window is used.
 bar() {
   local pct="$1" color="$2" eighths full part out="" i
   eighths=$(( pct * BAR_WIDTH * 8 / 100 ))
@@ -156,20 +159,22 @@ fmt_dhh() {
   printf '%dd%02dh' $(( s / 86400 )) $(( s % 86400 / 3600 ))
 }
 
-# window <label> <used_pct> <resets_at> <stale> <reset_fmt|"">
+# window <used_pct> <resets_at> <stale> <reset_fmt|"">
+# Caches keep the vendors' used percentage; the bar shows what is left. No
+# 5h/7d label: the reset format (HH:MM vs NdHHh) already tells them apart.
 window() {
-  local label="$1" used="$2" resets="$3" stale="$4" fmt="$5" pct color reset=""
+  local used="$1" resets="$2" stale="$3" fmt="$4" left color reset=""
   if [ -z "$used" ] || [ "$resets" -le "$now" ]; then
-    printf '%s #[fg=%s]--%s' "$label" "$DIM" "$BASE"
+    printf '#[fg=%s]--%s' "$DIM" "$BASE"
     return
   fi
-  pct="$(printf '%.0f' "$used")"
-  [ "$pct" -gt 100 ] && pct=100
-  [ "$pct" -lt 0 ] && pct=0
-  if [ "$stale" = 1 ]; then color="$DIM"; else color="$(color_for "$pct")"; fi
+  left="$(awk -v u="$used" 'BEGIN { printf "%.0f", 100 - u }')"
+  [ "$left" -gt 100 ] && left=100
+  [ "$left" -lt 0 ] && left=0
+  if [ "$stale" = 1 ]; then color="$DIM"; else color="$(color_for "$left")"; fi
   [ -n "$fmt" ] && reset=" #[fg=$color]$("$fmt" $(( resets - now )))$BASE"
-  printf '%s #[fg=%s,bold]%3d%%#[nobold]%s %s%s' \
-    "$label" "$color" "$pct" "$BASE" "$(bar "$pct" "$color")" "$reset"
+  printf '#[fg=%s,bold]%3d%%#[nobold]%s %s%s' \
+    "$color" "$left" "$BASE" "$(bar "$left" "$color")" "$reset"
 }
 
 # segment <agent> <display name> <stale_after> <weekly reset shown: 1|0>
@@ -192,13 +197,13 @@ segment() {
   fi
   [ $(( now - fetched )) -gt "$stale_after" ] && stale=1
   printf '%s %s  %s' "$name" \
-    "$(window 5h "$fh_used" "${fh_resets:-0}" "$stale" fmt_hhmm)" \
-    "$(window 7d "$wk_used" "${wk_resets:-0}" "$stale" "$([ "$week_reset" = 1 ] && echo fmt_dhh)")"
+    "$(window "$fh_used" "${fh_resets:-0}" "$stale" fmt_hhmm)" \
+    "$(window "$wk_used" "${wk_resets:-0}" "$stale" "$([ "$week_reset" = 1 ] && echo fmt_dhh)")"
 }
 
 line() {
   local week_reset="$1"
-  printf '%s Usage: %s | %s | %s ' "$BASE" \
+  printf '%s %s | %s | %s ' "$BASE" \
     "$(segment claude Claude "$CLAUDE_STALE_AFTER" "$week_reset")" \
     "$(segment codex Codex "$FETCHED_STALE_AFTER" "$week_reset")" \
     "$(segment antigravity Antigravity "$FETCHED_STALE_AFTER" "$week_reset")"
