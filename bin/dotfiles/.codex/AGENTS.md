@@ -102,6 +102,22 @@ implementation.
 
 ## Branching and worktrees
 
+- Do every operation on a repository in a dedicated git worktree, never in the
+  main checkout: edits, reviews of a branch or PR, builds and test runs, and
+  anything that changes git state. This applies to every agent, including
+  Antigravity's direct experiments. Several agents share the main checkout, so
+  work done there can collide with, or be swept into, another agent's task.
+  - A new task gets a fresh worktree on a new branch from the integration
+    branch. Continuing an existing branch means working in the worktree that
+    holds it, re-created with `git worktree add <dir> <branch>` if it was
+    removed.
+  - A review checks the branch under review out in its own worktree (for a PR,
+    its head branch) and reads, builds, and tests it there. Remove that
+    worktree once the review is done; it holds no commits of its own.
+  - Exceptions, done from the main checkout: only reading files to answer a
+    question; managing worktrees and branches themselves (creating, removing,
+    cleaning up); and syncing the main checkout after a merge (pulling the
+    integration branch, re-linking).
 - Create new feature branches and `aiwt` worktrees from the intended
   integration branch (normally `main`), not from whatever branch happens to
   be checked out. Before running `aiwt <branch>` or `git checkout -b`, check
