@@ -100,7 +100,8 @@ implementation.
 
 - Never run destructive git commands (`git reset --hard`, `git clean -fd`, force pushes,
   history rewrites) unless explicitly asked.
-- Don't commit or push unless asked. If on the default branch, create a branch first.
+- Don't commit unless asked, and never push without approval (see "Outward-facing and
+  irreversible actions"). If on the default branch, create a branch first.
 - Before deleting a branch, confirm its work is merged or intentionally preserved.
 - Before implementing anything, check `git rev-parse --abbrev-ref HEAD` and confirm it is
   not the main/default branch (`main`/`master`). If it is, create and switch to a feature
@@ -180,6 +181,23 @@ implementation.
 
 ## Outward-facing and irreversible actions
 
-- Confirm before doing things that are hard to undo or that leave this machine
-  (publishing, sending, deleting, overwriting files you didn't create). Approval for
-  one such action does not extend to the next.
+- Ask for the operator's explicit approval before any action that writes to the
+  internet or to a service outside this machine, and say exactly what will be sent
+  where. This covers:
+  - `git push` to any branch
+  - creating or updating PRs, issues, comments, reviews, labels, or releases
+  - publishing packages or artifacts
+  - sending messages or email, and uploading or sharing files
+  - any API call that creates, changes, or deletes remote state
+- Reading from the internet needs no approval, because it changes nothing outside this
+  machine. This covers:
+  - installing or fetching dependencies (`cargo fetch`, `npm ci`, `uv sync`,
+    `pip install`)
+  - `git fetch`, `git pull`, and cloning
+  - reading documentation and web pages
+  - read-only API calls (`gh pr view`, `gh api` GET requests)
+- An approval covers only the action it was given for. "Create the PR" approves that
+  push and that PR, not a later comment, another push, or another PR. When follow-up
+  work needs one of those, ask again.
+- Also confirm before local actions that are hard to undo, such as deleting or
+  overwriting files you didn't create.
