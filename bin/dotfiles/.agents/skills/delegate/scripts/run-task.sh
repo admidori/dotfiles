@@ -6,7 +6,7 @@
 # delegation leaves the same artifacts regardless of which designer (Claude
 # or Codex) drove it:
 #
-#   <step-dir>/prompt-<n>.md   exact prompt sent (brief + run rules/report format)
+#   <step-dir>/prompt-<n>.md   exact prompt sent (project dir + brief + run rules/report format)
 #   <step-dir>/run-<n>.jsonl   agy stream-json event log
 #   <step-dir>/stderr-<n>.log  agy diagnostics
 #   <step-dir>/report-<n>.md   Antigravity's final response (the report)
@@ -50,25 +50,53 @@ run="$step_dir/run-$attempt.jsonl"
 stderr="$step_dir/stderr-$attempt.log"
 report="$step_dir/report-$attempt.md"
 
-{ cat "$brief"; printf '\n'; cat "$skill_dir/templates/report.md"; } >"$prompt"
+{
+  cat <<EOF
+# Project directory
 
-# accept-edits lets Antigravity write files in the workspace without a
-# prompt nobody could answer, while shell commands keep their default deny;
-# verification is the designer's job, so it never needs a blanket bypass.
+The project for this step is \`$workdir\`. It is not your current
+directory, so use absolute paths with your file tools and run shell
+commands as \`cd $workdir && <command>\`. Read its AGENTS.md first, if
+there is one.
+
+EOF
+  cat "$brief"
+  printf '\n'
+  cat "$skill_dir/templates/report.md"
+} >"$prompt"
+
+# agy mounts every workspace folder (its cwd and any --add-dir) read-only
+# inside the terminal sandbox in headless runs, whatever settings.json
+# allows. So run it from an empty scratch dir and leave the project out of
+# the workspace: file edits then go through the write_file permissions, and
+# sandboxed commands (formatters, builds, tests) can write to the project.
+# Commands run only inside the sandbox (settings.json: proceed-in-sandbox),
+# so the run never needs a blanket permission bypass.
+agy_cwd="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
+trap 'rmdir "$agy_cwd" 2>/dev/null || true' EXIT
 args=(-p "$(cat "$prompt")" --output-format stream-json --mode accept-edits
   --disable-slash-commands --print-timeout "${AGY_TIMEOUT:-30m}")
 [ -n "${AGY_MODEL:-}" ] && args+=(--model "$AGY_MODEL")
 [ -n "${AGY_EFFORT:-}" ] && args+=(--effort "$AGY_EFFORT")
 
-echo "==> step $(basename "$step_dir"), attempt $attempt: running agy in $workdir"
+echo "==> step $(basename "$step_dir"), attempt $attempt: running agy on $workdir"
 set +e
-(cd "$workdir" && agy "${args[@]}" </dev/null) >"$run" 2>"$stderr"
+(cd "$agy_cwd" && agy "${args[@]}" </dev/null) >"$run" 2>"$stderr"
 rc=$?
 set -e
 
 result="$(jq -c -R 'fromjson? | select(.event == "result") | .result' "$run" | tail -n 1)"
 [ -n "$result" ] || result='{}'
 jq -r '.response // empty' <<<"$result" >"$report"
+
+# Tool calls refused by a permission rule, or auto-denied because a headless
+# run can't prompt. They show up only as ERROR steps in the event log, and a
+# denied run can end with an empty response, so count them explicitly.
+denied="$(jq -R 'fromjson? | select(.event == "step_update") | .step_update
+  | select(.state == "ERROR" and ((.tool_info.error.message // "") | test("[Pp]ermission")))' \
+  "$run" | jq -s 'length')"
+report_empty=false
+[ -s "$report" ] || report_empty=true
 
 harness_rev="$(git -C "$skill_dir" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 jq -n -c \
@@ -81,10 +109,13 @@ jq -n -c \
   --arg designer "${HARNESS_DESIGNER:-unknown}" \
   --arg model "${AGY_MODEL:-default}" \
   --argjson exit_code "$rc" \
+  --argjson denied "$denied" \
+  --argjson report_empty "$report_empty" \
   --argjson r "$result" \
   '{ts: $ts, task: $task, step: $step, attempt: $attempt, variant: $variant,
     harness_rev: $harness_rev, designer: $designer, model: $model,
     exit_code: $exit_code, status: ($r.status // "NO_RESULT"),
+    denied_tool_calls: $denied, report_empty: $report_empty,
     duration_seconds: $r.duration_seconds, num_turns: $r.num_turns,
     usage: $r.usage, conversation_id: $r.conversation_id}' \
   >>"$task_dir/metrics.jsonl"
@@ -93,6 +124,12 @@ status="$(jq -r '.status // "NO_RESULT"' <<<"$result")"
 echo "==> status: $status (exit $rc)"
 echo "    report: $report"
 echo "    log:    $run"
+if [ "$denied" -gt 0 ]; then
+  echo "==> warning: $denied tool call(s) denied; the report's verification may be incomplete"
+fi
+if [ "$report_empty" = true ]; then
+  echo "==> warning: no report was returned; see $stderr"
+fi
 echo "==> working tree:"
 git -C "$workdir" status --short || true
-[ "$status" = "SUCCESS" ]
+[ "$status" = "SUCCESS" ] && [ "$report_empty" = false ]

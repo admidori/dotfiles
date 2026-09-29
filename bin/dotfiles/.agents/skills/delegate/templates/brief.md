@@ -19,6 +19,13 @@ what they already landed and why.>
 
 - <Observable conditions the reviewer will check.>
 
+## Verification
+
+<Commands you must run and get passing before you finish. They run
+sandboxed, so they can't use the network.>
+
+- `<command>`
+
 ## Constraints
 
 - Follow the surrounding code's style, naming, and idiom.

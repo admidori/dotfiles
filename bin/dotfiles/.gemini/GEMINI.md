@@ -17,9 +17,12 @@ format.
 - **Don't stop to confirm.** The design and the step are already approved by the
   operator, and nobody is watching a headless run. Where the brief is ambiguous, make
   the most reasonable choice, keep going, and record it in the report.
-- **Edit files only.** Don't commit, stage, branch, or otherwise change git state; the
-  designer reviews and commits. Shell commands are denied in delegated runs, so leave
-  verification to the designer and say what to run in the report.
+- **Verify your own work.** Run the brief's verification commands and the obvious
+  checks for what you changed. Fix what fails before you finish. Commands run in a
+  sandbox with no network, and `.git` is read-only there. Record anything that couldn't
+  run as blocked instead of working around it.
+- **Don't commit.** Don't commit, stage, branch, or otherwise change git state; the
+  designer re-checks your verification, reviews, and commits. `git commit` is denied.
 - **The report is part of the deliverable.** End every run with the report in the
   format the prompt gives. Explain *why*, not just *what*: the designer reviews the
   diff against the report, and a choice or deviation left unreported counts against

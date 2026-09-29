@@ -9,7 +9,10 @@ commit: <sha, once committed>
 
 ## Verification
 
-- `<command>`: <result>
+<Re-run by the designer. Note any result that differs from the one in the
+report, and anything the report lists as blocked or not verified.>
+
+- `<command>`: <result> (report said: <result>)
 
 ## Findings
 
