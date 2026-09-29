@@ -50,10 +50,12 @@ line shows a yellow `*|*` marker next to the branch when you are in one.
   `name` (e.g. `statusline-marker`). It branches from the repo's default branch
   (origin/<default>) and switches this session into `.claude/worktrees/<name>`, so the
   branch and the `*|*` marker identify this pane at a glance.
-- **Do not enter a worktree for pure advisory, review, or Q&A tasks, or when continuing
-  work that already lives in the current checkout.** Reviewing a PR or an existing branch,
-  answering a question, or finishing uncommitted work in the current tree all stay where
-  they are — a fresh worktree branched from main would only lose that context.
+- **Reviews and continued work get a worktree too, per the baseline rule.** To review a
+  branch or PR, or to continue an existing branch, create a worktree on that branch
+  (`git worktree add .claude/worktrees/<name> <branch>`) and switch into it with
+  `EnterWorktree` and `path`; a fresh `name` worktree would branch from the default
+  branch and lose that context. Only reading files to answer a question stays in the
+  current checkout.
 - When it's unclear whether a task warrants its own worktree, ask rather than guessing.
 - Once the task's work is committed and handed to the operator for review, remove the
   worktree so the operator can check the branch out. Git refuses to check out a branch
