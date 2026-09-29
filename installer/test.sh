@@ -37,9 +37,10 @@ echo "==> Running 'make install'"
 make -C "$REPO_ROOT" install
 
 echo "==> Verifying dotfile symlinks"
-for f in .zshenv .zshrc .tmux.conf .vimrc .gitconfig .latexmkrc; do
+for f in .zshenv .zshrc .tmux.conf .tmux.d .vimrc .gitconfig .latexmkrc; do
   check "~/$f is a symlink" test -L "$HOME/$f"
 done
+check "~/.tmux.d/agent-usage is executable" test -x "$HOME/.tmux.d/agent-usage"
 check "~/.claude/settings.json is a real file (copy-once, not synced)" test -f "$HOME/.claude/settings.json"
 check "~/.claude/settings.json is NOT a symlink" test ! -L "$HOME/.claude/settings.json"
 check "~/.claude/settings.json seeded from the tracked template" \
