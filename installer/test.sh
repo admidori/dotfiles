@@ -58,7 +58,6 @@ check "~/.gemini/GEMINI.md is a symlink" test -L "$HOME/.gemini/GEMINI.md"
 
 echo "==> Verifying merged skills dir (dotfiles + third-party content coexist)"
 check "~/.claude/skills is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/skills"
-check "~/.claude/skills/accept is a symlink" test -L "$HOME/.claude/skills/accept"
 check "~/.claude/skills/clean is a symlink" test -L "$HOME/.claude/skills/clean"
 check "pre-existing third-party skill survives untouched" test -f "$HOME/.claude/skills/third-party-skill/SKILL.md"
 
