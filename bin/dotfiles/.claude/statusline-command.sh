@@ -12,9 +12,19 @@
 # git-dir != git-common-dir). This is intentional for the multi-pane
 # workflow: each Claude works in its own task worktree, so the marker
 # tells at a glance which panes are in a worktree versus the main repo.
+#
+# It also records the session's plan rate_limits for the tmux usage bar
+# (~/.tmux.d/agent-usage); nothing about that is printed here.
 set -euo pipefail
 
 input="$(cat)"
+
+# Claude Code exposes plan rate_limits only to its status line, so hand them
+# to the tmux usage bar's cache. Never let that break the prompt.
+if [ -x "$HOME/.tmux.d/agent-usage" ]; then
+	printf '%s' "$input" | "$HOME/.tmux.d/agent-usage" record-claude >/dev/null 2>&1 || true
+fi
+
 cwd="$(printf '%s' "$input" | jq -r '.workspace.current_dir')"
 
 git_info=""
