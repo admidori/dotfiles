@@ -83,7 +83,7 @@ Repeat for each step in order, one step per run. Never batch steps.
    Co-authored-by: <you> (<model>) <noreply@...>
    Co-authored-by: Antigravity (<model>) <noreply@google.com>
    ```
-   If your harness already appends your own trailer, don't duplicate it — check `git log -1`. Record the commit SHA in the review, confirm `git status` is clean, report the commit to the operator in a line or two, and continue. Don't push or merge mid-loop.
+   Both trailers are mandatory on every delegated step, including a step you only reviewed or polished. Take Antigravity's trailer verbatim from the runner's `trailer for the commit:` line, or from the run's `trailer` field in `metrics.jsonl`. Take your own model from your actual configuration, never from memory; for Codex that is the `model` key in `~/.codex/config.toml`. If your harness already appends your own trailer, don't duplicate it — check `git log -1`. Record the commit SHA in the review, confirm `git status` is clean, report the commit to the operator in a line or two, and continue. Don't push or merge mid-loop.
 
 ## Stopping and closing out
 

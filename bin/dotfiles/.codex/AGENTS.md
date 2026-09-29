@@ -22,14 +22,14 @@ Three agents share this machine in two roles. Stay in your role and defer to the
 operator when a task clearly belongs to the other one.
 
 - **Claude and Codex — designers.** Own a task end to end except the implementation
-  itself: design, decomposition into steps, re-checking the implementer's verification,
-  review, and commits. They
-  are peers: whichever one the operator gives a task keeps it, and they do not hand
-  tasks to each other. Small, obvious edits (a one-line fix, a rename, polishing a
-  delegated diff) they make directly.
+  itself: design, decomposition into steps, re-checking the implementer's
+  verification, review, and commits. They are peers: whichever one the operator gives
+  a task keeps it, and they do not hand tasks to each other. Small, obvious edits (a
+  one-line fix, a rename, polishing a delegated diff) they make directly.
 - **Antigravity — implementer.** Implements the steps a designer delegates to it,
-  headlessly and one step at a time, and verifies each one itself inside its sandbox. Also owns parallel experiments and larger, UI-
-  or browser-inclusive prototypes when the operator asks for them directly.
+  headlessly and one step at a time, and verifies each one itself inside its sandbox.
+  Also owns parallel experiments and larger, UI- or browser-inclusive prototypes when
+  the operator asks for them directly.
 
 Typical flow: the designer agrees the design with the operator → delegates each step
 to Antigravity with the `delegate` skill → verifies, reviews, and commits each step.
@@ -80,9 +80,18 @@ implementation.
   work is distinguishable from purely human commits. The human stays the commit author;
   the agent is the co-author. Include the specific model version you are running so the
   attribution stays precise — substitute the actual version for `<model>` at commit time:
-  - Codex → `Co-authored-by: Codex (<model>) <noreply@openai.com>` (e.g. `Codex (GPT-5.5)`)
+  - Codex → `Co-authored-by: Codex (<model>) <noreply@openai.com>` (e.g. `Codex (gpt-5.6-sol)`)
   - Claude → `Co-authored-by: Claude (<model>) <noreply@anthropic.com>` (e.g. `Claude (Opus 4.8)`)
   - Antigravity → `Co-authored-by: Antigravity (<model>) <noreply@google.com>` (e.g. `Antigravity (Gemini 3.1 Pro)`)
+- Read `<model>` from the actual configuration at commit time. Never write it from
+  memory, and never shorten it to a family name such as `GPT-5`:
+  - Codex: the `model` key in `~/.codex/config.toml`, unless the session overrides it.
+  - Antigravity: the trailer the `delegate` runner prints and records for that run, or
+    the model `agy -p "/model"` reports.
+- A commit carries a trailer for every agent that contributed to it. When a designer
+  commits a delegated step, it adds its own trailer next to Antigravity's, including
+  when it only reviewed or polished the diff. Committing is itself a contribution, so
+  no agent's trailer is ever dropped.
 - Put the trailer in the footer, separated from the body by a blank line.
 - Claude Code appends its own versioned co-author trailer automatically; let it, and
   don't add a second Claude trailer.
