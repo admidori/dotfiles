@@ -203,7 +203,7 @@ segment() {
 
 line() {
   local week_reset="$1"
-  printf '%s Usage: %s | %s | %s ' "$BASE" \
+  printf '%s %s | %s | %s ' "$BASE" \
     "$(segment claude Claude "$CLAUDE_STALE_AFTER" "$week_reset")" \
     "$(segment codex Codex "$FETCHED_STALE_AFTER" "$week_reset")" \
     "$(segment antigravity Antigravity "$FETCHED_STALE_AFTER" "$week_reset")"
