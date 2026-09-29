@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+#
+# agent-usage — plan usage of Claude, Codex, and Antigravity for the tmux
+# status bar.
+#
+#   render-all [width]           print the colored status line from the caches,
+#                                starting a background refresh for stale ones
+#   refresh <codex|antigravity>  fetch usage and rewrite that agent's cache
+#   record-claude                cache the rate_limits of the Claude Code
+#                                status-line JSON on stdin
+#
+# No credential file is read. Codex and Antigravity are asked through their
+# own CLIs (codex app-server, agy print-mode /usage), which authenticate
+# themselves; Claude only exposes rate_limits to its status line, so the
+# status-line script records them here and a Claude value goes stale while no
+# session is running.
+#
+# Each cache is {fetched_at, five_hour, weekly}, where a window is
+# {used_pct, resets_at} (epoch seconds) or null.
+set -euo pipefail
+
+# ${#var} must count characters, not bytes, to measure the line width.
+export LC_ALL=C.UTF-8
+
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/agent-usage"
+REFRESH_AFTER=60         # codex/antigravity: refetch a cache older than this
+FETCHED_STALE_AFTER=300  # codex/antigravity: gray out after repeated failures
+CLAUDE_STALE_AFTER=1800  # claude: gray out once no session has updated it
+
+BASE="#[fg=colour250,bg=black]"
+DIM="colour244"
+EMPTY_BG="colour236"
+BAR_WIDTH=6
+SUB_BLOCKS=('▏' '▎' '▍' '▌' '▋' '▊' '▉')
+
+now="$(date +%s)"
+
+write_cache() {
+  local agent="$1" json="$2" tmp
+  mkdir -p "$CACHE_DIR"
+  tmp="$(mktemp "$CACHE_DIR/.$agent.XXXXXX")"
+  printf '%s\n' "$json" >"$tmp"
+  mv -f "$tmp" "$CACHE_DIR/$agent.json"
+}
+
+record_claude() {
+  local json
+  json="$(jq -c --argjson now "$now" '
+    def win: if . then {used_pct: .used_percentage, resets_at: .resets_at} else null end;
+    if .rate_limits then
+      {fetched_at: $now,
+       five_hour: (.rate_limits.five_hour | win),
+       weekly: (.rate_limits.seven_day | win)}
+    else empty end')"
+  [ -n "$json" ] && write_cache claude "$json"
+  return 0
+}
+
+fetch_codex() {
+  local line result=""
+  coproc CODEX { timeout 15 codex app-server 2>/dev/null; }
+  printf '%s\n' \
+    '{"method":"initialize","id":0,"params":{"clientInfo":{"name":"agent-usage","version":"1"}}}' \
+    '{"method":"initialized"}' \
+    '{"method":"account/rateLimits/read","id":1}' >&"${CODEX[1]}"
+  while IFS= read -r -t 15 line <&"${CODEX[0]}"; do
+    if jq -e '.id == 1' >/dev/null 2>&1 <<<"$line"; then
+      result="$line"
+      break
+    fi
+  done
+  kill "$CODEX_PID" 2>/dev/null || true
+  [ -n "$result" ] || return 1
+  jq -c -e --argjson now "$now" '
+    def win: if . then {used_pct: .usedPercent, resets_at: .resetsAt} else null end;
+    .result.rateLimits
+    | {fetched_at: $now, five_hour: (.primary | win), weekly: (.secondary | win)}' <<<"$result"
+}
+
+fetch_antigravity() {
+  local out
+  mkdir -p "$CACHE_DIR"
+  # Run from the cache dir so the probe never picks up a project workspace.
+  out="$(cd "$CACHE_DIR" && timeout 30 agy -p "/usage" --output-format json </dev/null 2>/dev/null)" || return 1
+  jq -c -e --argjson now "$now" '
+    def bucket($id):
+      [.command.data.groups[].buckets[] | select(.id == $id)][0]
+      | if . then
+          {used_pct: ((1 - .remaining_fraction) * 100),
+           resets_at: (.reset_time | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601)}
+        else null end;
+    select(.status == "SUCCESS")
+    | {fetched_at: $now, five_hour: bucket("gemini-5h"), weekly: bucket("gemini-weekly")}' <<<"$out"
+}
+
+refresh() {
+  local agent="$1" json
+  case "$agent" in
+    codex) command -v codex >/dev/null || return 0 ;;
+    antigravity) command -v agy >/dev/null || return 0 ;;
+    *) echo "unknown agent: $agent" >&2; return 2 ;;
+  esac
+  mkdir -p "$CACHE_DIR"
+  # mkdir is the lock (flock isn't on every platform); break a lock left by a
+  # killed run once it is clearly older than any fetch can take. Global, so
+  # the EXIT trap can still see it after this function returns.
+  lock="$CACHE_DIR/.$agent.lock"
+  if [ -n "$(find "$lock" -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
+    rmdir "$lock" 2>/dev/null || true
+  fi
+  mkdir "$lock" 2>/dev/null || return 0
+  trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+  # A failed fetch leaves fetched_at alone, so the attempt time is what keeps
+  # render-all from relaunching a failing probe on every status tick.
+  touch "$CACHE_DIR/.$agent.attempt"
+  if json="$("fetch_$agent")"; then
+    write_cache "$agent" "$json"
+  fi
+}
+
+# refresh_in_background <agent> — detached, so tmux never waits on a fetch.
+refresh_in_background() {
+  (nohup "${BASH_SOURCE[0]}" refresh "$1" >/dev/null 2>&1 </dev/null &)
+}
+
+color_for() {
+  local pct="$1"
+  if [ "$pct" -ge 80 ]; then echo colour160
+  elif [ "$pct" -ge 50 ]; then echo colour214
+  else echo colour71
+  fi
+}
+
+# bar <pct> <color> — BAR_WIDTH cells, eighths resolution.
+bar() {
+  local pct="$1" color="$2" eighths full part out="" i
+  eighths=$(( pct * BAR_WIDTH * 8 / 100 ))
+  full=$(( eighths / 8 ))
+  part=$(( eighths % 8 ))
+  for (( i = 0; i < full; i++ )); do out+="█"; done
+  if [ "$part" -gt 0 ] && [ "$full" -lt "$BAR_WIDTH" ]; then
+    out+="${SUB_BLOCKS[$(( part - 1 ))]}"
+    full=$(( full + 1 ))
+  fi
+  for (( i = full; i < BAR_WIDTH; i++ )); do out+=" "; done
+  printf '#[fg=%s,bg=%s]%s%s' "$color" "$EMPTY_BG" "$out" "$BASE"
+}
+
+fmt_hhmm() {
+  local s="$1"
+  printf '%02d:%02d' $(( s / 3600 )) $(( s % 3600 / 60 ))
+}
+
+fmt_dhh() {
+  local s="$1"
+  printf '%dd%02dh' $(( s / 86400 )) $(( s % 86400 / 3600 ))
+}
+
+# window <label> <used_pct> <resets_at> <stale> <reset_fmt|"">
+window() {
+  local label="$1" used="$2" resets="$3" stale="$4" fmt="$5" pct color reset=""
+  if [ -z "$used" ] || [ "$resets" -le "$now" ]; then
+    printf '%s #[fg=%s]--%s' "$label" "$DIM" "$BASE"
+    return
+  fi
+  pct="$(printf '%.0f' "$used")"
+  [ "$pct" -gt 100 ] && pct=100
+  [ "$pct" -lt 0 ] && pct=0
+  if [ "$stale" = 1 ]; then color="$DIM"; else color="$(color_for "$pct")"; fi
+  [ -n "$fmt" ] && reset=" #[fg=$color]$("$fmt" $(( resets - now )))$BASE"
+  printf '%s #[fg=%s,bold]%3d%%#[nobold]%s %s%s' \
+    "$label" "$color" "$pct" "$BASE" "$(bar "$pct" "$color")" "$reset"
+}
+
+# segment <agent> <display name> <stale_after> <weekly reset shown: 1|0>
+segment() {
+  local agent="$1" name="$2" stale_after="$3" week_reset="$4" cache stale=0 fields
+  local fetched fh_used fh_resets wk_used wk_resets
+  cache="$CACHE_DIR/$agent.json"
+  if [ ! -s "$cache" ]; then
+    printf '%s #[fg=%s]n/a%s' "$name" "$DIM" "$BASE"
+    return
+  fi
+  # "|" rather than tabs: read collapses runs of whitespace separators, which
+  # would shift fields left whenever a window is null.
+  fields="$(jq -r '[.fetched_at, .five_hour.used_pct, .five_hour.resets_at,
+    .weekly.used_pct, .weekly.resets_at] | map(. // "" | tostring) | join("|")' "$cache" 2>/dev/null)" || fields=""
+  IFS='|' read -r fetched fh_used fh_resets wk_used wk_resets <<<"$fields"
+  if [ -z "$fetched" ]; then
+    printf '%s #[fg=%s]n/a%s' "$name" "$DIM" "$BASE"
+    return
+  fi
+  [ $(( now - fetched )) -gt "$stale_after" ] && stale=1
+  printf '%s %s  %s' "$name" \
+    "$(window 5h "$fh_used" "${fh_resets:-0}" "$stale" fmt_hhmm)" \
+    "$(window 7d "$wk_used" "${wk_resets:-0}" "$stale" "$([ "$week_reset" = 1 ] && echo fmt_dhh)")"
+}
+
+line() {
+  local week_reset="$1"
+  printf '%s Usage: %s | %s | %s ' "$BASE" \
+    "$(segment claude Claude "$CLAUDE_STALE_AFTER" "$week_reset")" \
+    "$(segment codex Codex "$FETCHED_STALE_AFTER" "$week_reset")" \
+    "$(segment antigravity Antigravity "$FETCHED_STALE_AFTER" "$week_reset")"
+}
+
+visible_width() {
+  local plain
+  plain="$(sed -E 's/#\[[^]]*\]//g' <<<"$1")"
+  echo "${#plain}"
+}
+
+render_all() {
+  local width="${1:-}" agent last attempt full
+  for agent in codex antigravity; do
+    last="$(jq -r '.fetched_at // 0' "$CACHE_DIR/$agent.json" 2>/dev/null || echo 0)"
+    attempt="$(date -r "$CACHE_DIR/.$agent.attempt" +%s 2>/dev/null || echo 0)"
+    [ "$attempt" -gt "${last:-0}" ] && last="$attempt"
+    if [ $(( now - ${last:-0} )) -gt "$REFRESH_AFTER" ]; then
+      refresh_in_background "$agent"
+    fi
+  done
+  full="$(line 1)"
+  if [[ "$width" =~ ^[0-9]+$ ]] && [ "$(visible_width "$full")" -gt "$width" ]; then
+    line 0
+  else
+    printf '%s' "$full"
+  fi
+}
+
+case "${1:-}" in
+  render-all) render_all "${2:-}" ;;
+  refresh) refresh "${2:-}" ;;
+  record-claude) record_claude ;;
+  *)
+    echo "usage: $(basename "$0") render-all [width] | refresh <codex|antigravity> | record-claude" >&2
+    exit 2
+    ;;
+esac
