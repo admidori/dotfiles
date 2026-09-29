@@ -8,17 +8,21 @@
 # Note: each tool's shared baseline reaches a single canonical file —
 # .gemini/AGENTS.md is a repo-internal symlink to .codex/AGENTS.md, and
 # .claude/CLAUDE.md @-imports it — so editing .codex/AGENTS.md updates all three.
+# Likewise, skills shared by Claude and Codex live once under .agents/skills
+# (Codex's user skill dir) and are repo-internally symlinked into
+# .claude/skills.
 
-TOOL_DIRS=(.claude .codex .gemini)
+TOOL_DIRS=(.claude .codex .gemini .agents)
 
 # Nested directories, relative to a tool dir, that mix dotfiles-tracked
 # content with content this repo doesn't own — e.g. ~/.claude/skills holds
 # both our tracked skills and marketplace-installed ones, and ~/.claude/hooks
 # holds our guard scripts alongside hook files that third-party apps (e.g. the
-# Clawd desktop pet) install there. These need the same
+# Clawd desktop pet) install there, and ~/.agents/skills is shared with
+# skills other tools install. These need the same
 # file-by-file linking as a tool dir itself, one level deeper, instead of
 # being replaced by a single directory symlink.
-MERGE_DIRS=(.claude/skills .claude/hooks)
+MERGE_DIRS=(.claude/skills .claude/hooks .agents/skills)
 
 # contains <needle> <haystack...> — true if needle is one of the remaining args.
 contains() {
