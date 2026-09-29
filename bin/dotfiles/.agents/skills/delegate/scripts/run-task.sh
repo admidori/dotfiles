@@ -6,7 +6,7 @@
 # delegation leaves the same artifacts regardless of which designer (Claude
 # or Codex) drove it:
 #
-#   <step-dir>/prompt-<n>.md   exact prompt sent (brief + run rules/report format)
+#   <step-dir>/prompt-<n>.md   exact prompt sent (project dir + brief + run rules/report format)
 #   <step-dir>/run-<n>.jsonl   agy stream-json event log
 #   <step-dir>/stderr-<n>.log  agy diagnostics
 #   <step-dir>/report-<n>.md   Antigravity's final response (the report)
@@ -50,20 +50,38 @@ run="$step_dir/run-$attempt.jsonl"
 stderr="$step_dir/stderr-$attempt.log"
 report="$step_dir/report-$attempt.md"
 
-{ cat "$brief"; printf '\n'; cat "$skill_dir/templates/report.md"; } >"$prompt"
+{
+  cat <<EOF
+# Project directory
 
-# accept-edits lets Antigravity write files in the workspace without a
-# prompt nobody could answer. Commands, including its own verification, run
-# only inside agy's terminal sandbox (settings.json: proceed-in-sandbox), so
-# the run never needs a blanket permission bypass.
+The project for this step is \`$workdir\`. It is not your current
+directory, so use absolute paths with your file tools and run shell
+commands as \`cd $workdir && <command>\`. Read its AGENTS.md first, if
+there is one.
+
+EOF
+  cat "$brief"
+  printf '\n'
+  cat "$skill_dir/templates/report.md"
+} >"$prompt"
+
+# agy mounts every workspace folder (its cwd and any --add-dir) read-only
+# inside the terminal sandbox in headless runs, whatever settings.json
+# allows. So run it from an empty scratch dir and leave the project out of
+# the workspace: file edits then go through the write_file permissions, and
+# sandboxed commands (formatters, builds, tests) can write to the project.
+# Commands run only inside the sandbox (settings.json: proceed-in-sandbox),
+# so the run never needs a blanket permission bypass.
+agy_cwd="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
+trap 'rmdir "$agy_cwd" 2>/dev/null || true' EXIT
 args=(-p "$(cat "$prompt")" --output-format stream-json --mode accept-edits
   --disable-slash-commands --print-timeout "${AGY_TIMEOUT:-30m}")
 [ -n "${AGY_MODEL:-}" ] && args+=(--model "$AGY_MODEL")
 [ -n "${AGY_EFFORT:-}" ] && args+=(--effort "$AGY_EFFORT")
 
-echo "==> step $(basename "$step_dir"), attempt $attempt: running agy in $workdir"
+echo "==> step $(basename "$step_dir"), attempt $attempt: running agy on $workdir"
 set +e
-(cd "$workdir" && agy "${args[@]}" </dev/null) >"$run" 2>"$stderr"
+(cd "$agy_cwd" && agy "${args[@]}" </dev/null) >"$run" 2>"$stderr"
 rc=$?
 set -e
 
