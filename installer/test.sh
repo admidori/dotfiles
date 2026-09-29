@@ -59,9 +59,15 @@ check "~/.gemini/GEMINI.md is a symlink" test -L "$HOME/.gemini/GEMINI.md"
 
 echo "==> Verifying merged skills dir (dotfiles + third-party content coexist)"
 check "~/.claude/skills is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/skills"
-check "~/.claude/skills/accept is a symlink" test -L "$HOME/.claude/skills/accept"
 check "~/.claude/skills/clean is a symlink" test -L "$HOME/.claude/skills/clean"
 check "pre-existing third-party skill survives untouched" test -f "$HOME/.claude/skills/third-party-skill/SKILL.md"
+
+echo "==> Verifying shared skills dir (one delegate skill for Claude and Codex)"
+check "~/.agents/skills is NOT a symlink (merged dir)" test ! -L "$HOME/.agents/skills"
+check "~/.agents/skills/delegate is a symlink" test -L "$HOME/.agents/skills/delegate"
+check "~/.agents/skills/delegate/SKILL.md resolves to a file" test -f "$HOME/.agents/skills/delegate/SKILL.md"
+check "~/.claude/skills/delegate/SKILL.md resolves to a file" test -f "$HOME/.claude/skills/delegate/SKILL.md"
+check "delegate runner is executable" test -x "$HOME/.agents/skills/delegate/scripts/run-task.sh"
 
 echo "==> Verifying merged hooks dir (dotfiles + third-party content coexist)"
 check "~/.claude/hooks is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/hooks"

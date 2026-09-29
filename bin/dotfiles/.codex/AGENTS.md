@@ -5,7 +5,9 @@ It happens to live in `~/.codex/AGENTS.md` because Codex reads only that path an
 has no import mechanism; the same file is symlinked to `~/.gemini/AGENTS.md` and
 imported by `~/.claude/CLAUDE.md`. Keep it tool-agnostic. Tool-specific behavior
 belongs in each tool's own overlay (`CLAUDE.md`, `GEMINI.md`), and project-specific
-rules belong in that repository's own `AGENTS.md`.
+rules belong in that repository's own `AGENTS.md`. Procedures shared by Claude and
+Codex live once as skills in `~/.agents/skills` (linked into `~/.claude/skills`), so
+they load on demand instead of growing this file.
 
 ## Operator
 
@@ -16,22 +18,37 @@ rules belong in that repository's own `AGENTS.md`.
 
 ## Division of labor across agents
 
-Three agents share this machine, each with a distinct lane. Stay in your lane and
-hand off rather than overreaching; defer to the operator when a task clearly belongs
-to another agent.
+Three agents share this machine in two roles. Stay in your role and defer to the
+operator when a task clearly belongs to the other one.
 
-- **Codex — primary implementer.** Owns the bulk of CLI-native implementation: writing
-  and editing code, running the build/test/run loop, and committing focused changes.
-  This is the default executor for "make the change."
-- **Claude — design, review, and advisory.** Owns architecture and implementation
-  planning, reviewing Codex's commits/PRs, and discussing trade-offs and direction.
-  Prefers plans, reviews, and targeted edits over large speculative implementation.
-- **Antigravity — parallel experiments and prototypes.** Owns running several candidate
-  approaches in parallel and building larger, UI- or browser-inclusive prototypes and
-  exploratory spikes that exceed a single focused change.
+- **Claude and Codex — designers.** Own a task end to end except the implementation
+  itself: design, decomposition into steps, verification, review, and commits. They
+  are peers: whichever one the operator gives a task keeps it, and they do not hand
+  tasks to each other. Small, obvious edits (a one-line fix, a rename, polishing a
+  delegated diff) they make directly.
+- **Antigravity — implementer.** Implements the steps a designer delegates to it,
+  headlessly and one step at a time. Also owns parallel experiments and larger, UI-
+  or browser-inclusive prototypes when the operator asks for them directly.
 
-Typical flow: Claude designs / advises → Codex implements and commits → Claude reviews
-the commit or PR. Antigravity is pulled in for parallel exploration or big prototypes.
+Typical flow: the designer agrees the design with the operator → delegates each step
+to Antigravity with the `delegate` skill → verifies, reviews, and commits each step.
+
+### Every hand-off is written down
+
+Agents do not share memory, so what crosses between them is a file, never chat
+context alone. Designers verbalize the design; the implementer verbalizes the
+implementation.
+
+- The designer writes `design.md` (goal, constraints, decisions *with reasons and
+  rejected alternatives*, steps), one `brief.md` per step, and a `review-<n>.md`
+  for every attempt.
+- The implementer ends every run with a `report-<n>.md`: what changed and why, the
+  choices the brief didn't dictate, any deviation from the brief, assumptions, and
+  open questions.
+- These artifacts, their templates, and the run metrics are the harness. When a
+  review shows that a brief, template, or instruction caused a problem, record it in
+  the review's harness notes so the harness itself can be improved. The `delegate`
+  skill defines the layout and the loop.
 
 ## Engineering conventions
 
@@ -113,10 +130,12 @@ the commit or PR. Antigravity is pulled in for parallel exploration or big proto
   to touch, and anything risky or ambiguous — and wait for the operator's
   go-ahead before making the change. Trivial, obviously-scoped fixes don't
   need this; when unsure whether something qualifies, ask.
-- This applies regardless of which agent is about to implement: if Codex is
-  being invoked to do the implementation (see the handoff skill), the
-  summary must be shown and confirmed *before* `codex exec` runs, not
-  after Codex has already produced a diff.
+- This applies regardless of which agent is about to implement: when
+  Antigravity is to do the implementation (see the `delegate` skill), the
+  summary must be shown and confirmed *before* the first `agy` run, not
+  after Antigravity has already produced a diff. A headless implementer
+  that receives an approved brief must not stop to re-confirm it; nobody
+  is there to answer.
 - A prior confirmation does not carry over to a materially different
   follow-up change. Re-confirm when the plan changes, not just once per
   session.
