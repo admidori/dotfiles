@@ -159,12 +159,13 @@ fmt_dhh() {
   printf '%dd%02dh' $(( s / 86400 )) $(( s % 86400 / 3600 ))
 }
 
-# window <label> <used_pct> <resets_at> <stale> <reset_fmt|"">
-# Caches keep the vendors' used percentage; the bar shows what is left.
+# window <used_pct> <resets_at> <stale> <reset_fmt|"">
+# Caches keep the vendors' used percentage; the bar shows what is left. No
+# 5h/7d label: the reset format (HH:MM vs NdHHh) already tells them apart.
 window() {
-  local label="$1" used="$2" resets="$3" stale="$4" fmt="$5" left color reset=""
+  local used="$1" resets="$2" stale="$3" fmt="$4" left color reset=""
   if [ -z "$used" ] || [ "$resets" -le "$now" ]; then
-    printf '%s #[fg=%s]--%s' "$label" "$DIM" "$BASE"
+    printf '#[fg=%s]--%s' "$DIM" "$BASE"
     return
   fi
   left="$(awk -v u="$used" 'BEGIN { printf "%.0f", 100 - u }')"
@@ -172,8 +173,8 @@ window() {
   [ "$left" -lt 0 ] && left=0
   if [ "$stale" = 1 ]; then color="$DIM"; else color="$(color_for "$left")"; fi
   [ -n "$fmt" ] && reset=" #[fg=$color]$("$fmt" $(( resets - now )))$BASE"
-  printf '%s #[fg=%s,bold]%3d%%#[nobold]%s %s%s' \
-    "$label" "$color" "$left" "$BASE" "$(bar "$left" "$color")" "$reset"
+  printf '#[fg=%s,bold]%3d%%#[nobold]%s %s%s' \
+    "$color" "$left" "$BASE" "$(bar "$left" "$color")" "$reset"
 }
 
 # segment <agent> <display name> <stale_after> <weekly reset shown: 1|0>
@@ -196,8 +197,8 @@ segment() {
   fi
   [ $(( now - fetched )) -gt "$stale_after" ] && stale=1
   printf '%s %s  %s' "$name" \
-    "$(window 5h "$fh_used" "${fh_resets:-0}" "$stale" fmt_hhmm)" \
-    "$(window 7d "$wk_used" "${wk_resets:-0}" "$stale" "$([ "$week_reset" = 1 ] && echo fmt_dhh)")"
+    "$(window "$fh_used" "${fh_resets:-0}" "$stale" fmt_hhmm)" \
+    "$(window "$wk_used" "${wk_resets:-0}" "$stale" "$([ "$week_reset" = 1 ] && echo fmt_dhh)")"
 }
 
 line() {
