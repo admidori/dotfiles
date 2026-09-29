@@ -16,7 +16,8 @@
 # session is running.
 #
 # Each cache is {fetched_at, five_hour, weekly}, where a window is
-# {used_pct, resets_at} (epoch seconds) or null.
+# {used_pct, resets_at} (epoch seconds) or null. The bar shows the remaining
+# share: 100% when a window is fresh, draining toward 0.
 set -euo pipefail
 
 # ${#var} must count characters, not bytes, to measure the line width.
@@ -123,15 +124,17 @@ refresh_in_background() {
   (nohup "${BASH_SOURCE[0]}" refresh "$1" >/dev/null 2>&1 </dev/null &)
 }
 
+# color_for <remaining_pct>
 color_for() {
-  local pct="$1"
-  if [ "$pct" -ge 80 ]; then echo colour160
-  elif [ "$pct" -ge 50 ]; then echo colour214
-  else echo colour71
+  local left="$1"
+  if [ "$left" -le 20 ]; then echo colour160
+  elif [ "$left" -le 50 ]; then echo colour214
+  else echo colour33
   fi
 }
 
-# bar <pct> <color> — BAR_WIDTH cells, eighths resolution.
+# bar <remaining_pct> <color> — BAR_WIDTH cells, eighths resolution, full at
+# 100% left and draining as the window is used.
 bar() {
   local pct="$1" color="$2" eighths full part out="" i
   eighths=$(( pct * BAR_WIDTH * 8 / 100 ))
@@ -157,19 +160,20 @@ fmt_dhh() {
 }
 
 # window <label> <used_pct> <resets_at> <stale> <reset_fmt|"">
+# Caches keep the vendors' used percentage; the bar shows what is left.
 window() {
-  local label="$1" used="$2" resets="$3" stale="$4" fmt="$5" pct color reset=""
+  local label="$1" used="$2" resets="$3" stale="$4" fmt="$5" left color reset=""
   if [ -z "$used" ] || [ "$resets" -le "$now" ]; then
     printf '%s #[fg=%s]--%s' "$label" "$DIM" "$BASE"
     return
   fi
-  pct="$(printf '%.0f' "$used")"
-  [ "$pct" -gt 100 ] && pct=100
-  [ "$pct" -lt 0 ] && pct=0
-  if [ "$stale" = 1 ]; then color="$DIM"; else color="$(color_for "$pct")"; fi
+  left="$(awk -v u="$used" 'BEGIN { printf "%.0f", 100 - u }')"
+  [ "$left" -gt 100 ] && left=100
+  [ "$left" -lt 0 ] && left=0
+  if [ "$stale" = 1 ]; then color="$DIM"; else color="$(color_for "$left")"; fi
   [ -n "$fmt" ] && reset=" #[fg=$color]$("$fmt" $(( resets - now )))$BASE"
   printf '%s #[fg=%s,bold]%3d%%#[nobold]%s %s%s' \
-    "$label" "$color" "$pct" "$BASE" "$(bar "$pct" "$color")" "$reset"
+    "$label" "$color" "$left" "$BASE" "$(bar "$left" "$color")" "$reset"
 }
 
 # segment <agent> <display name> <stale_after> <weekly reset shown: 1|0>
