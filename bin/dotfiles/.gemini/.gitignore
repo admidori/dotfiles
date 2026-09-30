@@ -5,3 +5,5 @@
 !.gitignore
 !AGENTS.md
 !GEMINI.md
+!config/
+!config/mcp_config.json
