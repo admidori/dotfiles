@@ -89,6 +89,11 @@ check "~/.agents/skills/delegate is a symlink" test -L "$HOME/.agents/skills/del
 check "~/.agents/skills/delegate/SKILL.md resolves to a file" test -f "$HOME/.agents/skills/delegate/SKILL.md"
 check "~/.claude/skills/delegate/SKILL.md resolves to a file" test -f "$HOME/.claude/skills/delegate/SKILL.md"
 check "delegate runner is executable" test -x "$HOME/.agents/skills/delegate/scripts/run-task.sh"
+check "delegate compute validator is executable" test -x "$HOME/.agents/skills/delegate/scripts/validate-compute.sh"
+check "delegate compute test runner is executable" test -x "$HOME/.agents/skills/delegate/scripts/test-compute.sh"
+check "delegate compute template exists" test -f "$HOME/.agents/skills/delegate/templates/compute.json"
+check "delegate compute colab template exists" test -f "$HOME/.agents/skills/delegate/templates/compute-colab.json"
+check "delegate compute test suite passes" "$HOME/.agents/skills/delegate/scripts/test-compute.sh"
 
 echo "==> Verifying merged hooks dir (dotfiles + third-party content coexist)"
 check "~/.claude/hooks is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/hooks"

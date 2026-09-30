@@ -1,0 +1,20 @@
+{
+  "backend": "coder",
+  "target": "gpu-workspace",
+  "command": [
+    "python",
+    "train.py",
+    "--epochs",
+    "5"
+  ],
+  "timeout_seconds": 1800,
+  "max_attempts": 2,
+  "inputs": [
+    "scripts/train.py",
+    "params.json"
+  ],
+  "artifacts": [
+    "outputs/model.pt",
+    "outputs/metrics.json"
+  ]
+}
