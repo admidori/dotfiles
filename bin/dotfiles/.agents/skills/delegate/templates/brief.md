@@ -8,7 +8,8 @@
 
 <The part of the design this step depends on, including the reasons behind
 the relevant decisions. You start with no memory of earlier steps, so say
-what they already landed and why.>
+what earlier steps changed and why, and whether they are committed or
+preserved as reviewed checkpoints.>
 
 ## Scope
 

@@ -45,3 +45,13 @@ leaves the tree working.>
 | Step | Title (commit header) | Files | Acceptance | Verify |
 |---|---|---|---|---|
 | 01 | <type(scope): description> | <paths> | <observable criteria> | <commands> |
+
+## Commit plan
+
+- **Authorization:** <authorized or deferred; operator instruction and scope>
+- **Boundaries:** <one focused commit per step; any explicitly approved grouping>
+- **Base:** <exact starting commit SHA>
+- **If deferred:** <checkpoint/delta locations, content manifest, and how each
+  reviewed step will be reconstructed as a separate commit when authorized>
+- **Later corrections:** <how corrections to earlier steps will be recorded
+  and kept separate when independent>

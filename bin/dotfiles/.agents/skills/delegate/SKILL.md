@@ -1,9 +1,15 @@
 ---
 name: delegate
-description: Use when a design has been agreed with the operator and its implementation should be delegated to Antigravity — the designer (Claude or Codex) writes the design and one brief per step, Antigravity implements each step headlessly via `agy -p` and reports what it did, and the designer reviews, polishes, and commits each step before the next. Every hand-off is a file, so the harness can be inspected and improved. Triggers on "/delegate", "これで実装して", "Antigravityに実装させて", "実装を委譲して", "delegate this to antigravity". Not for changes the operator wants the designer to make directly.
+description: Use when a design has been agreed with the operator and its implementation should be delegated to Antigravity — the designer (Claude or Codex) writes the design and one brief per step, Antigravity implements each step headlessly via `agy -p` and reports what it did, and the designer reviews, polishes, and preserves each step for a separate authorized commit. Every hand-off is a file, so the harness can be inspected and improved. Triggers on "/delegate", "これで実装して", "Antigravityに実装させて", "実装を委譲して", "delegate this to antigravity". Not for changes the operator wants the designer to make directly.
 ---
 
-Runs the delegation loop: agreed design → `design.md` → per step, `brief.md` → Antigravity implements, runs the verification itself, and returns a report → the designer re-checks, reviews, polishes, and commits → next step.
+Runs the delegation loop: agreed design → `design.md` → per step, `brief.md` → Antigravity implements, runs the verification itself, and returns a report → the designer re-checks, reviews, polishes, and records an authorized commit or a reproducible checkpoint → next step.
+
+## Commit authorization and boundaries
+
+Implementation approval does not grant commit permission when the operator's rules require a separate request. Record the current commit authorization and its scope in `design.md`. With permission, commit each reviewed step before starting the next. Without permission, follow [Deferred commits](references/deferred-commits.md) to preserve each step without creating commits.
+
+Deferring commits changes their timing; it does not combine the agreed steps. A later request to commit, push, or create a PR preserves the step boundaries unless the operator explicitly approves a different grouping. Before publishing, map each accepted step to its own focused commit and account for corrections separately. If that mapping cannot be reproduced safely, present the concrete problem and proposed grouping for approval before committing.
 
 Two things this skill is built around:
 
@@ -60,7 +66,7 @@ If the settings are missing, runs still work, but every command is denied. The r
 
 Repeat for each step in order, one step per run. Never batch steps.
 
-4. **Write `steps/<NN>-<slug>/brief.md`** from `templates/brief.md`. Carry the part of the design this step depends on and what earlier steps already landed — each run is a fresh Antigravity session. State the scope boundary explicitly, and list in "Verification" the commands that must pass. They run sandboxed, so leave out anything that needs the network. The run rules (no confirmation stops, verify your own work, no commits) and the report format are appended by the runner from `templates/report.md`, so don't repeat them.
+4. **Write `steps/<NN>-<slug>/brief.md`** from `templates/brief.md`. Carry the part of the design this step depends on and what earlier steps already changed, including whether they are committed or held as checkpoints — each run is a fresh Antigravity session. State the scope boundary explicitly, and list in "Verification" the commands that must pass. They run sandboxed, so leave out anything that needs the network. The run rules (no confirmation stops, verify your own work, no commits) and the report format are appended by the runner from `templates/report.md`, so don't repeat them.
 
 5. **Run the step:**
    ```
@@ -72,13 +78,13 @@ Repeat for each step in order, one step per run. Never batch steps.
    - A non-zero exit means the run did not end with `SUCCESS`, or that it ended without a report. Read `stderr-<n>.log` and the tail of `run-<n>.jsonl`. Report a permission or authentication failure to the operator as a blocked step instead of retrying around it.
    - The runner prints how many tool calls were denied and records the count in the metrics. Denied calls are commands that couldn't run sandboxed. If there are any, the report's verification may be incomplete.
 
-6. **Check against the diff, not the report.** Run `git -C <impl-worktree> status` / `diff`. Every earlier step is committed, so the working-tree diff is exactly this step. Then re-run the brief's verification commands yourself and compare the results with the report's "Verification" section. Antigravity running them first saves rework rounds, but its report is a claim, not proof. Checks the report lists as blocked or not verified (anything needing the network, for example) are yours to run. Changes outside the step's scope are dropped or committed separately; say which.
+6. **Check against the diff, not the report.** Run `git -C <impl-worktree> status` / `diff`. If earlier steps are committed, the working-tree diff is exactly this step. If commits are deferred, compare the current tree against the preceding accepted checkpoint; the cumulative diff from HEAD is not this step's diff. Then re-run the brief's verification commands yourself and compare the results with the report's "Verification" section. Antigravity running them first saves rework rounds, but its report is a claim, not proof. Checks the report lists as blocked or not verified (anything needing the network, for example) are yours to run. Changes outside the step's scope are dropped or preserved for a separate focused commit; say which.
 
 7. **Review and write `review-<n>.md`** from `templates/review.md`. Correctness first, then reuse and simplification. Compare the report with the diff and note anything changed but unreported or reported but not done. Fill in "Harness notes": what in the brief, templates, or instructions caused a problem or helped.
 
 8. **Rework if needed.** Polish trivial issues yourself and list them in the review. For anything substantive, write a rework brief in the step directory describing the defect and pointing at the uncommitted attempt in the tree, and run the runner again with it as the third argument; the attempt counter keeps the earlier record. Bound this at two rework rounds, then bring it to the operator. If the review shows the step's premise was wrong, stop (step 10).
 
-9. **Commit this step, then confirm the tree is clean.** Commit in the implementation worktree, covering only this step, with a Conventional Commits message whose body draws on the design's reasoning, and both trailers:
+9. **Preserve this reviewed step.** If commit permission is absent, save the accepted checkpoint and record its base, predecessor, verification results, and deferred commit status in the review before proceeding. If permission is present, commit in the implementation worktree, covering only this step, with a Conventional Commits message whose body draws on the design's reasoning, and both trailers:
    ```
    Co-authored-by: <you> (<model>) <noreply@...>
    Co-authored-by: Antigravity (<model>) <noreply@google.com>
@@ -96,5 +102,7 @@ Repeat for each step in order, one step per run. Never batch steps.
     git branch -d <task>-impl
     ```
     Always `--ff-only`; if it refuses, something moved the task branch — stop and report. Remove only a clean worktree, never with `--force`. Delete the branch after the removal, with `-d`.
+
+   If commits remain deferred, retain the implementation worktree and checkpoints, and report why they remain open. Once commit permission arrives, materialize and verify the separate commits using the deferred workflow before closing out.
 
 12. **Close out.** Don't push or merge to the integration branch without the operator's explicit instruction. Tell the operator where the task's artifacts are, and summarize anything from the harness notes worth changing in the templates or instructions.
