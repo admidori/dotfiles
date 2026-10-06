@@ -26,10 +26,15 @@ $AGENT_HARNESS_DIR (default: ${XDG_STATE_HOME:-~/.local/state}/agent-harness)
     design.md                  designer: goal, context, constraints, decisions, steps
     steps/<NN>-<slug>/
       brief.md                 designer → implementer: one step
+      compute.json             designer → runner: optional remote GPU compute manifest
       prompt-<n>.md            run-task.sh: the exact prompt sent
       run-<n>.jsonl            run-task.sh: agy event log
       report-<n>.md            implementer: what was done and why
       review-<n>.md            designer: verdict, findings, harness notes
+      compute-<n>/             run-task.sh: attempt-specific compute audit & artifacts
+        state.json             implementer: lifecycle state (no credentials)
+        events.jsonl           implementer: remote execution/lifecycle events
+        artifacts/             implementer: collected remote artifacts
     metrics.jsonl              run-task.sh: one row per run
 ```
 
@@ -68,6 +73,16 @@ Repeat for each step in order, one step per run. Never batch steps.
 
 4. **Write `steps/<NN>-<slug>/brief.md`** from `templates/brief.md`. Carry the part of the design this step depends on and what earlier steps already changed, including whether they are committed or held as checkpoints — each run is a fresh Antigravity session. State the scope boundary explicitly, and list in "Verification" the commands that must pass. They run sandboxed, so leave out anything that needs the network. The run rules (no confirmation stops, verify your own work, no commits) and the report format are appended by the runner from `templates/report.md`, so don't repeat them.
 
+   - **Remote GPU compute (optional):** If this step requires ephemeral GPU resources, place a validated `compute.json` in the step directory (see `templates/compute.json` and `templates/compute-colab.json`).
+     - Backends: `coder` (file/tar staging, remote commands, logs) or `colab` (official Google `colab-mcp`, notebook cell injection, stable dataset URIs).
+     - Lifecycle: probe -> acquire -> stage -> execute -> observe -> diagnose -> collect -> release.
+     - Staging rule: remote edits are disposable. Fixes must always be made locally in the implementation worktree and restaged. Colab scripts must be injected only from the manifest; datasets use declared URIs with scheme (`^[A-Za-z][A-Za-z0-9+.-]*://`) and a 64-hexadecimal-character SHA-256 (WARNING: In `templates/compute-colab.json`, `0000000000000000000000000000000000000000000000000000000000000000` is an unmistakable placeholder; users must replace it with the actual dataset SHA-256 before running). Never claim directory sync for Colab.
+     - Colab artifact semantics: Official `googlecolab/colab-mcp` exposes notebook cells and outputs, not a general binary download or directory-sync API. Bounded text/JSON results may be emitted as cell output and collected locally into `compute-<n>/artifacts/`. Large or binary artifacts must be uploaded by notebook code to an operator-declared external destination or reported as not collected; never base64-inline them into prompts or cell output, and never promise arbitrary Colab artifact downloads to the local harness.
+     - Interrupted-run recovery: the runner creates an attempt-specific directory (`compute-<n>/`) containing `state.json`, `events.jsonl`, and `artifacts/`. The agent updates `state.json` on every transition. Before acquiring new resources, recover unresolved earlier attempts using their recorded backend, target, job ID, and event log, even if the manifest changed or was removed. The runner includes those states in the next prompt and rejects success while any remain unresolved. Record `release_outcome` as `released`, or `preserved` with a nonempty `release_reason` if release is unavailable. Neither `state.json` nor `events.jsonl` may contain credentials, tokens, dataset contents, or other secrets (state records backend, target/session, job ID, phase, attempt count, release outcome).
+     - Artifact collection: remote artifacts are collected into `compute-<n>/artifacts/`, not into the source worktree unless explicitly promoted by a later reviewed step.
+     - Bounded execution: `timeout_seconds` (1-86400) and `max_attempts` (1-10) are positive integers; path traversal (`..`) and absolute paths are rejected before `agy` runs.
+     - Ephemeral cleanup: remote resources must be released cleanly on completion or failure (or recorded as `preserved` with reason if unreleaseable).
+
 5. **Run the step:**
    ```
    HARNESS_DESIGNER="<you> (<model>)" <skill-dir>/scripts/run-task.sh <step-dir> <impl-worktree>
@@ -80,7 +95,7 @@ Repeat for each step in order, one step per run. Never batch steps.
 
 6. **Check against the diff, not the report.** Run `git -C <impl-worktree> status` / `diff`. If earlier steps are committed, the working-tree diff is exactly this step. If commits are deferred, compare the current tree against the preceding accepted checkpoint; the cumulative diff from HEAD is not this step's diff. Then re-run the brief's verification commands yourself and compare the results with the report's "Verification" section. Antigravity running them first saves rework rounds, but its report is a claim, not proof. Checks the report lists as blocked or not verified (anything needing the network, for example) are yours to run. Changes outside the step's scope are dropped or preserved for a separate focused commit; say which.
 
-7. **Review and write `review-<n>.md`** from `templates/review.md`. Correctness first, then reuse and simplification. Compare the report with the diff and note anything changed but unreported or reported but not done. Fill in "Harness notes": what in the brief, templates, or instructions caused a problem or helped.
+7. **Review and write `review-<n>.md`** from `templates/review.md`. Correctness first, then reuse and simplification. Compare the report with the diff and note anything changed but unreported or reported but not done. When compute was used, complete the "Compute audit" section: confirm remote resources were released cleanly (or preserved with reason), verify that no remote edits bypassed the local diff review, confirm neither state.json nor events.jsonl contains credentials, tokens, dataset contents, or other secrets, verify that collected artifacts are in the attempt-specific harness directory (confirming truthful Colab artifact handling with no base64 inlining), and check that job ID, input/data hashes, runtime facts, and collected artifacts match expectations. Fill in "Harness notes": what in the brief, templates, or instructions caused a problem or helped.
 
 8. **Rework if needed.** Polish trivial issues yourself and list them in the review. For anything substantive, write a rework brief in the step directory describing the defect and pointing at the uncommitted attempt in the tree, and run the runner again with it as the third argument; the attempt counter keeps the earlier record. Bound this at two rework rounds, then bring it to the operator. If the review shows the step's premise was wrong, stop (step 10).
 

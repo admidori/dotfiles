@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "coder": {
+      "command": "coder",
+      "args": [
+        "exp",
+        "mcp",
+        "server"
+      ]
+    },
+    "colab": {
+      "command": "uvx",
+      "args": [
+        "git+https://github.com/googlecolab/colab-mcp"
+      ]
+    }
+  }
+}

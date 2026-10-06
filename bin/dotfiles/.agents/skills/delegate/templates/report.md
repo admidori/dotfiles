@@ -47,4 +47,15 @@ the diff. Write it as plain Markdown, not wrapped in a code block.
 
 ## Not verified
 - <What you could not check yourself (needs network, a device, a human), or "None".>
+
+## Remote compute (when compute.json was used)
+- Backend: <coder | colab>
+- Target / session: <workspace or notebook/session>
+- Job ID: <remote job ID>
+- Input / data hashes: <hashes of staged inputs and dataset references>
+- Runtime facts: <GPU model, driver/CUDA version, host facts>
+- Attempts: <number of execution attempts>
+- Exit status: <remote command exit code or status>
+- Artifacts: <collected artifacts in attempt-specific artifacts/ directory (for Colab: bounded text/JSON outputs saved locally; large/binary artifacts uploaded to external destination or reported not collected; no base64 inlining)>
+- Release outcome: <released | preserved with reason>
 ```

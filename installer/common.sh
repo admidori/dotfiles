@@ -19,10 +19,11 @@ TOOL_DIRS=(.claude .codex .gemini .agents)
 # both our tracked skills and marketplace-installed ones, and ~/.claude/hooks
 # holds our guard scripts alongside hook files that third-party apps (e.g. the
 # Clawd desktop pet) install there, and ~/.agents/skills is shared with
-# skills other tools install. These need the same
+# skills other tools install, and ~/.gemini/config holds our tracked MCP config
+# alongside machine-local Antigravity state. These need the same
 # file-by-file linking as a tool dir itself, one level deeper, instead of
 # being replaced by a single directory symlink.
-MERGE_DIRS=(.claude/skills .claude/hooks .agents/skills)
+MERGE_DIRS=(.claude/skills .claude/hooks .agents/skills .gemini/config)
 
 # contains <needle> <haystack...> — true if needle is one of the remaining args.
 contains() {
@@ -50,10 +51,11 @@ is_merge_dir() {
 # state back into (e.g. Codex writes per-project trust decisions and a UI
 # nux counter directly into ~/.codex/config.toml, and Claude Code plus
 # third-party installers like Clawd merge hooks and UI state into
-# ~/.claude/settings.json). Symlinking these would
+# ~/.claude/settings.json, and Antigravity writes MCP and user state into
+# ~/.gemini/config/mcp_config.json). Symlinking these would
 # send every such write straight into this tracked repo, so they're seeded
 # once via a real copy instead and left alone on every later install.
-COPY_ONCE_FILES=(.codex/config.toml .claude/settings.json)
+COPY_ONCE_FILES=(.codex/config.toml .claude/settings.json .gemini/config/mcp_config.json)
 
 # is_copy_once_file <tool_dir>/<name> — true if that path must be seeded
 # once via a copy instead of kept in sync via a symlink.

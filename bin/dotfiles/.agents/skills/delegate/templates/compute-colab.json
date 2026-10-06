@@ -1,0 +1,22 @@
+{
+  "backend": "colab",
+  "target": "notebooks/gpu_train.ipynb",
+  "command": [
+    "python",
+    "train.py"
+  ],
+  "timeout_seconds": 1800,
+  "max_attempts": 2,
+  "scripts": [
+    "train.py"
+  ],
+  "datasets": [
+    {
+      "uri": "gs://example-bucket/dataset.tar.gz",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "artifacts": [
+    "metrics.json"
+  ]
+}
