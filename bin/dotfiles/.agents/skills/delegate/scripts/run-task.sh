@@ -58,6 +58,24 @@ run="$step_dir/run-$attempt.jsonl"
 stderr="$step_dir/stderr-$attempt.log"
 report="$step_dir/report-$attempt.md"
 
+compute_state_resolved() {
+  jq -e 'type == "object" and (
+    (.phase == "initialized" and .job_id == null) or
+    .release_outcome == "released" or
+    (.release_outcome == "preserved" and
+      (.release_reason | type == "string" and test("\\S")))
+  )' "$1" >/dev/null 2>&1
+}
+
+# Recovery also applies when this run changes or removes the compute manifest.
+compute_recovery_files=()
+for previous_state in "$step_dir"/compute-*/state.json; do
+  [ -f "$previous_state" ] || continue
+  if ! compute_state_resolved "$previous_state"; then
+    compute_recovery_files+=("$previous_state")
+  fi
+done
+
 if [ -n "$compute_backend" ]; then
   compute_dir="$step_dir/compute-$attempt"
   mkdir -p "$compute_dir/artifacts"
@@ -118,7 +136,8 @@ The state file must record:
 - \`job_id\`: remote job or kernel execution ID
 - \`phase\`: current lifecycle phase (probe, acquire, stage, execute, observe, diagnose, collect, release, completed, failed)
 - \`attempt\`: $attempt
-- \`release_outcome\`: outcome of release ("released" or "preserved with reason")
+- \`release_outcome\`: outcome of release ("released" or "preserved")
+- \`release_reason\`: nonempty reason when release_outcome is "preserved"
 
 Record remote execution lifecycle transitions and milestones to \`$compute_events_file\`. Neither \`state.json\` nor \`events.jsonl\` may contain credentials, tokens, dataset contents, or other secrets.
 All collected output artifacts MUST be stored in \`$compute_artifacts_dir\`, NOT in the source worktree unless a later reviewed step explicitly promotes one.
@@ -157,6 +176,29 @@ EOF
 - Audit recording: Maintain \`$compute_state_file\` and \`$compute_events_file\`. Neither \`state.json\` nor \`events.jsonl\` may contain credentials, tokens, dataset contents, or other secrets. Include all compute audit fields in your implementation report.
 
 EOF
+  fi
+  if [ "${#compute_recovery_files[@]}" -gt 0 ]; then
+    cat <<'EOF'
+# Recover unresolved compute attempts before acquiring new resources
+
+Earlier attempts left remote resources unresolved. Read each state file and
+its sibling events.jsonl, then use that state's backend, target, and job_id
+to observe and stop/release the old job or session before any new acquire.
+Do not assume the current manifest identifies the old backend or target.
+Update the old state and event log with the recovery outcome. Record
+release_outcome="released", or release_outcome="preserved" with a nonempty
+release_reason if release is unavailable. Honor explicitly requested
+preservation. If recovery cannot be established, report the blocker rather
+than claiming success. Do not erase old state or overwrite it with a new job.
+Include the recovery outcomes in your implementation report.
+
+EOF
+    for previous_state in "${compute_recovery_files[@]}"; do
+      printf -- "- Previous state file: \`%s\`\n" "$previous_state"
+      jq -c '{backend, target, job_id, phase, release_outcome, release_reason}' "$previous_state" \
+        || printf '  State is unreadable; inspect and recover it explicitly.\n'
+    done
+    printf '\n'
   fi
   cat "$skill_dir/templates/report.md"
 } >"$prompt"
@@ -209,6 +251,17 @@ denied="$(jq -R 'fromjson? | select(.event == "step_update") | .step_update
 report_empty=false
 [ -s "$report" ] || report_empty=true
 
+compute_recovery_pending=false
+for previous_state in "${compute_recovery_files[@]}"; do
+  if ! compute_state_resolved "$previous_state"; then
+    compute_recovery_pending=true
+  fi
+done
+status="$(jq -r '.status // "NO_RESULT"' <<<"$result")"
+if [ "$compute_recovery_pending" = true ] && [ "$status" = "SUCCESS" ]; then
+  status="RECOVERY_INCOMPLETE"
+fi
+
 harness_rev="$(git -C "$skill_dir" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 jq -n -c \
   --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -221,6 +274,8 @@ jq -n -c \
   --arg model "$model_id" \
   --arg trailer "$trailer" \
   --arg compute_backend "$compute_backend" \
+  --arg status "$status" \
+  --argjson compute_recovery_pending "$compute_recovery_pending" \
   --argjson exit_code "$rc" \
   --argjson denied "$denied" \
   --argjson report_empty "$report_empty" \
@@ -229,13 +284,13 @@ jq -n -c \
     harness_rev: $harness_rev, designer: $designer, model: $model,
     trailer: $trailer,
     compute_backend: (if $compute_backend == "" then null else $compute_backend end),
-    exit_code: $exit_code, status: ($r.status // "NO_RESULT"),
+    compute_recovery_pending: $compute_recovery_pending,
+    exit_code: $exit_code, status: $status,
     denied_tool_calls: $denied, report_empty: $report_empty,
     duration_seconds: $r.duration_seconds, num_turns: $r.num_turns,
     usage: $r.usage, conversation_id: $r.conversation_id}' \
   >>"$task_dir/metrics.jsonl"
 
-status="$(jq -r '.status // "NO_RESULT"' <<<"$result")"
 echo "==> status: $status (exit $rc)"
 echo "    report: $report"
 echo "    log:    $run"
@@ -248,6 +303,9 @@ if [ "$denied" -gt 0 ]; then
 fi
 if [ "$report_empty" = true ]; then
   echo "==> warning: no report was returned; see $stderr"
+fi
+if [ "$compute_recovery_pending" = true ]; then
+  echo "==> warning: prior compute attempts remain unresolved; see $prompt"
 fi
 echo "==> working tree:"
 git -C "$workdir" status --short || true

@@ -1046,6 +1046,92 @@ assert_ok "metrics records requested compute_backend even when agy fails" \
 assert_ok "metrics has no duplicate backend field when agy fails" \
   jq -e 'has("backend") | not' "$TASK_DIR_F/metrics.jsonl"
 
+# Scenario G: Interrupted jobs are recovered before a retry can succeed.
+STEP_DIR_G="$TMP_TEST_DIR/task-recovery/steps/07-recovery"
+mkdir -p "$STEP_DIR_G"
+echo 'Run a remote experiment.' > "$STEP_DIR_G/brief.md"
+cp "$SKILL_DIR/templates/compute.json" "$STEP_DIR_G/compute.json"
+
+cat <<'EOF' > "$FAKE_BIN_DIR/agy"
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$1" = "-p" ] && [ "$2" = "/model" ]; then
+  echo '{"command":{"data":{"id":"mock-gemini","label":"Mock Gemini"}}}'
+  exit 0
+fi
+case "$MOCK_RECOVERY_MODE" in
+  interrupt)
+    jq '.job_id = "job-42" | .phase = "execute"' "$MOCK_RECOVERY_STATE" > "$MOCK_RECOVERY_STATE.tmp"
+    mv "$MOCK_RECOVERY_STATE.tmp" "$MOCK_RECOVERY_STATE"
+    exit 124
+    ;;
+  release)
+    jq '.release_outcome = "released" | .phase = "completed"' "$MOCK_RECOVERY_STATE" > "$MOCK_RECOVERY_STATE.tmp"
+    mv "$MOCK_RECOVERY_STATE.tmp" "$MOCK_RECOVERY_STATE"
+    ;;
+  preserve-without-reason)
+    jq '.release_outcome = "preserved"' "$MOCK_RECOVERY_STATE" > "$MOCK_RECOVERY_STATE.tmp"
+    mv "$MOCK_RECOVERY_STATE.tmp" "$MOCK_RECOVERY_STATE"
+    ;;
+  preserve)
+    jq '.release_outcome = "preserved" | .release_reason = "Client cannot release this runtime"' \
+      "$MOCK_RECOVERY_STATE" > "$MOCK_RECOVERY_STATE.tmp"
+    mv "$MOCK_RECOVERY_STATE.tmp" "$MOCK_RECOVERY_STATE"
+    ;;
+esac
+echo '{"event":"result","result":{"status":"SUCCESS","response":"Mock report"}}'
+EOF
+chmod +x "$FAKE_BIN_DIR/agy"
+
+run_recovery_task() {
+  MOCK_RECOVERY_MODE="$1" MOCK_RECOVERY_STATE="$STEP_DIR_G/compute-1/state.json" \
+    run_harness_task "$STEP_DIR_G"
+}
+
+assert_fail "interrupted compute run fails" \
+  run_recovery_task interrupt
+assert_ok "interrupted state retains the unresolved job ID" \
+  jq -e '.job_id == "job-42" and .phase == "execute" and .release_outcome == null' \
+    "$STEP_DIR_G/compute-1/state.json"
+
+# The new manifest must not hide the old backend and target.
+cp "$SKILL_DIR/templates/compute-colab.json" "$STEP_DIR_G/compute.json"
+assert_fail "agent SUCCESS is rejected while an old job remains unresolved" \
+  run_recovery_task ignore
+assert_ok "retry prompt identifies the old state file" \
+  grep -Fq "$STEP_DIR_G/compute-1/state.json" "$STEP_DIR_G/prompt-2.md"
+assert_ok "retry prompt carries old job ID and backend despite manifest change" \
+  grep -Fq '"backend":"coder","target":"gpu-workspace","job_id":"job-42"' "$STEP_DIR_G/prompt-2.md"
+assert_ok "metrics distinguish incomplete recovery from agent SUCCESS" \
+  jq -se 'last | .status == "RECOVERY_INCOMPLETE" and .compute_recovery_pending == true' \
+    "$TMP_TEST_DIR/task-recovery/metrics.jsonl"
+assert_ok "retry succeeds after old job release is recorded" \
+  run_recovery_task release
+assert_ok "released old state is retained for audit" \
+  jq -e '.job_id == "job-42" and .release_outcome == "released"' "$STEP_DIR_G/compute-1/state.json"
+
+jq '.phase = "execute" | .release_outcome = null' "$STEP_DIR_G/compute-1/state.json" \
+  > "$STEP_DIR_G/compute-1/state.json.tmp"
+mv "$STEP_DIR_G/compute-1/state.json.tmp" "$STEP_DIR_G/compute-1/state.json"
+rm "$STEP_DIR_G/compute.json"
+assert_fail "removing the manifest does not bypass recovery" \
+  run_recovery_task ignore
+assert_ok "local-only retry still receives the old compute job" \
+  grep -Fq '"job_id":"job-42"' "$STEP_DIR_G/prompt-4.md"
+assert_fail "preservation without a reason cannot complete recovery" \
+  run_recovery_task preserve-without-reason
+assert_ok "preservation with a reason completes recovery" \
+  run_recovery_task preserve
+assert_ok "successful recovery is reflected in metrics" \
+  jq -se 'last | .status == "SUCCESS" and .compute_recovery_pending == false and .compute_backend == null' \
+    "$TMP_TEST_DIR/task-recovery/metrics.jsonl"
+
+echo 'not json' > "$STEP_DIR_G/compute-1/state.json"
+assert_fail "unreadable prior state cannot be treated as recovered" \
+  run_recovery_task ignore
+assert_ok "unreadable state is explicitly surfaced in the retry prompt" \
+  grep -Fq 'State is unreadable; inspect and recover it explicitly.' "$STEP_DIR_G/prompt-7.md"
+
 echo "=========================================="
 echo "Tests passed: $PASSED, failed: $FAILED"
 echo "=========================================="
