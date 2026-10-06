@@ -376,6 +376,23 @@ EOF
 assert_fail "unbounded excessive max_attempts (>10) rejected" \
   "$VALIDATE_BIN" "$TMP_TEST_DIR/excessive-attempts.json"
 
+# Keep literal number spellings: jq versions can preserve decimals/exponents.
+for values in '0.0 2' '-1.0 2' '86401.0 2' '1e100 2' \
+  '600 0.0' '600 -1.0' '600 11.0' '600 1e100'; do
+  read -r timeout_value attempts_value <<< "$values"
+  printf '{"backend":"coder","target":"gpu-workspace","command":["true"],"timeout_seconds":%s,"max_attempts":%s}\n' \
+    "$timeout_value" "$attempts_value" > "$TMP_TEST_DIR/numeric-boundary.json"
+  assert_fail "out-of-range numeric literals $values rejected" \
+    "$VALIDATE_BIN" "$TMP_TEST_DIR/numeric-boundary.json"
+done
+for values in '1.0 1.0' '86400.0 10.0' '8.64e4 1e1'; do
+  read -r timeout_value attempts_value <<< "$values"
+  printf '{"backend":"coder","target":"gpu-workspace","command":["true"],"timeout_seconds":%s,"max_attempts":%s}\n' \
+    "$timeout_value" "$attempts_value" > "$TMP_TEST_DIR/numeric-boundary.json"
+  assert_ok "valid numeric boundaries $values accepted" \
+    "$VALIDATE_BIN" "$TMP_TEST_DIR/numeric-boundary.json"
+done
+
 # 9. Path boundary checks
 cat <<'EOF' > "$TMP_TEST_DIR/non-array-inputs.json"
 {

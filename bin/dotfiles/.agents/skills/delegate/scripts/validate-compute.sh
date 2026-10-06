@@ -134,11 +134,11 @@ if ! jq -e '(.timeout_seconds | floor) == .timeout_seconds' "$compute_file" >/de
   exit 2
 fi
 timeout_val="$(jq -r '.timeout_seconds' "$compute_file")"
-if [ "$timeout_val" -le 0 ]; then
+if ! jq -e '.timeout_seconds > 0' "$compute_file" >/dev/null 2>&1; then
   echo "validation error: non-positive timeout_seconds '$timeout_val' (must be a positive integer)" >&2
   exit 2
 fi
-if [ "$timeout_val" -gt 86400 ]; then
+if ! jq -e '.timeout_seconds <= 86400' "$compute_file" >/dev/null 2>&1; then
   echo "validation error: timeout_seconds '$timeout_val' exceeds maximum limit (86400s)" >&2
   exit 2
 fi
@@ -158,11 +158,11 @@ if ! jq -e '(.max_attempts | floor) == .max_attempts' "$compute_file" >/dev/null
   exit 2
 fi
 attempts_val="$(jq -r '.max_attempts' "$compute_file")"
-if [ "$attempts_val" -le 0 ]; then
+if ! jq -e '.max_attempts > 0' "$compute_file" >/dev/null 2>&1; then
   echo "validation error: non-positive max_attempts '$attempts_val' (must be a positive integer)" >&2
   exit 2
 fi
-if [ "$attempts_val" -gt 10 ]; then
+if ! jq -e '.max_attempts <= 10' "$compute_file" >/dev/null 2>&1; then
   echo "validation error: max_attempts '$attempts_val' exceeds maximum limit (10)" >&2
   exit 2
 fi
