@@ -24,6 +24,7 @@ Artifacts live outside any repository, so they survive worktree removal and neve
 $AGENT_HARNESS_DIR (default: ${XDG_STATE_HOME:-~/.local/state}/agent-harness)
   <repo>/<task>/
     design.md                  designer: goal, context, constraints, decisions, steps
+    context.md                 designer (+ implementer findings): shared exploration facts, boundaries, hypotheses
     steps/<NN>-<slug>/
       brief.md                 designer → implementer: one step
       compute.json             designer → runner: optional remote GPU compute manifest
@@ -54,10 +55,13 @@ If the settings are missing, runs still work, but every command is denied. The r
 
 1. **Confirm the design is final.** If it hasn't been agreed with the operator in this conversation, produce it first. Immediately before delegating, restate a short summary (approach, files, risks) and get an explicit go-ahead — an earlier open-ended discussion is not that confirmation. If a previous delegation on this branch is being substantially reworked, treat it as a sign the design wasn't final and re-confirm.
 
-2. **Write `design.md`** from `templates/design.md` in the task directory. Record the reason behind each non-obvious decision and the alternatives rejected: the implementer gets no chat history, and the reasons are what let it handle cases the design didn't foresee. Fill in the steps table:
-   - One committable behavior change per step, ordered by dependency, each leaving the tree working.
-   - Size each step to one `agy` run — about one concern and a handful of files.
-   - Don't invent artificial splits; a genuinely atomic change is one step.
+2. **Write `design.md` and seed `context.md`** in the task directory:
+   - Write `design.md` from `templates/design.md`. Record the reason behind each non-obvious decision and the alternatives rejected: the implementer gets no chat history, and the reasons are what let it handle cases the design didn't foresee. Fill in the steps table:
+     - One committable behavior change per step, ordered by dependency, each leaving the tree working.
+     - Size each step to one `agy` run — about one concern and a handful of files.
+     - Don't invent artificial splits; a genuinely atomic change is one step.
+   - Seed `context.md` from `templates/context.md` with exploration knowledge: compact navigation (key files, entry points), established facts with paths/symbols and reasons, rejected paths, verification constraints, and uncertainties (clearly distinguishing hypotheses from verified facts). Set freshness (base commit SHA and initial checkpoint). Keep secrets, raw credentials, and verbose log dumps out.
+   - Legacy tasks lacking `context.md` are supported: the runner preserves legacy runs with a visible notice, but the designer should seed `context.md` whenever exploration context exists.
 
    Show the operator the step list and get a go-ahead on the decomposition itself before the first run.
 
@@ -71,7 +75,7 @@ If the settings are missing, runs still work, but every command is denied. The r
 
 Repeat for each step in order, one step per run. Never batch steps.
 
-4. **Write `steps/<NN>-<slug>/brief.md`** from `templates/brief.md`. Carry the part of the design this step depends on and what earlier steps already changed, including whether they are committed or held as checkpoints — each run is a fresh Antigravity session. State the scope boundary explicitly, and list in "Verification" the commands that must pass. They run sandboxed, so leave out anything that needs the network. The run rules (no confirmation stops, verify your own work, no commits) and the report format are appended by the runner from `templates/report.md`, so don't repeat them.
+4. **Write `steps/<NN>-<slug>/brief.md`** from `templates/brief.md`. Carry the part of the design this step depends on and what earlier steps already changed, including whether they are committed or held as checkpoints — each run is a fresh Antigravity session. Point to shared knowledge in `context.md` without copying it all; keep the specific scope boundary and acceptance criteria in `brief.md`. State the scope boundary explicitly, and list in "Verification" the commands that must pass. They run sandboxed, so leave out anything that needs the network. The run rules (no confirmation stops, verify your own work, no commits) and the report format are appended by the runner from `templates/report.md`, so don't repeat them.
 
    - **Remote GPU compute (optional):** If this step requires ephemeral GPU resources, place a validated `compute.json` in the step directory (see `templates/compute.json` and `templates/compute-colab.json`).
      - Backends: `coder` (file/tar staging, remote commands, logs) or `colab` (official Google `colab-mcp`, notebook cell injection, stable dataset URIs).
@@ -92,12 +96,21 @@ Repeat for each step in order, one step per run. Never batch steps.
    - It blocks until Antigravity finishes (default limit 30m, `AGY_TIMEOUT`). Use a generous timeout or run it in the background.
    - A non-zero exit means the run did not end with `SUCCESS`, or that it ended without a report. Read `stderr-<n>.log` and the tail of `run-<n>.jsonl`. Report a permission or authentication failure to the operator as a blocked step instead of retrying around it.
    - The runner prints how many tool calls were denied and records the count in the metrics. Denied calls are commands that couldn't run sandboxed. If there are any, the report's verification may be incomplete.
+   - The runner embeds the literal content of `context.md` into `prompt-<n>.md` with a clear heading, source path, and instructions to treat it as reviewed evidence rather than scope authorization (the brief defines this step and source code wins when facts are stale). File contents are never executed or expanded. Missing context preserves legacy runs with a visible notice; an existing unreadable context halts execution before `agy` runs. Previous prompt snapshots remain unchanged.
 
 6. **Check against the diff, not the report.** Run `git -C <impl-worktree> status` / `diff`. If earlier steps are committed, the working-tree diff is exactly this step. If commits are deferred, compare the current tree against the preceding accepted checkpoint; the cumulative diff from HEAD is not this step's diff. Then re-run the brief's verification commands yourself and compare the results with the report's "Verification" section. Antigravity running them first saves rework rounds, but its report is a claim, not proof. Checks the report lists as blocked or not verified (anything needing the network, for example) are yours to run. Changes outside the step's scope are dropped or preserved for a separate focused commit; say which.
 
-7. **Review and write `review-<n>.md`** from `templates/review.md`. Correctness first, then reuse and simplification. Compare the report with the diff and note anything changed but unreported or reported but not done. When compute was used, complete the "Compute audit" section: confirm remote resources were released cleanly (or preserved with reason), verify that no remote edits bypassed the local diff review, confirm neither state.json nor events.jsonl contains credentials, tokens, dataset contents, or other secrets, verify that collected artifacts are in the attempt-specific harness directory (confirming truthful Colab artifact handling with no base64 inlining), and check that job ID, input/data hashes, runtime facts, and collected artifacts match expectations. Fill in "Harness notes": what in the brief, templates, or instructions caused a problem or helped.
+7. **Review and write `review-<n>.md`** from `templates/review.md`. Correctness first, then reuse and simplification. Compare the report with the diff and note anything changed but unreported or reported but not done. Check the report's "Context discoveries / corrections" against diff evidence and record in the review what was promoted to `context.md` or rejected (with reasons). When compute was used, complete the "Compute audit" section: confirm remote resources were released cleanly (or preserved with reason), verify that no remote edits bypassed the local diff review, confirm neither state.json nor events.jsonl contains credentials, tokens, dataset contents, or other secrets, verify that collected artifacts are in the attempt-specific harness directory (confirming truthful Colab artifact handling with no base64 inlining), and check that job ID, input/data hashes, runtime facts, and collected artifacts match expectations. Fill in "Harness notes": what in the brief, templates, or instructions caused a problem or helped.
 
-8. **Rework if needed.** Polish trivial issues yourself and list them in the review. For anything substantive, write a rework brief in the step directory describing the defect and pointing at the uncommitted attempt in the tree, and run the runner again with it as the third argument; the attempt counter keeps the earlier record. Bound this at two rework rounds, then bring it to the operator. If the review shows the step's premise was wrong, stop (step 10).
+   Before the next handoff, update `context.md`:
+   - Merge verified implementer findings (paths/symbols, reasons).
+   - Include useful findings and rejected paths from failed attempts or rework rounds so future runs do not re-explore them.
+   - Remove or correct obsolete entries as the codebase evolves.
+   - Clearly distinguish active hypotheses from verified facts.
+   - Update freshness (base commit SHA and latest reviewed step/checkpoint).
+   - Keep secrets, tokens, and verbose log dumps out.
+
+8. **Rework if needed.** Polish trivial issues yourself and list them in the review. For anything substantive, write a rework brief in the step directory describing the defect and pointing at the uncommitted attempt in the tree, update `context.md` if the previous attempt revealed new constraints or rejected paths, and run the runner again with it as the third argument; the attempt counter keeps the earlier record. Bound this at two rework rounds, then bring it to the operator. If the review shows the step's premise was wrong, stop (step 10).
 
 9. **Preserve this reviewed step.** If commit permission is absent, save the accepted checkpoint and record its base, predecessor, verification results, and deferred commit status in the review before proceeding. If permission is present, commit in the implementation worktree, covering only this step, with a Conventional Commits message whose body draws on the design's reasoning, and both trailers:
    ```
