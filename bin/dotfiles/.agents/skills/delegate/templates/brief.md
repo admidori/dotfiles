@@ -9,7 +9,9 @@
 <The part of the design this step depends on, including the reasons behind
 the relevant decisions. You start with no memory of earlier steps, so say
 what earlier steps changed and why, and whether they are committed or
-preserved as reviewed checkpoints.>
+preserved as reviewed checkpoints. Point to shared knowledge in context.md
+without copying it all into this brief; keep the specific scope boundary
+and acceptance criteria focused here.>
 
 ## Scope
 

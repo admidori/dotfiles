@@ -13,6 +13,8 @@
   read-only, and `git commit` is denied. Don't try to work around a blocked
   command. Record it under "Verification" as blocked and carry on.
 - Don't commit, stage, or branch. The designer reviews and commits.
+- Report discoveries and corrections below; do not edit the shared context.md.
+  The designer verifies and merges findings before the next handoff.
 
 ## Your final response is the implementation report
 
@@ -38,6 +40,9 @@ the diff. Write it as plain Markdown, not wrapped in a code block.
 
 ## Assumptions
 - <Facts you relied on but could not confirm, or "None".>
+
+## Context discoveries / corrections
+- <New codebase facts, corrections to shared context, or investigated paths with evidence (paths/symbols, command output), or "None".>
 
 ## Not done / open questions
 - <Anything left incomplete or needing the designer's judgment, or "None".>

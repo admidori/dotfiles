@@ -36,6 +36,11 @@ report, and anything the report lists as blocked or not verified.>
 <Does the report match the diff? Note anything changed but unreported, or
 reported but not actually done.>
 
+## Shared context updates
+
+- **Promoted:** <facts, rejected paths, or constraints promoted from report to context.md, or "None">
+- **Rejected:** <implementer claims rejected or not merged into context.md, with reason, or "None">
+
 ## Compute audit (when compute.json was used)
 
 - <Verify remote resources were cleanly released, or preserved with valid reason.>

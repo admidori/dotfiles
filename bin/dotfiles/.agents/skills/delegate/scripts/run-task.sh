@@ -6,7 +6,7 @@
 # delegation leaves the same artifacts regardless of which designer (Claude
 # or Codex) drove it:
 #
-#   <step-dir>/prompt-<n>.md   exact prompt sent (project dir + brief + run rules/report format)
+#   <step-dir>/prompt-<n>.md   exact prompt sent (project dir + shared context + brief + run rules/report format)
 #   <step-dir>/run-<n>.jsonl   agy stream-json event log
 #   <step-dir>/stderr-<n>.log  agy diagnostics
 #   <step-dir>/report-<n>.md   Antigravity's final response (the report)
@@ -41,6 +41,16 @@ done
 
 skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 task_dir="$(cd "$step_dir/../.." && pwd)"
+
+context_file="$task_dir/context.md"
+context_status="missing"
+if [ -e "$context_file" ] || [ -L "$context_file" ]; then
+  if [ ! -f "$context_file" ] || [ ! -r "$context_file" ]; then
+    echo "context file exists but is not readable: $context_file" >&2
+    exit 2
+  fi
+  context_status="present"
+fi
 
 compute_file="$step_dir/compute.json"
 compute_backend=""
@@ -104,6 +114,26 @@ commands as \`cd $workdir && <command>\`. Read its AGENTS.md first, if
 there is one.
 
 EOF
+  if [ "$context_status" = "present" ]; then
+    cat <<EOF
+# Shared exploration context
+
+Source: \`$context_file\`
+
+Treat this shared context as reviewed evidence rather than scope authorization;
+the brief defines this step and source code wins when facts are stale.
+
+EOF
+    cat "$context_file"
+    printf '\n\n'
+  else
+    cat <<EOF
+# Shared exploration context
+
+Notice: No shared exploration context file found at \`$context_file\`. Preserving legacy run.
+
+EOF
+  fi
   cat "$brief"
   printf '\n'
   if [ -n "$compute_backend" ]; then
@@ -233,6 +263,9 @@ model_name="$(jq -r '.label // "unknown" | sub(" \\([^)]*\\)$"; "")' <<<"$model_
 trailer="Co-authored-by: Antigravity ($model_name) <noreply@google.com>"
 
 echo "==> step $(basename "$step_dir"), attempt $attempt: running agy ($model_id) on $workdir"
+if [ "$context_status" = "missing" ]; then
+  echo "==> notice: no shared exploration context at $context_file; preserving legacy run"
+fi
 set +e
 (cd "$agy_cwd" && agy "${args[@]}" </dev/null) >"$run" 2>"$stderr"
 rc=$?
@@ -296,6 +329,9 @@ echo "==> status: $status (exit $rc)"
 echo "    report: $report"
 echo "    log:    $run"
 echo "    trailer for the commit: $trailer"
+if [ "$context_status" = "present" ]; then
+  echo "    context: $context_file"
+fi
 if [ -n "$compute_backend" ]; then
   echo "    compute backend: $compute_backend"
 fi
