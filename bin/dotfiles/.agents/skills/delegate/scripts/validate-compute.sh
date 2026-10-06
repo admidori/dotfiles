@@ -187,6 +187,11 @@ validate_path_array() {
     exit 2
   fi
 
+  if ! jq -e --arg f "$field" 'all(.[$f][]; test("^\\s*$") | not)' "$compute_file" >/dev/null 2>&1; then
+    echo "validation error: empty path entry in '$field'" >&2
+    exit 2
+  fi
+
   local entries
   entries="$(jq -r --arg f "$field" '.[$f][]' "$compute_file")"
   if [ -n "$entries" ]; then

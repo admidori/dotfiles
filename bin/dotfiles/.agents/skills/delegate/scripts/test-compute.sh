@@ -498,6 +498,19 @@ EOF
 assert_fail "colab directory artifacts collection rejected" \
   "$VALIDATE_BIN" "$TMP_TEST_DIR/colab-dir-artifacts.json"
 
+for field in inputs scripts artifacts; do
+  for paths in '[""]' '["train.py", ""]' '["", "train.py"]' '["train.py", " "]'; do
+    jq --arg field "$field" --argjson paths "$paths" '.[$field] = $paths' \
+      "$SKILL_DIR/templates/compute.json" > "$TMP_TEST_DIR/empty-path.json"
+    assert_fail "$field rejects empty path in $paths" \
+      "$VALIDATE_BIN" "$TMP_TEST_DIR/empty-path.json"
+  done
+  jq --arg field "$field" '.[$field] = []' \
+    "$SKILL_DIR/templates/compute.json" > "$TMP_TEST_DIR/empty-path.json"
+  assert_ok "$field accepts an empty optional array" \
+    "$VALIDATE_BIN" "$TMP_TEST_DIR/empty-path.json"
+done
+
 # 10. Datasets checks
 cat <<'EOF' > "$TMP_TEST_DIR/non-array-datasets.json"
 {
