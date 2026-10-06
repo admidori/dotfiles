@@ -105,11 +105,12 @@ result="$(jq -c -R 'fromjson? | select(.event == "result") | .result' "$run" | t
 [ -n "$result" ] || result='{}'
 jq -r '.response // empty' <<<"$result" >"$report"
 
-# Tool calls refused by a permission rule, or auto-denied because a headless
-# run can't prompt. They show up only as ERROR steps in the event log, and a
-# denied run can end with an empty response, so count them explicitly.
+# Tool calls explicitly denied by a permission rule or headless approval.
+# Other ERROR steps can mention "permissions" while reporting a different
+# failure, so match denial language rather than that word alone.
 denied="$(jq -R 'fromjson? | select(.event == "step_update") | .step_update
-  | select(.state == "ERROR" and ((.tool_info.error.message // "") | test("[Pp]ermission")))' \
+  | select(.state == "ERROR" and ((.tool_info.error.message // "")
+    | test("denied|not permitted|requires approval|approval required"; "i")))' \
   "$run" | jq -s 'length')"
 report_empty=false
 [ -s "$report" ] || report_empty=true
