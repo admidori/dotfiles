@@ -10,6 +10,8 @@ commit: <sha or deferred>
 ## Step boundary and commit status
 
 - **Commit authorization:** <current permission and scope>
+- **Mode:** <fresh | resume (source attempt <n>)>
+- **Conversation ID:** <conversation ID from metrics>
 - **Reviewed against:** <preceding commit SHA or accepted checkpoint>
 - **Accepted checkpoint (if deferred):** <path, base/predecessor, content manifest>
 - **Planned commit scope:** <this step's behavior; separately recorded corrections>

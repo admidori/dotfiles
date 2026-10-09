@@ -7,8 +7,9 @@
 ## Context
 
 <The part of the design this step depends on, including the reasons behind
-the relevant decisions. You start with no memory of earlier steps, so say
-what earlier steps changed and why, and whether they are committed or
+the relevant decisions. Each new step starts a fresh Antigravity session
+(while rework within the same step may explicitly resume via --resume-attempt),
+so say what earlier steps changed and why, and whether they are committed or
 preserved as reviewed checkpoints. Point to shared knowledge in context.md
 without copying it all into this brief; keep the specific scope boundary
 and acceptance criteria focused here.>
