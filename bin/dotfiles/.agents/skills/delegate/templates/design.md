@@ -48,10 +48,9 @@ leaves the tree working.>
 
 ## Commit plan
 
-- **Authorization:** <authorized or deferred; operator instruction and scope>
+- **Authorization:** <standing local authorization after review/fixes/reverification (default), or explicit exception/deferral reason and scope>
 - **Boundaries:** <one focused commit per step; any explicitly approved grouping>
 - **Base:** <exact starting commit SHA>
-- **If deferred:** <checkpoint/delta locations, content manifest, and how each
-  reviewed step will be reconstructed as a separate commit when authorized>
+- **If deferred:** <recorded exception reason, checkpoint/delta locations, content manifest, and how each reviewed step will be reconstructed as a separate commit when deferral ends>
 - **Later corrections:** <how corrections to earlier steps will be recorded
   and kept separate when independent>

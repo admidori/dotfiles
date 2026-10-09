@@ -1,7 +1,10 @@
 # Deferred commits
 
-Use this workflow when implementation is authorized but commits are not.
-Keep checkpoints outside the project repository, alongside the harness.
+Use this workflow as an exception when commits are deferred—such as when the
+operator explicitly requests deferral or stricter repository constraints
+temporarily block local commits. (By default, the designer commits accepted
+steps under standing authorization.) Keep checkpoints outside the project
+repository, alongside the harness.
 
 ## Preserve each step
 
@@ -24,7 +27,11 @@ correction checkpoint when it is independent of the current step. Do not
 hide it by changing an earlier checkpoint or replacing all checkpoints
 with the final tree.
 
-## When commit permission arrives
+## When deferral ends: committing deferred steps
+
+Resume committing under applicable standing authorization once blocking
+constraints are resolved, or once explicit operator permission is received if
+the operator had specifically withheld commit authority.
 
 1. Confirm the authorization scope and record a mapping from accepted
    steps and corrections to planned commits. A request to commit all work
@@ -32,14 +39,17 @@ with the final tree.
 2. Reconstruct the checkpoints in dependency order from the recorded base
    in a dedicated worktree. Use a fresh publication worktree if it is
    needed to preserve the final implementation tree during reconstruction.
-3. Inspect and verify each resulting diff, then commit just that step with
-   its reasoning and the required designer/implementer trailers. Record
-   each SHA in the corresponding review. Keep unavailable checks explicit.
+3. Apply the same review, fix, and verification gate as live steps: inspect
+   and re-verify each resulting diff, ensuring review is complete, required
+   fixes are done, and relevant checks pass. Then commit just that step with
+   its reasoning and the required designer/implementer trailers. Record each
+   SHA in the corresponding review. Keep unavailable checks explicit.
 4. Compare the reconstructed final tree with the accepted final checkpoint,
    including added/deleted files and modes; confirm no intended changes
    were lost or added. Confirm the publication worktree is clean.
-5. Publish only with the required push/PR authorization. Follow the skill's
-   worktree close-out procedure and report any worktree retained.
+5. Publish only with explicit push/PR authorization (standing local commit
+   authority never permits push or PR actions). Follow the skill's worktree
+   close-out procedure and report any worktree retained.
 
 If checkpoint reconstruction fails or the planned grouping must change,
 show the affected steps, concrete diff, and proposed grouping to the

@@ -9,15 +9,16 @@ commit: <sha or deferred>
 
 ## Step boundary and commit status
 
-- **Commit authorization:** <current permission and scope>
+- **Commit authorization:** <standing local authorization after review/fixes/reverification (default), or explicit exception/deferral reason>
+- **Commit readiness / blocking checks:** <readiness evidence (review complete, fixes done, reverification passed) or blocking checks/findings>
 - **Mode:** <fresh | resume (source attempt <n>)>
 - **Conversation ID:** <conversation ID from metrics>
-- **Status:** <execution finished | verified | accepted | awaiting commit>
+- **Status:** <execution finished | verified | accepted | awaiting commit | committed | deferred>
 - **Reviewed against:** <preceding commit SHA or accepted checkpoint>
-- **Accepted checkpoint (if deferred):** <path, base/predecessor, content manifest>
+- **Accepted checkpoint (if deferred):** <path, base/predecessor, content manifest, recorded deferral reason>
 - **Planned commit scope:** <this step's behavior; separately recorded corrections>
 - **Implementer attribution:** <actual trailer from this step's metrics>
-- **Commit (when authorized):** <SHA corresponding to this step>
+- **Commit:** <SHA corresponding to this step, or deferred>
 
 ## Acceptance criteria review
 
