@@ -18,7 +18,8 @@
 # <step-dir>/brief.md; pass a rework brief for later attempts.
 #
 # Env: HARNESS_VARIANT (label for comparing harness changes, default
-# "baseline"), HARNESS_DESIGNER (e.g. "Claude (Opus 5.5)"), AGY_MODEL,
+# "baseline"), HARNESS_DESIGNER (e.g. "Claude (Opus 5.5)"),
+# AGY_MODEL (default gemini-3.1-pro-high),
 # AGY_EFFORT, AGY_TIMEOUT (default 30m).
 #
 set -euo pipefail
@@ -506,8 +507,7 @@ agy_cwd="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
 trap 'rmdir "$agy_cwd" 2>/dev/null || true' EXIT
 args=(-p "$(cat "$prompt")" --output-format stream-json --mode accept-edits
   --disable-slash-commands --print-timeout "${AGY_TIMEOUT:-30m}")
-model_args=()
-[ -n "${AGY_MODEL:-}" ] && model_args+=(--model "$AGY_MODEL")
+model_args=(--model "${AGY_MODEL:-gemini-3.1-pro-high}")
 [ -n "${AGY_EFFORT:-}" ] && model_args+=(--effort "$AGY_EFFORT")
 args+=("${model_args[@]}")
 if [ -n "$resume_attempt" ]; then
@@ -515,9 +515,9 @@ if [ -n "$resume_attempt" ]; then
 fi
 
 # Ask agy which model this run will use rather than trusting AGY_MODEL or
-# guessing: the commit's co-author trailer must name the actual model, and
-# an unset AGY_MODEL means whatever settings.json selects. Print-mode
-# /model answers without a turn or quota.
+# guessing: the commit's co-author trailer must name the resolved model.
+# Probe with the same model/effort arguments used for implementation.
+# Print-mode /model answers without a turn or quota.
 model_json="$( (cd "$agy_cwd" && timeout 60 agy -p "/model" --output-format json \
   "${model_args[@]}" </dev/null 2>/dev/null) | jq -c '.command.data // empty' 2>/dev/null || true)"
 [ -n "$model_json" ] || model_json='{}'

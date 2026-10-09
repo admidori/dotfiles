@@ -95,6 +95,7 @@ Repeat for each step in order, one step per run. Never batch steps.
    HARNESS_DESIGNER="<you> (<model>)" <skill-dir>/scripts/run-task.sh <step-dir> <impl-worktree> [brief] [--resume-attempt <N>]
    ```
    - The runner uses `--mode accept-edits`, so Antigravity edits files without a prompt, and the sandbox settings above let it run commands. Never add `--dangerously-skip-permissions`: the sandbox is the boundary.
+   - The runner defaults to `gemini-3.1-pro-high` (Gemini 3.1 Pro, High) when `AGY_MODEL` is unset or empty. Set `AGY_MODEL` to override the model and `AGY_EFFORT` to override reasoning effort. The model probe and implementation receive the same arguments. This selects the model for harness runs; it does not change the standalone agy preference.
    - Under Codex, `agy` needs network access and writes outside the workspace, so request sandbox escalation for this command rather than widening the sandbox.
    - It blocks until Antigravity finishes (default limit 30m, `AGY_TIMEOUT`). Use a generous timeout or run it in the background.
    - A non-zero exit means the run did not end with `SUCCESS`, or that it ended without a report. Read `stderr-<n>.log` and the tail of `run-<n>.jsonl`. Report a permission or authentication failure to the operator as a blocked step instead of retrying around it.
