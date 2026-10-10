@@ -100,8 +100,12 @@ implementation.
 
 - Never run destructive git commands (`git reset --hard`, `git clean -fd`, force pushes,
   history rewrites) unless explicitly asked.
-- Don't commit unless asked, and never push without approval (see "Outward-facing and
-  irreversible actions"). If on the default branch, create a branch first.
+- AI may decide to make focused local commits without asking, ONLY when that
+  step's review is complete, required fixes are done, and relevant
+  re-verification passes. Never make WIP or pre-review commits, or commit with
+  unresolved blocking findings or required checks. Never push without approval
+  (see "Outward-facing and irreversible actions"). If on the default branch,
+  create a branch first.
 - Before deleting a branch, confirm its work is merged or intentionally preserved.
 - Before implementing anything, check `git rev-parse --abbrev-ref HEAD` and confirm it is
   not the main/default branch (`main`/`master`). If it is, create and switch to a feature

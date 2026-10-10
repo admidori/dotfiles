@@ -1,15 +1,17 @@
 ---
 name: delegate
-description: Use when a design has been agreed with the operator and its implementation should be delegated to Antigravity — the designer (Claude or Codex) writes the design and one brief per step, Antigravity implements each step headlessly via `agy -p` and reports what it did, and the designer reviews, polishes, and preserves each step for a separate authorized commit. Every hand-off is a file, so the harness can be inspected and improved. Triggers on "/delegate", "これで実装して", "Antigravityに実装させて", "実装を委譲して", "delegate this to antigravity". Not for changes the operator wants the designer to make directly.
+description: Use when a design has been agreed with the operator and its implementation should be delegated to Antigravity — the designer (Claude or Codex) writes the design and one brief per step, Antigravity implements each step headlessly via `agy -p` and reports what it did, and the designer reviews, polishes, and commits each accepted step under standing authorization (or preserves checkpoints when deferred). Every hand-off is a file, so the harness can be inspected and improved. Triggers on "/delegate", "これで実装して", "Antigravityに実装させて", "実装を委譲して", "delegate this to antigravity". Not for changes the operator wants the designer to make directly.
 ---
 
-Runs the delegation loop: agreed design → `design.md` → per step, `brief.md` → Antigravity implements, runs the verification itself, and returns a report → the designer re-checks, reviews, polishes, and records an authorized commit or a reproducible checkpoint → next step.
+Runs the delegation loop: agreed design → `design.md` → per step, `brief.md` → Antigravity implements, runs the verification itself, and returns a report → the designer re-checks, reviews, polishes, and commits under standing authorization (or records a reproducible checkpoint if deferred) → next step.
 
 ## Commit authorization and boundaries
 
-Implementation approval does not grant commit permission when the operator's rules require a separate request. Record the current commit authorization and its scope in `design.md`. With permission, commit each reviewed step before starting the next. Without permission, follow [Deferred commits](references/deferred-commits.md) to preserve each step without creating commits.
+The designer operates under standing authorization to make focused local commits for each accepted step. Once a step's review is complete, required fixes are done, and relevant re-verification passes, the designer commits that step before starting the next, without repeated requests for commit approval. Antigravity must never stage or commit; the existing sandbox restrictions and commit deny rule remain unchanged. Standing local commit authority never permits pushing or creating a PR; outward-facing actions always require explicit operator approval.
 
-Deferring commits changes their timing; it does not combine the agreed steps. A later request to commit, push, or create a PR preserves the step boundaries unless the operator explicitly approves a different grouping. Before publishing, map each accepted step to its own focused commit and account for corrections separately. If that mapping cannot be reproduced safely, present the concrete problem and proposed grouping for approval before committing.
+If the operator explicitly requests commit deferral or stricter applicable constraints apply, record that exception in `design.md` and follow [Deferred commits](references/deferred-commits.md) to preserve each step without creating commits.
+
+Deferring commits changes their timing; it does not combine the agreed steps. A later request to commit, push, or create a PR preserves the step boundaries unless the operator explicitly approves a different grouping. Before publishing, map each accepted step to its own focused commit and account for corrections separately, retaining full designer and implementer attribution. If that mapping cannot be reproduced safely, present the concrete problem and proposed grouping for approval before committing.
 
 This skill is built around:
 
@@ -93,6 +95,7 @@ Repeat for each step in order, one step per run. Never batch steps.
    HARNESS_DESIGNER="<you> (<model>)" <skill-dir>/scripts/run-task.sh <step-dir> <impl-worktree> [brief] [--resume-attempt <N>]
    ```
    - The runner uses `--mode accept-edits`, so Antigravity edits files without a prompt, and the sandbox settings above let it run commands. Never add `--dangerously-skip-permissions`: the sandbox is the boundary.
+   - The runner defaults to `gemini-3.1-pro-high` (Gemini 3.1 Pro, High) when `AGY_MODEL` is unset or empty. Set `AGY_MODEL` to override the model and `AGY_EFFORT` to override reasoning effort. The model probe and implementation receive the same arguments. This selects the model for harness runs; it does not change the standalone agy preference.
    - Under Codex, `agy` needs network access and writes outside the workspace, so request sandbox escalation for this command rather than widening the sandbox.
    - It blocks until Antigravity finishes (default limit 30m, `AGY_TIMEOUT`). Use a generous timeout or run it in the background.
    - A non-zero exit means the run did not end with `SUCCESS`, or that it ended without a report. Read `stderr-<n>.log` and the tail of `run-<n>.jsonl`. Report a permission or authentication failure to the operator as a blocked step instead of retrying around it.
@@ -128,12 +131,14 @@ Repeat for each step in order, one step per run. Never batch steps.
      ```
    - The attempt counter advances, keeping earlier artifacts intact. Bound rework at two rounds, then bring it to the operator. If the review shows the step's premise was wrong, stop (step 10).
 
-9. **Preserve this reviewed step.** If commit permission is absent, save the accepted checkpoint and record its base, predecessor, verification results, and deferred commit status in the review before proceeding. If permission is present, commit in the implementation worktree, covering only this step, with a Conventional Commits message whose body draws on the design's reasoning, and both trailers:
+9. **Commit or checkpoint this reviewed step.** Under standing authorization, once this step's review is complete, required fixes are done, and relevant re-verification passes, commit in the implementation worktree before proceeding, without asking for commit approval. The commit covers only this step, with a Conventional Commits message whose body draws on the design's reasoning, and both trailers:
    ```
    Co-authored-by: <you> (<model>) <noreply@...>
    Co-authored-by: Antigravity (<model>) <noreply@google.com>
    ```
-   Both trailers are mandatory on every delegated step, including a step you only reviewed or polished. Take Antigravity's trailer verbatim from the runner's `trailer for the commit:` line, or from the run's `trailer` field in `metrics.jsonl`. Take your own model from your actual configuration, never from memory; for Codex that is the `model` key in `~/.codex/config.toml`. If your harness already appends your own trailer, don't duplicate it — check `git log -1`. Record the commit SHA in the review, confirm `git status` is clean, report the commit to the operator in a line or two, and continue. Don't push or merge mid-loop.
+   Both trailers are mandatory on every delegated step, including a step you only reviewed or polished. Take Antigravity's trailer verbatim from the runner's `trailer for the commit:` line, or from the run's `trailer` field in `metrics.jsonl`. Take your own model from your actual configuration, never from memory; for Codex that is the `model` key in `~/.codex/config.toml`. If your harness already appends your own trailer, don't duplicate it — check `git log -1`. Record the commit SHA in the review, confirm `git status` is clean, report the commit to the operator in a line or two, and continue. Don't push or merge mid-loop; standing local commit authority never authorizes pushing or creating a PR.
+
+   If commits are explicitly deferred by the operator or blocked by stricter constraints, save the accepted checkpoint and record its base, predecessor, verification results, and deferred commit status in the review before proceeding.
 
 ## Stopping and closing out
 
@@ -147,6 +152,6 @@ Repeat for each step in order, one step per run. Never batch steps.
     ```
     Always `--ff-only`; if it refuses, something moved the task branch — stop and report. Remove only a clean worktree, never with `--force`. Delete the branch after the removal, with `-d`.
 
-   If commits remain deferred, retain the implementation worktree and checkpoints, and report why they remain open. Once commit permission arrives, materialize and verify the separate commits using the deferred workflow before closing out.
+   If commits remain deferred, retain the implementation worktree and checkpoints, and report why they remain open. Once constraints are resolved or explicit commit permission arrives, materialize and verify the separate commits using the deferred workflow before closing out.
 
 12. **Close out.** Don't push or merge to the integration branch without the operator's explicit instruction. Tell the operator where the task's artifacts are, and summarize anything from the harness notes worth changing in the templates or instructions.

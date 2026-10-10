@@ -45,7 +45,7 @@ For each planned step, distinguish these milestones:
 | Successful run and report, no review for that attempt | Awaiting designer review |
 | Latest review says `rework` or `reject` | Rework requested or rejected |
 | Latest review says `accept`, no recorded commit | Accepted, awaiting commit |
-| Latest review says `accept`, commit deferred, saved checkpoint verified | Reviewed and checkpointed, awaiting commit authorization |
+| Latest review says `accept`, commit deferred, saved checkpoint verified | Reviewed and checkpointed, commit deferred (<recorded reason>) |
 | Latest review says `accept`, with a verifiable commit | Committed |
 
 Match reviews to their `attempt` frontmatter. An earlier acceptance does not
@@ -54,11 +54,18 @@ query when the repository is available; if it cannot be verified, report
 that uncertainty instead of calling the step committed. If the design and
 artifact directories disagree about the step list, report the discrepancy.
 
-When commits are deferred, inspect the review's accepted checkpoint, recorded
-base/predecessor, and content manifest. Confirm the saved checkpoint exists;
-missing or unverifiable evidence means checkpoint status is unknown. Report
-implementation/review progress separately from pending commit authorization;
-a saved checkpoint is not a commit.
+An accepted uncommitted state (`Accepted, awaiting commit`) indicates that the
+step is accepted but the local commit has not yet been finalized under standing
+authorization; do not imply missing human approval by default.
+
+When commits are deferred, inspect the review's recorded deferral reason,
+accepted checkpoint, recorded base/predecessor, and content manifest. Confirm
+the saved checkpoint exists; missing or unverifiable evidence means checkpoint
+status is unknown. Report implementation/review progress separately from
+deferred commit status; a saved checkpoint is not a commit. Report the recorded
+reason for deferral (such as an explicit operator instruction, an explicit
+authorization wait when requested, or a blocking constraint), rather than
+assuming missing human approval by default.
 
 Check `denied_tool_calls` against the corresponding `ERROR` events in the
 run log before describing a call as permission-denied: older runner versions
