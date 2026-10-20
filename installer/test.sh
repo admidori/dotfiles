@@ -77,10 +77,10 @@ check "mcp_config.json contains colab server declaration" \
 
 echo "==> Verifying merged skills dir (dotfiles + third-party content coexist)"
 check "~/.claude/skills is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/skills"
-check "~/.claude/skills/clean is a symlink" test -L "$HOME/.claude/skills/clean"
-check "~/.claude/skills/clean/SKILL.md resolves to a file" test -f "$HOME/.claude/skills/clean/SKILL.md"
-check "~/.agents/skills/clean is a symlink" test -L "$HOME/.agents/skills/clean"
-check "~/.agents/skills/clean/SKILL.md resolves to a file" test -f "$HOME/.agents/skills/clean/SKILL.md"
+check "~/.claude/skills/cleanup is a symlink" test -L "$HOME/.claude/skills/cleanup"
+check "~/.claude/skills/cleanup/SKILL.md resolves to a file" test -f "$HOME/.claude/skills/cleanup/SKILL.md"
+check "~/.agents/skills/cleanup is a symlink" test -L "$HOME/.agents/skills/cleanup"
+check "~/.agents/skills/cleanup/SKILL.md resolves to a file" test -f "$HOME/.agents/skills/cleanup/SKILL.md"
 check "pre-existing third-party skill survives untouched" test -f "$HOME/.claude/skills/third-party-skill/SKILL.md"
 
 echo "==> Verifying shared skills dir (one delegate skill for Claude and Codex)"
