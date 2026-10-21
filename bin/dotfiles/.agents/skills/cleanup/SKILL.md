@@ -1,6 +1,6 @@
 ---
-name: clean
-description: Use when local git branches and worktrees have piled up and the ones already merged into main/master should be cleaned out. Surveys every local branch and worktree, classifies each as safe to remove or must-keep with a reason, shows the operator the classification, and only deletes after an explicit go-ahead. Triggers on "/clean", "ブランチを掃除して", "worktreeを片付けて", "マージ済みのブランチを消して", "clean up merged branches and worktrees". Not for deleting remote branches or unmerged work.
+name: cleanup
+description: Use when local git branches and worktrees have piled up and the ones already merged into main/master should be cleaned out. Surveys every local branch and worktree, classifies each as safe to remove or must-keep with a reason, shows the operator the classification, and only deletes after an explicit go-ahead. Triggers on "/cleanup", "ブランチを掃除して", "worktreeを片付けて", "マージ済みのブランチを消して", "clean up merged branches and worktrees". Not for deleting remote branches or unmerged work.
 ---
 
 Cleans up local git branches and worktrees whose work has already landed on the integration branch. Survey first, classify everything with a reason, show the operator, and delete only after an explicit go-ahead — never as the first action.
