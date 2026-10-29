@@ -120,9 +120,15 @@ path=(
 	$path
 )
 
-# WSL: expose Windows OpenSSH (ssh.exe, ssh-agent.exe, ...). Appended so the
-# Linux ssh still wins; guarded because the mount exists only under WSL.
-[ -d /mnt/c/Windows/System32/OpenSSH ] && path+=(/mnt/c/Windows/System32/OpenSSH)
+# WSL: use Windows OpenSSH so ssh reaches keys held by the Windows
+# ssh-agent. Appended to PATH so other Linux tools keep their precedence,
+# while the aliases route interactive ssh/ssh-add to the .exe. Guarded
+# because the mount exists only under WSL.
+if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
+	path+=(/mnt/c/Windows/System32/OpenSSH)
+	alias ssh='ssh.exe'
+	alias ssh-add='ssh-add.exe'
+fi
 
 # User configuration
 
