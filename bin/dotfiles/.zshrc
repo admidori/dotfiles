@@ -148,6 +148,19 @@ if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
 	}
 fi
 
+# WSL: pdf <file.pdf...> opens files in the Windows SumatraPDF viewer.
+# Launched directly (no cmd.exe) and disowned so the shell is not held.
+if [ -x /mnt/c/Users/admidori/AppData/Local/SumatraPDF/SumatraPDF.exe ]; then
+	pdf() {
+		local p
+		local -a args
+		for p in "$@"; do
+			args+=("$(wslpath -w "$p")")
+		done
+		/mnt/c/Users/admidori/AppData/Local/SumatraPDF/SumatraPDF.exe "${args[@]}" >/dev/null 2>&1 &!
+	}
+fi
+
 # WSL: open existing files in the Windows sakura editor.
 function sakura() {
   sakura_arg=()
