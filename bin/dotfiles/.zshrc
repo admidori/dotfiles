@@ -135,6 +135,17 @@ if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
 	)
 	alias ssh='ssh.exe'
 	alias ssh-add='ssh-add.exe'
+
+	# exp [path...]: open each path (default .) in Windows Explorer.
+	# explorer.exe needs a Windows path for anything but ".", hence wslpath;
+	# it also exits 1 even on success, so the status is not propagated.
+	exp() {
+		local p
+		for p in "${@:-.}"; do
+			explorer.exe "$(wslpath -w "$p")"
+		done
+		return 0
+	}
 fi
 
 # WSL: open existing files in the Windows sakura editor.
