@@ -120,6 +120,10 @@ path=(
 	$path
 )
 
+# WSL: expose Windows OpenSSH (ssh.exe, ssh-agent.exe, ...). Appended so the
+# Linux ssh still wins; guarded because the mount exists only under WSL.
+[ -d /mnt/c/Windows/System32/OpenSSH ] && path+=(/mnt/c/Windows/System32/OpenSSH)
+
 # User configuration
 
 # export MANPATH="/usr/local/man:$MANPATH"
