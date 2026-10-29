@@ -120,12 +120,19 @@ path=(
 	$path
 )
 
-# WSL: use Windows OpenSSH so ssh reaches keys held by the Windows
-# ssh-agent. Appended to PATH so other Linux tools keep their precedence,
-# while the aliases route interactive ssh/ssh-add to the .exe. Guarded
-# because the mount exists only under WSL.
+# WSL: expose Windows binaries (explorer.exe, cmd.exe, clip.exe, ...) and use
+# Windows OpenSSH so ssh reaches keys held by the Windows ssh-agent. Added
+# explicitly because a tmux server started outside the WSL login environment
+# lacks the Windows PATH that WSL normally appends, and every pane inherits
+# that. Appended so Linux tools keep their precedence, while the aliases
+# route interactive ssh/ssh-add to the .exe. Guarded because the mount
+# exists only under WSL.
 if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
-	path+=(/mnt/c/Windows/System32/OpenSSH)
+	path+=(
+		/mnt/c/Windows
+		/mnt/c/Windows/System32
+		/mnt/c/Windows/System32/OpenSSH
+	)
 	alias ssh='ssh.exe'
 	alias ssh-add='ssh-add.exe'
 fi
