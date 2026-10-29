@@ -130,6 +130,20 @@ if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
 	alias ssh-add='ssh-add.exe'
 fi
 
+# WSL: open existing files in the Windows sakura editor.
+function sakura() {
+  sakura_arg=()
+  for p in $@; do
+      if [ -f "$p" ]; then sakura_arg+=("`wslpath -w $p`"); fi
+  done
+  (
+    /mnt/c/Windows/System32/cmd.exe /c 'C:\Program Files (x86)\sakura\sakura.exe' $sakura_arg[@] >/dev/null 2>&1 &
+    sleep 2
+    pid="$!"
+    if [ -x "/proc/$pid" ]; then kill $pid; fi
+  )
+}
+
 # User configuration
 
 # export MANPATH="/usr/local/man:$MANPATH"
