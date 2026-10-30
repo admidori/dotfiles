@@ -178,11 +178,29 @@ if [ -x /mnt/c/Users/admidori/AppData/Local/SumatraPDF/SumatraPDF.exe ]; then
 	}
 fi
 
-# WSL: open existing files in the Windows sakura editor.
+# WSL: sakura [-n] [file...] opens files in the Windows sakura editor.
+# Missing files are rejected before launch, like exp and pdf; with -n they
+# are created empty instead (their directory must exist). All arguments are
+# checked before anything is created, so an error never leaves stray files.
 function sakura() {
-  sakura_arg=()
-  for p in $@; do
-      if [ -f "$p" ]; then sakura_arg+=("`wslpath -w $p`"); fi
+  local p create=0
+  local -a sakura_arg
+  if [ "$1" = "-n" ]; then create=1; shift; fi
+  for p in "$@"; do
+      if [ -e "$p" ] && [ ! -f "$p" ]; then
+          printf 'sakura: not a regular file: %s\n' "$p" >&2
+          return 1
+      elif [ ! -e "$p" ] && [ $create -eq 0 ]; then
+          printf 'sakura: no such file: %s (use -n to create)\n' "$p" >&2
+          return 1
+      elif [ ! -e "$p" ] && [ ! -d "${p:h}" ]; then
+          printf 'sakura: no such directory: %s\n' "${p:h}" >&2
+          return 1
+      fi
+  done
+  for p in "$@"; do
+      if [ ! -e "$p" ]; then : > "$p" || return 1; fi
+      sakura_arg+=("`wslpath -w $p`")
   done
   (
     /mnt/c/Windows/System32/cmd.exe /c 'C:\Program Files (x86)\sakura\sakura.exe' $sakura_arg[@] >/dev/null 2>&1 &
