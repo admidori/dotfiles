@@ -120,6 +120,96 @@ path=(
 	$path
 )
 
+# WSL: expose Windows binaries (explorer.exe, cmd.exe, clip.exe, ...) and use
+# Windows OpenSSH so ssh reaches keys held by the Windows ssh-agent. Added
+# explicitly because a tmux server started outside the WSL login environment
+# lacks the Windows PATH that WSL normally appends, and every pane inherits
+# that. Appended so Linux tools keep their precedence, while the aliases
+# route interactive ssh/ssh-add to the .exe. Guarded because the mount
+# exists only under WSL.
+if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
+	path+=(
+		/mnt/c/Windows
+		/mnt/c/Windows/System32
+		/mnt/c/Windows/System32/OpenSSH
+	)
+	alias ssh='ssh.exe'
+	alias ssh-add='ssh-add.exe'
+
+	# exp [path...]: open each path (default .) in Windows Explorer.
+	# explorer.exe needs a Windows path for anything but ".", hence wslpath;
+	# it also exits 1 even on success, so the status is not propagated.
+	# Paths are checked up front: wslpath converts a missing path without
+	# complaint and Explorer then silently opens Documents instead.
+	exp() {
+		local p
+		for p in "${@:-.}"; do
+			if [ ! -e "$p" ]; then
+				printf 'exp: no such file or directory: %s\n' "$p" >&2
+				return 1
+			fi
+		done
+		for p in "${@:-.}"; do
+			explorer.exe "$(wslpath -w "$p")"
+		done
+		return 0
+	}
+fi
+
+# WSL: pdf <file.pdf...> opens files in the Windows SumatraPDF viewer.
+# Launched directly (no cmd.exe) and disowned so the shell is not held.
+# Missing files are rejected before launch so no empty viewer window opens.
+if [ -x /mnt/c/Users/admidori/AppData/Local/SumatraPDF/SumatraPDF.exe ]; then
+	pdf() {
+		local p
+		local -a args
+		if [ $# -eq 0 ]; then
+			printf 'usage: pdf <file.pdf>...\n' >&2
+			return 1
+		fi
+		for p in "$@"; do
+			if [ ! -f "$p" ]; then
+				printf 'pdf: no such file: %s\n' "$p" >&2
+				return 1
+			fi
+			args+=("$(wslpath -w "$p")")
+		done
+		/mnt/c/Users/admidori/AppData/Local/SumatraPDF/SumatraPDF.exe "${args[@]}" >/dev/null 2>&1 &!
+	}
+fi
+
+# WSL: sakura [-n] [file...] opens files in the Windows sakura editor.
+# Missing files are rejected before launch, like exp and pdf; with -n they
+# are created empty instead (their directory must exist). All arguments are
+# checked before anything is created, so an error never leaves stray files.
+function sakura() {
+  local p create=0
+  local -a sakura_arg
+  if [ "$1" = "-n" ]; then create=1; shift; fi
+  for p in "$@"; do
+      if [ -e "$p" ] && [ ! -f "$p" ]; then
+          printf 'sakura: not a regular file: %s\n' "$p" >&2
+          return 1
+      elif [ ! -e "$p" ] && [ $create -eq 0 ]; then
+          printf 'sakura: no such file: %s (use -n to create)\n' "$p" >&2
+          return 1
+      elif [ ! -e "$p" ] && [ ! -d "${p:h}" ]; then
+          printf 'sakura: no such directory: %s\n' "${p:h}" >&2
+          return 1
+      fi
+  done
+  for p in "$@"; do
+      if [ ! -e "$p" ]; then : > "$p" || return 1; fi
+      sakura_arg+=("`wslpath -w $p`")
+  done
+  (
+    /mnt/c/Windows/System32/cmd.exe /c 'C:\Program Files (x86)\sakura\sakura.exe' $sakura_arg[@] >/dev/null 2>&1 &
+    sleep 2
+    pid="$!"
+    if [ -x "/proc/$pid" ]; then kill $pid; fi
+  )
+}
+
 # User configuration
 
 # export MANPATH="/usr/local/man:$MANPATH"
