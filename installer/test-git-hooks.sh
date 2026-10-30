@@ -79,11 +79,17 @@ cat > "$MOCK_BIN/gitleaks" << 'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$TEST_DIR/gitleaks.log"
 
-if [ "${1:-}" = "git" ] && [ "${2:-}" = "--help" ]; then
+if [ "${1:-}" = "dir" ] && [ "${2:-}" = "--help" ]; then
   if [ -f "$TEST_DIR/gitleaks_flavor_legacy" ]; then
     exit 1
   fi
   exit 0
+fi
+
+if [ "${1:-}" = "dir" ]; then
+  find . -name .gitleaksignore -printf '%P\n' > "$TEST_DIR/gitleaks_ignores.log"
+  find . -type f ! -name .semgrepignore -printf '%P\n' | sort > "$TEST_DIR/gitleaks_files.log"
+  echo "${GITLEAKS_CONFIG:-unset} ${GITLEAKS_CONFIG_TOML:-unset}" > "$TEST_DIR/gitleaks_env.log"
 fi
 
 if [ -f "$TEST_DIR/gitleaks_exit" ]; then
@@ -298,8 +304,12 @@ rm -f "$TEST_DIR/gitleaks.log"
 (cd "$r" && echo "safe code" > file.txt && git add file.txt && git commit -m "feat: clean commit" >/dev/null 2>&1)
 check "clean commit succeeds" test -f "$r/file.txt"
 check "gitleaks called on clean commit" test -f "$TEST_DIR/gitleaks.log"
-check "gitleaks passed --staged flag" grep -q -- "--staged" "$TEST_DIR/gitleaks.log"
+check "gitleaks scans the export dir in dir mode" grep -q -- "^dir \. " "$TEST_DIR/gitleaks.log"
 check "gitleaks passed --redact flag" grep -q -- "--redact" "$TEST_DIR/gitleaks.log"
+check "gitleaks passed --config override" grep -q -- "--config [^ ]*/config.toml" "$TEST_DIR/gitleaks.log"
+check "gitleaks passed --ignore-gitleaks-allow" grep -q -- "--ignore-gitleaks-allow" "$TEST_DIR/gitleaks.log"
+check "gitleaks passed --gitleaks-ignore-path override" grep -q -- "--gitleaks-ignore-path " "$TEST_DIR/gitleaks.log"
+check "gitleaks sees the staged file" grep -qx "file.txt" "$TEST_DIR/gitleaks_files.log"
 
 echo "==> Testing gitleaks failure modes and fail-closed behavior"
 # 3.1 Blocks on gitleaks exit 1 (secrets found)
@@ -338,22 +348,39 @@ check "error message directs user to make install" \
 check "summary mentions gitleaks failed when absent" \
   grep -q "commit blocked: gitleaks" "$TEST_DIR/err_absent.log"
 
-echo "==> Testing gitleaks CLI flavour detection"
-# 4.1 Modern flavour (gitleaks git --help succeeds)
-r="$(create_repo)"
-rm -f "$TEST_DIR/gitleaks_flavor_legacy" "$TEST_DIR/gitleaks.log"
-(cd "$r" && echo "content modern" > file.txt && git add file.txt && git commit -m "test modern" >/dev/null 2>&1)
-check "modern gitleaks flavour uses 'git --pre-commit --staged --redact'" \
-  grep -q -- "git --pre-commit --staged --redact" "$TEST_DIR/gitleaks.log"
-
-# 4.2 Legacy flavour (gitleaks git --help fails)
+echo "==> Testing gitleaks version requirement and ignore overrides"
+# 4.1 gitleaks without the 'dir' command (older than 8.19) fails closed
 r="$(create_repo)"
 touch "$TEST_DIR/gitleaks_flavor_legacy"
 rm -f "$TEST_DIR/gitleaks.log"
-(cd "$r" && echo "content legacy" > file.txt && git add file.txt && git commit -m "test legacy" >/dev/null 2>&1)
+status=0
+(cd "$r" && echo "content legacy" > file.txt && git add file.txt && git commit -m "test legacy" >/dev/null 2>"$TEST_DIR/err_legacy.log") || status=$?
 rm -f "$TEST_DIR/gitleaks_flavor_legacy"
-check "legacy gitleaks flavour uses 'protect --staged --redact'" \
-  grep -q -- "protect --staged --redact" "$TEST_DIR/gitleaks.log"
+check "commit blocked when gitleaks lacks 'dir'" [ "$status" -ne 0 ]
+check "old gitleaks message directs user to make install" \
+  grep -q "gitleaks is too old" "$TEST_DIR/err_legacy.log"
+check "old gitleaks is never asked to scan" \
+  not grep -q -- "^dir \. " "$TEST_DIR/gitleaks.log"
+
+# 4.2 A staged .gitleaksignore never reaches the scan, at the root or nested
+r="$(create_repo)"
+mkdir -p "$r/sub"
+echo "file.txt:generic-api-key:1" > "$r/.gitleaksignore"
+echo "file.txt:generic-api-key:1" > "$r/sub/.gitleaksignore"
+echo "content" > "$r/file.txt"
+(cd "$r" && git add .gitleaksignore sub file.txt && git commit -m "gitleaksignore" >/dev/null 2>&1) || true
+check "no .gitleaksignore reaches gitleaks" [ ! -s "$TEST_DIR/gitleaks_ignores.log" ]
+
+# 4.3 GITLEAKS_CONFIG from the environment is dropped
+r="$(create_repo)"
+echo "content" > "$r/file.txt"
+(cd "$r" && git add file.txt && GITLEAKS_CONFIG=/x GITLEAKS_CONFIG_TOML=y git commit -m "env config" >/dev/null 2>&1) || true
+check "GITLEAKS_CONFIG and GITLEAKS_CONFIG_TOML are unset for gitleaks" \
+  [ "$(cat "$TEST_DIR/gitleaks_env.log")" = "unset unset" ]
+
+# 4.4 Scanner temp dirs are cleaned up
+check "gitleaks work dir removed" \
+  not compgen -G "${TMPDIR:-/tmp}/git-hooks-gitleaks.*"
 
 echo "==> Testing conflict markers check"
 m_left="<"

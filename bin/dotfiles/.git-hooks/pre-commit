@@ -59,13 +59,13 @@ if ! check_large_files "${staged_files[@]}"; then
   failed_checks+=("oversized files")
 fi
 
-if ! check_gitleaks; then
-  failed_checks+=("gitleaks")
-fi
-
 if [ "${#regular_files[@]}" -gt 0 ]; then
   tmp_staged="$(mktemp -d "${TMPDIR:-/tmp}/git-hooks-staged.XXXXXX")"
   export_staged_files "$tmp_staged" "${regular_files[@]}"
+
+  if ! check_gitleaks "$tmp_staged"; then
+    failed_checks+=("gitleaks")
+  fi
 
   if ! check_semgrep "$tmp_staged"; then
     failed_checks+=("semgrep")
