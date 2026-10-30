@@ -2,7 +2,8 @@
 #
 # Global pre-commit dispatcher.
 # Runs core security checks on staged files (conflict markers, oversized files,
-# secrets via gitleaks, code security via semgrep, shell linting via shellcheck).
+# secrets via gitleaks, code security via semgrep, shell linting via shellcheck,
+# dependency vulnerabilities via osv-scanner).
 # If all checks pass, chains to the repo-local pre-commit hook or pre-commit framework.
 #
 set -euo pipefail
@@ -21,6 +22,8 @@ SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 . "$SCRIPT_DIR/lib/check-semgrep.sh"
 # shellcheck source=bin/dotfiles/.git-hooks/lib/check-shellcheck.sh
 . "$SCRIPT_DIR/lib/check-shellcheck.sh"
+# shellcheck source=bin/dotfiles/.git-hooks/lib/check-osv.sh
+. "$SCRIPT_DIR/lib/check-osv.sh"
 
 staged_files=()
 mapfile -d '' staged_files < <(git diff --cached --name-only -z --diff-filter=ACMR)
@@ -56,6 +59,10 @@ if [ "${#staged_files[@]}" -gt 0 ]; then
   fi
 
   check_shellcheck "$tmp_staged" "${staged_files[@]}"
+
+  if ! check_osv "$tmp_staged" "${staged_files[@]}"; then
+    failed_checks+=("osv-scanner")
+  fi
 fi
 
 if [ "${#failed_checks[@]}" -gt 0 ]; then

@@ -162,6 +162,64 @@ exit 0
 EOF
 chmod +x "$MOCK_BIN/pre-commit"
 
+cat > "$MOCK_BIN/osv-scanner" << 'EOF'
+#!/usr/bin/env bash
+echo "$*" >> "$TEST_DIR/osv_scanner.log"
+
+first_lockfile=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-L" ] || [ "$prev" = "--lockfile" ]; then
+    [ -n "$first_lockfile" ] || first_lockfile="$arg"
+    if [ -f "$arg" ]; then
+      echo "=== $arg ===" >> "$TEST_DIR/osv_scanner_files.log"
+      cat "$arg" >> "$TEST_DIR/osv_scanner_files.log"
+    fi
+  fi
+  if [ "$prev" = "--config" ]; then
+    wc -c < "$arg" > "$TEST_DIR/osv_scanner_config_size"
+  fi
+  prev="$arg"
+done
+
+target_dir=""
+if [ -n "$first_lockfile" ]; then
+  target_dir="$(dirname "$first_lockfile")"
+fi
+
+if [ -f "$TEST_DIR/osv_scanner_exit" ]; then
+  exit_code="$(cat "$TEST_DIR/osv_scanner_exit")"
+  if [ -f "$TEST_DIR/osv_scanner_canned_json" ]; then
+    if [ -n "$target_dir" ]; then
+      sed "s|TARGET_DIR|$target_dir|g" "$TEST_DIR/osv_scanner_canned_json"
+    else
+      cat "$TEST_DIR/osv_scanner_canned_json"
+    fi
+  elif [ -f "$TEST_DIR/osv_scanner_output" ]; then
+    cat "$TEST_DIR/osv_scanner_output"
+  fi
+  exit "$exit_code"
+fi
+
+if [ -f "$TEST_DIR/osv_scanner_canned_json" ]; then
+  if [ -n "$target_dir" ]; then
+    sed "s|TARGET_DIR|$target_dir|g" "$TEST_DIR/osv_scanner_canned_json"
+  else
+    cat "$TEST_DIR/osv_scanner_canned_json"
+  fi
+  exit 0
+fi
+
+if [ -f "$TEST_DIR/osv_scanner_output" ]; then
+  cat "$TEST_DIR/osv_scanner_output"
+  exit 0
+fi
+
+echo '{"results":[]}'
+exit 0
+EOF
+chmod +x "$MOCK_BIN/osv-scanner"
+
 create_repo() {
   local repo_path
   repo_path="$(mktemp -d "$TEST_DIR/repo_XXXXXX")"
@@ -693,6 +751,206 @@ check "shellcheck non-blocking header printed" \
   grep -q "git-hooks: shellcheck warnings (not blocking):" "$TEST_DIR/err_shellcheck.log"
 check "shellcheck warning output printed" \
   grep -q "test.sh:1:1: note: Sample warning" "$TEST_DIR/err_shellcheck.log"
+
+echo "==> Testing osv-scanner lockfile dependency check"
+# 11.1 Non-lockfile commit does not invoke osv-scanner
+r="$(create_repo)"
+rm -f "$TEST_DIR/osv_scanner.log"
+echo "# Project" > "$r/README.md"
+(cd "$r" && git add README.md && git commit -m "readme commit" >/dev/null 2>&1)
+check "osv-scanner not called on non-lockfile commit" \
+  not test -f "$TEST_DIR/osv_scanner.log"
+
+# 11.2 Lockfile commit invokes osv-scanner with scan source, --format json, and -L
+r="$(create_repo)"
+rm -f "$TEST_DIR/osv_scanner.log"
+echo "requests==2.28.0" > "$r/requirements.txt"
+(cd "$r" && git add requirements.txt)
+status=0
+(cd "$r" && git commit -m "add requirements" >/dev/null 2>&1) || status=$?
+check "clean lockfile commit succeeds on exit 0" [ "$status" -eq 0 ]
+check "osv-scanner invoked with scan source" \
+  grep -q "scan source" "$TEST_DIR/osv_scanner.log"
+check "osv-scanner invoked with --format json" \
+  grep -q -- "--format json" "$TEST_DIR/osv_scanner.log"
+check "osv-scanner passed -L pointing to lockfile" \
+  grep -q -E -- '-L .*/requirements\.txt' "$TEST_DIR/osv_scanner.log"
+
+# 11.3 Nested lockfile and pattern-matched requirements file trigger scan
+r="$(create_repo)"
+rm -f "$TEST_DIR/osv_scanner.log"
+mkdir -p "$r/web"
+echo '{"name": "web"}' > "$r/web/package-lock.json"
+echo "pytest==7.0.0" > "$r/requirements-dev.txt"
+(cd "$r" && git add web/package-lock.json requirements-dev.txt)
+status=0
+(cd "$r" && git commit -m "nested and pattern lockfiles" >/dev/null 2>&1) || status=$?
+check "nested lockfile and pattern requirements commit succeeds" [ "$status" -eq 0 ]
+check "osv-scanner scanned nested web/package-lock.json" \
+  grep -q -E -- '-L .*/web/package-lock\.json' "$TEST_DIR/osv_scanner.log"
+check "osv-scanner scanned requirements-dev.txt" \
+  grep -q -E -- '-L .*/requirements-dev\.txt' "$TEST_DIR/osv_scanner.log"
+
+# 11.4 Single invocation for multiple staged lockfiles
+check "single osv-scanner invocation for multiple lockfiles" \
+  [ "$(wc -l < "$TEST_DIR/osv_scanner.log")" -eq 1 ]
+
+# 11.5 Scans staged version, not unstaged working tree edit
+r="$(create_repo)"
+rm -f "$TEST_DIR/osv_scanner_files.log"
+echo "staged_pkg==1.0.0" > "$r/requirements.txt"
+(cd "$r" && git add requirements.txt)
+echo "unstaged_pkg==2.0.0" > "$r/requirements.txt"
+status=0
+(cd "$r" && git commit -m "staged vs working tree lockfile" >/dev/null 2>&1) || status=$?
+check "commit succeeds for staged lockfile" [ "$status" -eq 0 ]
+check "osv-scanner inspected staged lockfile content" \
+  grep -q "staged_pkg==1.0.0" "$TEST_DIR/osv_scanner_files.log"
+check "osv-scanner did not receive unstaged working tree edit" \
+  not grep -q "unstaged_pkg==2.0.0" "$TEST_DIR/osv_scanner_files.log"
+
+# 11.6 Exit 1 with canned JSON blocks commit and prints formatted finding
+r="$(create_repo)"
+echo "1" > "$TEST_DIR/osv_scanner_exit"
+cat > "$TEST_DIR/osv_scanner_canned_json" << 'EOF'
+{
+  "results": [
+    {
+      "source": {
+        "path": "TARGET_DIR/package-lock.json",
+        "type": "lockfile"
+      },
+      "packages": [
+        {
+          "package": {
+            "name": "lodash",
+            "version": "4.17.15",
+            "ecosystem": "npm"
+          },
+          "vulnerabilities": [
+            {"id": "GHSA-p6mc-m468-83gw"},
+            {"id": "GHSA-35jh-r3h4-6jhm"},
+            {"id": "GHSA-29mw-wpgm-hmr9"},
+            {"id": "GHSA-x5rq-j2xg-h6px"},
+            {"id": "GHSA-jf85-cpcp-j695"},
+            {"id": "GHSA-fvqr-27wr-82fm"},
+            {"id": "GHSA-4xc9-xhrj-v574"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+EOF
+echo '{"name": "test"}' > "$r/package-lock.json"
+(cd "$r" && git add package-lock.json)
+status=0
+(cd "$r" && git commit -m "vulnerable package commit" >/dev/null 2>"$TEST_DIR/err_osv_vuln.log") || status=$?
+rm -f "$TEST_DIR/osv_scanner_exit" "$TEST_DIR/osv_scanner_canned_json"
+check "commit blocked when osv-scanner exits 1 with vulnerabilities" [ "$status" -ne 0 ]
+check "summary mentions osv-scanner blocked commit" \
+  grep -q "commit blocked: osv-scanner" "$TEST_DIR/err_osv_vuln.log"
+check "vulnerable package line contains package name, version, and ecosystem" \
+  grep -q "vulnerable dependency lodash@4.17.15 (npm)" "$TEST_DIR/err_osv_vuln.log"
+check "vulnerable package line contains repo-relative lockfile path" \
+  grep -q "in package-lock.json:" "$TEST_DIR/err_osv_vuln.log"
+check "vulnerable package line does not leak temp directory" \
+  not grep -q "git-hooks-staged" "$TEST_DIR/err_osv_vuln.log"
+check "vulnerability IDs truncated at 5 with ellipsis" \
+  grep -q "GHSA-jf85-cpcp-j695, …" "$TEST_DIR/err_osv_vuln.log"
+check "sixth ID is not listed in findings" \
+  not grep -q "GHSA-fvqr-27wr-82fm" "$TEST_DIR/err_osv_vuln.log"
+
+# 11.7 Exit 1 with unparseable output blocks commit with generic message
+r="$(create_repo)"
+echo "1" > "$TEST_DIR/osv_scanner_exit"
+echo "internal error: unexpected EOF" > "$TEST_DIR/osv_scanner_output"
+echo "requests==2.19.0" > "$r/requirements.txt"
+(cd "$r" && git add requirements.txt)
+status=0
+(cd "$r" && git commit -m "unparseable osv output" >/dev/null 2>"$TEST_DIR/err_osv_unparseable.log") || status=$?
+rm -f "$TEST_DIR/osv_scanner_exit" "$TEST_DIR/osv_scanner_output"
+check "commit blocked when osv-scanner exit 1 has unparseable output" [ "$status" -ne 0 ]
+check "generic vulnerability message emitted on unparseable output" \
+  grep -q "git-hooks: osv-scanner reported vulnerabilities in dependencies" "$TEST_DIR/err_osv_unparseable.log"
+check "summary mentions osv-scanner blocked commit on unparseable output" \
+  grep -q "commit blocked: osv-scanner" "$TEST_DIR/err_osv_unparseable.log"
+
+# 11.8 Exit 1 with jq absent blocks commit with generic message
+r="$(create_repo)"
+echo "1" > "$TEST_DIR/osv_scanner_exit"
+echo '{"results":[]}' > "$TEST_DIR/osv_scanner_output"
+echo "requests==2.19.0" > "$r/requirements.txt"
+(cd "$r" && git add requirements.txt)
+rm -f "$MOCK_BIN/jq"
+status=0
+(cd "$r" && git commit -m "jq absent osv test" >/dev/null 2>"$TEST_DIR/err_osv_nojq.log") || status=$?
+ln -s "$REAL_JQ" "$MOCK_BIN/jq"
+rm -f "$TEST_DIR/osv_scanner_exit" "$TEST_DIR/osv_scanner_output"
+check "commit blocked on osv exit 1 when jq is absent" [ "$status" -ne 0 ]
+check "generic vulnerability message emitted when jq is absent" \
+  grep -q "git-hooks: osv-scanner reported vulnerabilities in dependencies" "$TEST_DIR/err_osv_nojq.log"
+
+# 11.9 Exit 128 (no packages found) allows commit silently
+r="$(create_repo)"
+echo "128" > "$TEST_DIR/osv_scanner_exit"
+echo "# empty lockfile" > "$r/Cargo.lock"
+(cd "$r" && git add Cargo.lock)
+status=0
+(cd "$r" && git commit -m "empty cargo lockfile" >/dev/null 2>"$TEST_DIR/err_osv_128.log") || status=$?
+rm -f "$TEST_DIR/osv_scanner_exit"
+check "commit allowed silently when osv-scanner exits 128" [ "$status" -eq 0 ]
+check "no warning or error emitted on exit 128" \
+  not grep -q "git-hooks:" "$TEST_DIR/err_osv_128.log"
+
+# 11.10 Exit 127 (error / network failure) allows commit with warning
+r="$(create_repo)"
+echo "127" > "$TEST_DIR/osv_scanner_exit"
+echo "requests==2.28.0" > "$r/requirements.txt"
+(cd "$r" && git add requirements.txt)
+status=0
+(cd "$r" && git commit -m "offline commit test" >/dev/null 2>"$TEST_DIR/err_osv_127.log") || status=$?
+rm -f "$TEST_DIR/osv_scanner_exit"
+check "commit allowed when osv-scanner exits 127" [ "$status" -eq 0 ]
+check "warning emitted on exit 127 with exit code and offline hint" \
+  grep -q "could not check dependencies with osv-scanner (exit 127; offline?) — not blocking" "$TEST_DIR/err_osv_127.log"
+
+# 11.11 Exit 124 (timeout) allows commit with warning
+r="$(create_repo)"
+echo "124" > "$TEST_DIR/osv_scanner_exit"
+echo "requests==2.28.0" > "$r/requirements.txt"
+(cd "$r" && git add requirements.txt)
+status=0
+(cd "$r" && git commit -m "timeout commit test" >/dev/null 2>"$TEST_DIR/err_osv_124.log") || status=$?
+rm -f "$TEST_DIR/osv_scanner_exit"
+check "commit allowed when osv-scanner times out (exit 124)" [ "$status" -eq 0 ]
+check "warning emitted on exit 124 with exit code and offline hint" \
+  grep -q "could not check dependencies with osv-scanner (exit 124; offline?) — not blocking" "$TEST_DIR/err_osv_124.log"
+
+# 11.12 osv-scanner not installed allows commit with warning
+r="$(create_repo)"
+mv "$MOCK_BIN/osv-scanner" "$MOCK_BIN/osv-scanner.bak"
+echo "requests==2.28.0" > "$r/requirements.txt"
+(cd "$r" && git add requirements.txt)
+status=0
+(cd "$r" && git commit -m "absent osv-scanner commit" >/dev/null 2>"$TEST_DIR/err_osv_absent.log") || status=$?
+mv "$MOCK_BIN/osv-scanner.bak" "$MOCK_BIN/osv-scanner"
+check "commit allowed when osv-scanner is absent" [ "$status" -eq 0 ]
+check "osv-scanner absent directs user to make install" \
+  grep -q "osv-scanner not installed; run 'make install' in the dotfiles repo — not blocking" "$TEST_DIR/err_osv_absent.log"
+
+# 11.13 A staged osv-scanner.toml is overridden by an empty --config
+r="$(create_repo)"
+rm -f "$TEST_DIR/osv_scanner.log" "$TEST_DIR/osv_scanner_config_size"
+echo "requests==2.28.0" > "$r/requirements.txt"
+printf '[[IgnoredVulns]]\nid = "GHSA-test"\n' > "$r/osv-scanner.toml"
+(cd "$r" && git add requirements.txt osv-scanner.toml && git commit -m "osv config" >/dev/null 2>&1)
+check "osv-scanner invoked with --config" \
+  grep -q -- "--config " "$TEST_DIR/osv_scanner.log"
+check "osv-scanner config override is empty" \
+  [ "$(cat "$TEST_DIR/osv_scanner_config_size" 2>/dev/null)" = "0" ]
+check "osv-scanner config is not the staged osv-scanner.toml" \
+  not grep -q -- "--config [^ ]*osv-scanner.toml" "$TEST_DIR/osv_scanner.log"
 
 echo
 if [ "$fail" -ne 0 ]; then
