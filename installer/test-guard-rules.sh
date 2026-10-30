@@ -119,11 +119,6 @@ run_suite() {
   test_case allow "git commit -m x"
   test_case allow "git commit -am x"
   test_case allow "git commit -mn"
-  test_case allow "git commit -m \"fix -n handling\""
-  test_case allow "git commit -m 'fix -n handling'"
-  test_case allow "git commit -am \"fix -n handling\""
-  test_case allow "git commit --message=\"fix -n handling\""
-  test_case allow "git commit --message \"fix -n handling\""
   test_case allow "git log -n 3"
   test_case allow "git push -n"
   test_case allow "git diff -n"
@@ -135,8 +130,18 @@ run_suite() {
   test_case allow "echo --no-verify"
   test_case allow "git-lfs push --no-verify"
   test_case allow "git commit -m x && git push -n"
-  test_case allow "git commit -m \"docs: mention --no-verify\""
   test_case allow "git commit --no-edit --amend"
+
+  # 4b. Accepted over-block: inline messages are not parsed (a regex cannot
+  # follow shell quoting), so a message that mentions a bypass flag is
+  # blocked too; such messages go through `git commit -F <file>`.
+  test_case block "git commit -m \"fix -n handling\"" "git hook bypass (commit -n)"
+  test_case block "git commit -m 'fix -n handling'" "git hook bypass (commit -n)"
+  test_case block "git commit --message=\"fix -n handling\"" "git hook bypass (commit -n)"
+  test_case block "git commit -m \"docs: mention --no-verify\"" "git hook bypass (--no-verify)"
+  # Crafted quoting that a message-stripping regex would misread.
+  test_case block "git commit \"-m '\" --no-verify \"'\"" "git hook bypass (--no-verify)"
+  test_case block "git commit \"-m '\" -n \"'\"" "git hook bypass (commit -n)"
 
   # 5. Smoke cases for existing dangerous-command rules
   test_case block "git reset --hard" "destructive git command"

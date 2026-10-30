@@ -56,16 +56,11 @@ guard_check_command() {
 
   # The shell drops quotes and backslashes before git sees its arguments, so
   # `"--no-verify"`, `--no-verif\y` and `core.hooks"Path"` must match too.
+  # Message values are deliberately not stripped: a regex cannot follow shell
+  # quoting, and crafted quotes (`"-m '" --no-verify "'"`) would hide a real
+  # flag. So an inline -m message that mentions these flags is blocked as
+  # well; write such messages to a file and use `git commit -F <file>`.
   unquoted="$(printf '%s' "$norm" | tr -d "\"'\\\\")"
-
-  # Arguments as git sees them, for the two hook-bypass rules below. Quoted
-  # -m / --message values are stripped first so a message that merely mentions
-  # a flag (`-m "fix -n handling"`) is not mistaken for it. A double-quoted
-  # value containing `$` or a backtick is kept: it may hide a command
-  # substitution such as `-m "$(git commit -n ...)"`.
-  git_args="$(printf '%s' "$norm" \
-    | sed -E 's/(-[^n[:space:]-]*m[[:space:]]+|--message(=|[[:space:]]+))("[^"$`]*"|'\''[^'\'']*'\'')//g' \
-    | tr -d "\"'\\\\")"
 
   # Git hook bypass: --no-verify in a git command.
   # The most common reaction of an agent to a failing hook is to retry with
@@ -74,14 +69,14 @@ guard_check_command() {
   # a long option, so `--no-veri` counts too. git may also start right after
   # `(`, a backtick or `{` (subshells, command substitution, groups).
   # shellcheck disable=SC2016 # the backticks are literal pattern characters
-  if printf '%s' "$git_args" \
+  if printf '%s' "$unquoted" \
       | grep -Eq '(^|[|;&(`{[:space:]])([[:alnum:]_./-]*\/)?git[[:space:]](.*[[:space:]])?--no-v(e(r(i(f(y)?)?)?)?)?([[:space:]|;&)`}]|$)'; then
     printf 'git hook bypass (--no-verify)'; return 1
   fi
 
   # Git hook bypass: git commit -n (short flag alone or in a cluster where n
   # precedes any argument-taking flag: m, F, c, C, t, u).
-  if printf '%s' "$git_args" \
+  if printf '%s' "$unquoted" \
       | grep -Eq '(^|[|;&(`{[:space:]])([[:alnum:]_./-]*\/)?git[[:space:]]([^|;&]*[[:space:]])?commit[[:space:]]([^|;&]*[[:space:]])?-[a-ln-sv-zA-BDEG-Z]*n'; then
     printf 'git hook bypass (commit -n)'; return 1
   fi
