@@ -46,7 +46,7 @@ echo "==> Running 'make install'"
 make -C "$REPO_ROOT" install
 
 echo "==> Verifying dotfile symlinks"
-for f in .zshenv .zshrc .tmux.conf .tmux.d .vimrc .gitconfig .latexmkrc; do
+for f in .zshenv .zshrc .tmux.conf .tmux.d .vimrc .gitconfig .latexmkrc .git-hooks; do
   check "~/$f is a symlink" test -L "$HOME/$f"
 done
 check "~/.tmux.d/agent-usage is executable" test -x "$HOME/.tmux.d/agent-usage"
@@ -133,6 +133,112 @@ export PATH="$HOME/.local/bin:$PATH"
 for cmd in jq rg fd fzf gh shellcheck direnv node npm npx python3 pipx uv; do
   check "$cmd is available" command -v "$cmd"
 done
+
+echo "==> Verifying global git hooks"
+check "pinned binary helper test suite passes" \
+  bash "$REPO_ROOT/installer/test-pinned-tools.sh"
+check "git-hooks test suite passes" \
+  bash "$REPO_ROOT/installer/test-git-hooks.sh"
+check "semgrep rules test suite passes" \
+  bash "$REPO_ROOT/installer/test-semgrep-rules.sh"
+
+for cmd in gitleaks osv-scanner semgrep pre-commit; do
+  check "$cmd is available" command -v "$cmd"
+done
+
+check_gitleaks_version() {
+  test "$(gitleaks version 2>/dev/null || true)" = "8.30.1"
+}
+check "gitleaks version is 8.30.1" check_gitleaks_version
+
+check_osv_version() {
+  local ver
+  ver="$(osv-scanner --version 2>&1 || true)"
+  grep -F "2.7.0" <<< "$ver" >/dev/null
+}
+check "osv-scanner --version mentions 2.7.0" check_osv_version
+
+check "global core.hooksPath is ~/.git-hooks" \
+  test "$(git config --global --get core.hooksPath)" = "~/.git-hooks"
+check "global core.hooksPath resolves to $HOME/.git-hooks" \
+  test "$(git config --global --type=path --get core.hooksPath)" = "$HOME/.git-hooks"
+
+pack_file="${XDG_DATA_HOME:-$HOME/.local/share}/git-hooks/semgrep/default.yml"
+check "semgrep registry pack exists" test -f "$pack_file"
+check_pack_first_line() {
+  local first_line
+  first_line="$(head -n 1 "$pack_file" 2>/dev/null || true)"
+  case "$first_line" in
+    rules:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+check "semgrep registry pack starts with rules:" check_pack_first_line
+
+check_commit_blocked() {
+  local repo="$1"
+  local label="$2"
+  local stderr_file
+  stderr_file="$(mktemp)"
+  local status=0
+  (
+    cd "$repo"
+    git commit -m "test commit"
+  ) >/dev/null 2>"$stderr_file" || status=$?
+
+  local blocked=1
+  if [ "$status" -ne 0 ]; then
+    local block_line
+    block_line="$(grep -F "git-hooks: commit blocked:" "$stderr_file" || true)"
+    if [ -n "$block_line" ] && grep -F "$label" <<< "$block_line" >/dev/null; then
+      blocked=0
+    fi
+  fi
+  if [ "$blocked" -ne 0 ]; then
+    echo "Expected commit to be blocked for '$label', but status=$status and stderr:" >&2
+    cat "$stderr_file" >&2
+  fi
+  rm -f "$stderr_file"
+  return "$blocked"
+}
+
+test_repo_clean="$(mktemp -d)"
+git init -q "$test_repo_clean"
+commit_clean() {
+  local repo="$1"
+  (
+    cd "$repo"
+    echo "x = 1" > a.py
+    git add a.py
+    git commit -m "clean commit"
+  ) >/dev/null 2>&1
+}
+check "real hooks allow clean commit" commit_clean "$test_repo_clean"
+rm -rf "$test_repo_clean"
+
+test_repo_secret="$(mktemp -d)"
+git init -q "$test_repo_secret"
+token="ghp_$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 36)"
+echo "token = '$token'" > "$test_repo_secret/secret.py"
+(cd "$test_repo_secret" && git add secret.py)
+check "real hooks block secret (gitleaks)" check_commit_blocked "$test_repo_secret" "gitleaks"
+rm -rf "$test_repo_secret"
+
+test_repo_code="$(mktemp -d)"
+git init -q "$test_repo_code"
+py_eval="ev""al"
+printf '%s(input())\n' "$py_eval" > "$test_repo_code/insecure.py"
+(cd "$test_repo_code" && git add insecure.py)
+check "real hooks block insecure code (semgrep)" check_commit_blocked "$test_repo_code" "semgrep"
+rm -rf "$test_repo_code"
+
+test_repo_vuln="$(mktemp -d)"
+git init -q "$test_repo_vuln"
+req_pkg="req""uests"
+echo "$req_pkg==2.19.0" > "$test_repo_vuln/requirements.txt"
+(cd "$test_repo_vuln" && git add requirements.txt)
+check "real hooks block vulnerable dependency (osv-scanner)" check_commit_blocked "$test_repo_vuln" "osv-scanner"
+rm -rf "$test_repo_vuln"
 
 echo "==> Verifying zsh starts and sources .zshrc cleanly"
 # TERM_PROGRAM=vscode disables the tmux auto-start branch in .zshrc so the
