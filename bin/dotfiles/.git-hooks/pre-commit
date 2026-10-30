@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#
+# Global pre-commit dispatcher.
+# Runs core security checks on staged files (conflict markers, oversized files,
+# secrets via gitleaks). If all checks pass, chains to the repo-local pre-commit
+# hook or pre-commit framework.
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+# shellcheck source=bin/dotfiles/.git-hooks/lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=bin/dotfiles/.git-hooks/lib/check-conflict-markers.sh
+. "$SCRIPT_DIR/lib/check-conflict-markers.sh"
+# shellcheck source=bin/dotfiles/.git-hooks/lib/check-large-files.sh
+. "$SCRIPT_DIR/lib/check-large-files.sh"
+# shellcheck source=bin/dotfiles/.git-hooks/lib/check-gitleaks.sh
+. "$SCRIPT_DIR/lib/check-gitleaks.sh"
+
+staged_files=()
+mapfile -d '' staged_files < <(git diff --cached --name-only -z --diff-filter=ACMR)
+
+failed_checks=()
+
+if ! check_conflict_markers "${staged_files[@]}"; then
+  failed_checks+=("conflict markers")
+fi
+
+if ! check_large_files "${staged_files[@]}"; then
+  failed_checks+=("oversized files")
+fi
+
+if ! check_gitleaks; then
+  failed_checks+=("gitleaks")
+fi
+
+if [ "${#failed_checks[@]}" -gt 0 ]; then
+  echo "git-hooks: commit blocked: $(join_strings ", " "${failed_checks[@]}")" >&2
+  exit 1
+fi
+
+chain_pre_commit "$@"
