@@ -141,6 +141,8 @@ check "git-hooks test suite passes" \
   bash "$REPO_ROOT/installer/test-git-hooks.sh"
 check "semgrep rules test suite passes" \
   bash "$REPO_ROOT/installer/test-semgrep-rules.sh"
+check "guard rules test suite passes" \
+  bash "$REPO_ROOT/installer/test-guard-rules.sh"
 
 for cmd in gitleaks osv-scanner semgrep pre-commit; do
   check "$cmd is available" command -v "$cmd"
