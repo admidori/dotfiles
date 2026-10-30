@@ -21,6 +21,16 @@ join_strings() {
   echo "$out"
 }
 
+# export_staged_files <target_dir> <files...>
+# Materializes staged blobs into target_dir using git checkout-index.
+export_staged_files() {
+  local target_dir="${1%/}"
+  shift
+  [ $# -gt 0 ] || return 0
+  mkdir -p "$target_dir"
+  printf '%s\0' "$@" | git checkout-index -z --stdin --prefix="$target_dir/"
+}
+
 # chain_pre_commit <args...>
 # Chains to the repo-local pre-commit hook if present and executable,
 # or executes pre-commit run if .pre-commit-config.yaml is present.

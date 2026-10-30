@@ -50,6 +50,8 @@ mkdir -p "$SYSTEM_BIN" "$MOCK_BIN"
 declare -A is_excluded_map=(
   [gitleaks]=1
   [semgrep]=1
+  [shellcheck]=1
+  [jq]=1
   [osv-scanner]=1
   [pre-commit]=1
   [git-lfs]=1
@@ -66,7 +68,11 @@ for bindir in /usr/local/bin /usr/bin; do
   done
 done
 
+REAL_JQ="$(command -v jq)"
 export PATH="$MOCK_BIN:$SYSTEM_BIN"
+
+# jq is controlled via MOCK_BIN so jq absence can be tested
+ln -s "$REAL_JQ" "$MOCK_BIN/jq"
 
 # Set up mock tool stubs in MOCK_BIN
 cat > "$MOCK_BIN/gitleaks" << 'EOF'
@@ -86,6 +92,58 @@ fi
 exit 0
 EOF
 chmod +x "$MOCK_BIN/gitleaks"
+
+cat > "$MOCK_BIN/semgrep" << 'EOF'
+#!/usr/bin/env bash
+echo "$*" >> "$TEST_DIR/semgrep.log"
+
+target="${@: -1}"
+if [ -d "$target" ]; then
+  find "$target" -type f -exec grep -H ".*" {} + >> "$TEST_DIR/semgrep_target_contents.log" 2>/dev/null || true
+  find "$target" -name .semgrepignore -printf '%P %s\n' > "$TEST_DIR/semgrep_ignores.log"
+fi
+
+if [ -f "$TEST_DIR/semgrep_exit" ]; then
+  exit_code="$(cat "$TEST_DIR/semgrep_exit")"
+  if [ -f "$TEST_DIR/semgrep_output" ]; then
+    cat "$TEST_DIR/semgrep_output"
+  fi
+  exit "$exit_code"
+fi
+
+if [ -f "$TEST_DIR/semgrep_canned_json" ]; then
+  sed "s|TARGET_DIR|$target|g" "$TEST_DIR/semgrep_canned_json"
+  exit 0
+fi
+
+if [ -f "$TEST_DIR/semgrep_output" ]; then
+  cat "$TEST_DIR/semgrep_output"
+  exit 0
+fi
+
+echo '{"version":"1.183.0","results":[],"errors":[]}'
+exit 0
+EOF
+chmod +x "$MOCK_BIN/semgrep"
+
+cat > "$MOCK_BIN/shellcheck" << 'EOF'
+#!/usr/bin/env bash
+echo "$*" >> "$TEST_DIR/shellcheck.log"
+
+if [ -f "$TEST_DIR/shellcheck_exit" ]; then
+  exit_code="$(cat "$TEST_DIR/shellcheck_exit")"
+  if [ -f "$TEST_DIR/shellcheck_output" ]; then
+    cat "$TEST_DIR/shellcheck_output"
+  fi
+  exit "$exit_code"
+fi
+
+if [ -f "$TEST_DIR/shellcheck_output" ]; then
+  cat "$TEST_DIR/shellcheck_output"
+fi
+exit 0
+EOF
+chmod +x "$MOCK_BIN/shellcheck"
 
 cat > "$MOCK_BIN/git-lfs" << 'EOF'
 #!/usr/bin/env bash
@@ -404,6 +462,237 @@ ln -s "$HOOKS_DIR/post-commit" "$r/.git/hooks/post-commit"
 status=0
 (cd "$r" && "$HOOKS_DIR/post-commit") || status=$?
 check "self-recursion guarded on passthrough" [ "$status" -eq 0 ]
+
+echo "==> Testing semgrep security scanner and fail-closed behavior"
+# 9.1 semgrep JSON with an ERROR result blocks commit and reports repo-relative path
+r="$(create_repo)"
+cat > "$TEST_DIR/semgrep_canned_json" << 'EOF'
+{
+  "version": "1.183.0",
+  "results": [
+    {
+      "check_id": "ai-python-eval-exec",
+      "path": "TARGET_DIR/app/server.py",
+      "start": {"line": 15, "col": 1},
+      "extra": {
+        "severity": "ERROR",
+        "message": "Dangerous eval usage\nDo not use eval"
+      }
+    }
+  ],
+  "errors": []
+}
+EOF
+mkdir -p "$r/app"
+echo "eval(user_code)" > "$r/app/server.py"
+(cd "$r" && git add app/server.py)
+status=0
+(cd "$r" && git commit -m "error finding commit" >/dev/null 2>"$TEST_DIR/err_semgrep_error.log") || status=$?
+rm -f "$TEST_DIR/semgrep_canned_json"
+check "commit blocked on semgrep ERROR finding" [ "$status" -ne 0 ]
+check "finding reported with repo-relative path (no temp prefix)" \
+  grep -q "ERROR app/server.py:15 ai-python-eval-exec: Dangerous eval usage" "$TEST_DIR/err_semgrep_error.log"
+check "finding path does not leak temp directory" \
+  not grep -q "git-hooks-staged" "$TEST_DIR/err_semgrep_error.log"
+check "summary mentions semgrep blocked commit" \
+  grep -q "commit blocked: semgrep" "$TEST_DIR/err_semgrep_error.log"
+
+# 9.2 WARNING-only result allows commit but prints finding
+r="$(create_repo)"
+cat > "$TEST_DIR/semgrep_canned_json" << 'EOF'
+{
+  "version": "1.183.0",
+  "results": [
+    {
+      "check_id": "ai-python-pickle-load",
+      "path": "TARGET_DIR/utils.py",
+      "start": {"line": 42, "col": 5},
+      "extra": {
+        "severity": "WARNING",
+        "message": "Insecure pickle deserialization"
+      }
+    }
+  ],
+  "errors": []
+}
+EOF
+echo "pickle.load(f)" > "$r/utils.py"
+(cd "$r" && git add utils.py)
+status=0
+(cd "$r" && git commit -m "warning commit" >/dev/null 2>"$TEST_DIR/err_semgrep_warn.log") || status=$?
+rm -f "$TEST_DIR/semgrep_canned_json"
+check "commit allowed with semgrep WARNING findings" [ "$status" -eq 0 ]
+check "warning finding printed to output" \
+  grep -q "WARNING utils.py:42 ai-python-pickle-load: Insecure pickle deserialization" "$TEST_DIR/err_semgrep_warn.log"
+
+# 9.3 semgrep absent from PATH blocks commit
+r="$(create_repo)"
+mv "$MOCK_BIN/semgrep" "$MOCK_BIN/semgrep.bak"
+echo "clean" > "$r/clean.py"
+(cd "$r" && git add clean.py)
+status=0
+(cd "$r" && git commit -m "absent semgrep commit" >/dev/null 2>"$TEST_DIR/err_semgrep_absent.log") || status=$?
+mv "$MOCK_BIN/semgrep.bak" "$MOCK_BIN/semgrep"
+check "commit blocked when semgrep absent from PATH" [ "$status" -ne 0 ]
+check "semgrep absent directs user to make install" \
+  grep -q "semgrep is not installed or not on PATH; run 'make install' in the dotfiles repo" "$TEST_DIR/err_semgrep_absent.log"
+check "summary mentions semgrep failed when absent" \
+  grep -q "commit blocked: semgrep" "$TEST_DIR/err_semgrep_absent.log"
+
+# 9.3b jq absent from PATH blocks commit
+r="$(create_repo)"
+mv "$MOCK_BIN/jq" "$MOCK_BIN/jq.bak"
+echo "clean" > "$r/clean.py"
+(cd "$r" && git add clean.py)
+status=0
+(cd "$r" && git commit -m "absent jq commit" >/dev/null 2>"$TEST_DIR/err_jq_absent.log") || status=$?
+mv "$MOCK_BIN/jq.bak" "$MOCK_BIN/jq"
+check "commit blocked when jq absent from PATH" [ "$status" -ne 0 ]
+check "jq absent directs user to make install" \
+  grep -q "jq is not installed or not on PATH; run 'make install' in the dotfiles repo" "$TEST_DIR/err_jq_absent.log"
+check "summary mentions semgrep failed when jq absent" \
+  grep -q "commit blocked: semgrep" "$TEST_DIR/err_jq_absent.log"
+
+# 9.4 semgrep exits non-zero with unparseable output blocks commit
+r="$(create_repo)"
+echo "2" > "$TEST_DIR/semgrep_exit"
+echo "Fatal: syntax error in config" > "$TEST_DIR/semgrep_output"
+echo "clean" > "$r/clean.py"
+(cd "$r" && git add clean.py)
+status=0
+(cd "$r" && git commit -m "broken semgrep commit" >/dev/null 2>"$TEST_DIR/err_semgrep_broken.log") || status=$?
+rm -f "$TEST_DIR/semgrep_exit" "$TEST_DIR/semgrep_output"
+check "commit blocked when semgrep exits non-zero with unparseable output" [ "$status" -ne 0 ]
+check "error message reports semgrep failure code" \
+  grep -q "semgrep failed with exit code 2" "$TEST_DIR/err_semgrep_broken.log"
+check "summary mentions semgrep failed on error" \
+  grep -q "commit blocked: semgrep" "$TEST_DIR/err_semgrep_broken.log"
+
+# 9.5 JSON with only errors entries allows commit and prints note
+r="$(create_repo)"
+cat > "$TEST_DIR/semgrep_canned_json" << 'EOF'
+{
+  "version": "1.183.0",
+  "results": [],
+  "errors": [
+    {
+      "message": "Syntax error parsing file",
+      "path": "TARGET_DIR/syntax_error.py"
+    }
+  ]
+}
+EOF
+echo "def bad_syntax(" > "$r/syntax_error.py"
+(cd "$r" && git add syntax_error.py)
+status=0
+(cd "$r" && git commit -m "parse error commit" >/dev/null 2>"$TEST_DIR/err_semgrep_parse_err.log") || status=$?
+rm -f "$TEST_DIR/semgrep_canned_json"
+check "commit allowed when semgrep reports file parse errors" [ "$status" -eq 0 ]
+check "parse error note emitted" \
+  grep -q "semgrep reported parse errors on some files" "$TEST_DIR/err_semgrep_parse_err.log"
+
+# 9.6 semgrep invoked with offline args, never auto or p/
+r="$(create_repo)"
+rm -f "$TEST_DIR/semgrep.log"
+echo "clean" > "$r/clean.py"
+(cd "$r" && git add clean.py && git commit -m "offline args test" >/dev/null 2>&1)
+check "semgrep invoked with --metrics=off" \
+  grep -q -- "--metrics=off" "$TEST_DIR/semgrep.log"
+check "semgrep invoked with --disable-version-check" \
+  grep -q -- "--disable-version-check" "$TEST_DIR/semgrep.log"
+check "semgrep passed tracked ai-insecure.yml rules" \
+  grep -q -- "bin/dotfiles/.git-hooks/semgrep/ai-insecure.yml" "$TEST_DIR/semgrep.log"
+check "semgrep never uses --config auto" \
+  not grep -q -- "--config auto" "$TEST_DIR/semgrep.log"
+check "semgrep never uses p/ registry pack" \
+  not grep -q -E '\bp/' "$TEST_DIR/semgrep.log"
+
+# 9.7 registry pack used only when default.yml exists
+r="$(create_repo)"
+rm -f "$TEST_DIR/semgrep.log"
+echo "clean" > "$r/clean.py"
+(cd "$r" && git add clean.py && git commit -m "no default pack" >/dev/null 2>&1)
+check "registry pack not passed when default.yml absent" \
+  not grep -q "default.yml" "$TEST_DIR/semgrep.log"
+
+pack_dir="$FAKE_HOME/.local/share/git-hooks/semgrep"
+mkdir -p "$pack_dir"
+touch "$pack_dir/default.yml"
+rm -f "$TEST_DIR/semgrep.log"
+(cd "$r" && echo "clean2" > clean.py && git add clean.py && git commit -m "with default pack" >/dev/null 2>&1)
+check "registry pack passed when default.yml present" \
+  grep -q -- "--config $pack_dir/default.yml" "$TEST_DIR/semgrep.log"
+rm -rf "$pack_dir"
+
+# 9.8 scanned file content is staged version, not unstaged working tree edit
+r="$(create_repo)"
+rm -f "$TEST_DIR/semgrep_target_contents.log"
+echo "staged content alpha" > "$r/staged.py"
+(cd "$r" && git add staged.py)
+echo "unstaged working tree edit beta" > "$r/staged.py"
+status=0
+(cd "$r" && git commit -m "staged vs working tree" >/dev/null 2>&1) || status=$?
+check "commit succeeds for staged index" [ "$status" -eq 0 ]
+check "semgrep received staged content" \
+  grep -q "staged content alpha" "$TEST_DIR/semgrep_target_contents.log"
+check "semgrep did not receive unstaged working tree edit" \
+  not grep -q "unstaged working tree edit beta" "$TEST_DIR/semgrep_target_contents.log"
+
+# 9.9 deletion-only commit skips semgrep
+r="$(create_repo)"
+echo "initial" > "$r/initial.txt"
+(cd "$r" && git add initial.txt && git commit -m "initial" >/dev/null 2>&1)
+(cd "$r" && git rm initial.txt >/dev/null 2>&1)
+rm -f "$TEST_DIR/semgrep.log"
+status=0
+(cd "$r" && git commit -m "deletion only" >/dev/null 2>&1) || status=$?
+check "deletion-only commit succeeds" [ "$status" -eq 0 ]
+check "semgrep not called on deletion-only commit" \
+  not test -f "$TEST_DIR/semgrep.log"
+
+# 9.10 Staged .semgrepignore files cannot exempt anything; defaults are off
+r="$(create_repo)"
+mkdir -p "$r/sub"
+echo "*" > "$r/.semgrepignore"
+echo "*" > "$r/sub/.semgrepignore"
+echo "x = 1" > "$r/sub/code.py"
+(cd "$r" && git add .semgrepignore sub)
+(cd "$r" && git commit -m "semgrepignore commit" >/dev/null 2>&1) || true
+check "only an empty root .semgrepignore reaches semgrep" \
+  [ "$(cat "$TEST_DIR/semgrep_ignores.log")" = ".semgrepignore 0" ]
+
+echo "==> Testing shellcheck execution (non-blocking)"
+# 10.1 shellcheck called for .sh and extensionless bash shebang, not zsh shebang
+r="$(create_repo)"
+echo "echo hello" > "$r/test.sh"
+printf '#!/usr/bin/env bash\necho hello\n' > "$r/exec_bash"
+chmod +x "$r/exec_bash"
+printf '#!/bin/zsh\necho hello\n' > "$r/exec_zsh"
+chmod +x "$r/exec_zsh"
+echo "echo plain text" > "$r/plain.txt"
+(cd "$r" && git add test.sh exec_bash exec_zsh plain.txt)
+
+echo "1" > "$TEST_DIR/shellcheck_exit"
+echo "test.sh:1:1: note: Sample warning [SC2086]" > "$TEST_DIR/shellcheck_output"
+rm -f "$TEST_DIR/shellcheck.log"
+
+status=0
+(cd "$r" && git commit -m "shellcheck test" >/dev/null 2>"$TEST_DIR/err_shellcheck.log") || status=$?
+rm -f "$TEST_DIR/shellcheck_exit" "$TEST_DIR/shellcheck_output"
+
+check "shellcheck non-zero exit does not block commit" [ "$status" -eq 0 ]
+check "shellcheck targeted .sh file" \
+  grep -q -- "-f gcc.*test.sh" "$TEST_DIR/shellcheck.log"
+check "shellcheck targeted extensionless file with bash shebang" \
+  grep -q -- "exec_bash" "$TEST_DIR/shellcheck.log"
+check "shellcheck ignored file with zsh shebang" \
+  not grep -q "exec_zsh" "$TEST_DIR/shellcheck.log"
+check "shellcheck ignored plain text file" \
+  not grep -q "plain.txt" "$TEST_DIR/shellcheck.log"
+check "shellcheck non-blocking header printed" \
+  grep -q "git-hooks: shellcheck warnings (not blocking):" "$TEST_DIR/err_shellcheck.log"
+check "shellcheck warning output printed" \
+  grep -q "test.sh:1:1: note: Sample warning" "$TEST_DIR/err_shellcheck.log"
 
 echo
 if [ "$fail" -ne 0 ]; then

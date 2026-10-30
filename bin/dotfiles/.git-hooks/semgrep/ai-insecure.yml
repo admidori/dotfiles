@@ -1,0 +1,218 @@
+rules:
+  # Python rules
+  - id: ai-python-requests-verify-false
+    message: "Disabling TLS certificate verification in requests is insecure. Keep verify=True or specify a trusted CA bundle."
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+    pattern-either:
+      - pattern: requests.$METHOD(..., verify=False, ...)
+      - pattern: $SESSION.verify = False
+
+  - id: ai-python-subprocess-shell-true
+    message: "subprocess with shell=True and dynamic arguments risks command injection. Pass an argument list with shell=False or use shlex.quote."
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$FUNC($CMD, ..., shell=True, ...)
+          - pattern: subprocess.$FUNC(..., args=$CMD, ..., shell=True, ...)
+      - metavariable-regex:
+          metavariable: $FUNC
+          regex: ^(run|call|Popen|check_output|check_call)$
+      - pattern-not: subprocess.$FUNC("...", ..., shell=True, ...)
+      - pattern-not: subprocess.$FUNC(["..."], ..., shell=True, ...)
+      - pattern-not: subprocess.$FUNC(..., args="...", ..., shell=True, ...)
+      - pattern-not: subprocess.$FUNC(..., args=["..."], ..., shell=True, ...)
+
+  - id: ai-python-os-system
+    message: "os.system or os.popen with dynamic arguments risks command injection. Use subprocess.run with argument sequences instead."
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+    patterns:
+      - pattern-either:
+          - pattern: os.system($CMD)
+          - pattern: os.popen($CMD, ...)
+      - pattern-not: os.system("...")
+      - pattern-not: os.popen("...", ...)
+
+  - id: ai-python-eval-exec
+    message: "eval() or exec() with dynamic arguments allows arbitrary code execution. Use safer alternatives like ast.literal_eval."
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code ('Eval Injection')"
+    patterns:
+      - pattern-either:
+          - pattern: eval($CODE, ...)
+          - pattern: exec($CODE, ...)
+      - pattern-not: eval("...", ...)
+      - pattern-not: exec("...", ...)
+
+  - id: ai-python-yaml-unsafe-load
+    message: "yaml.load without yaml.SafeLoader can instantiate arbitrary Python objects. Use yaml.safe_load or Loader=yaml.SafeLoader."
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    patterns:
+      - pattern: yaml.load(...)
+      - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=yaml.CSafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=SafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=CSafeLoader, ...)
+
+  - id: ai-python-pickle-load
+    message: "pickle deserialization is inherently unsafe with untrusted inputs. Use safer formats like json or safetensors."
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+      - pattern: _pickle.load(...)
+      - pattern: _pickle.loads(...)
+
+  - id: ai-python-sql-injection
+    message: "Constructing SQL queries using string formatting or concatenation risks SQL injection. Use parameterized queries."
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')"
+    patterns:
+      - pattern-either:
+          - pattern: $CURSOR.execute(f"...", ...)
+          - pattern: $CURSOR.execute("..." % ..., ...)
+          - pattern: $CURSOR.execute("...".format(...), ...)
+          - pattern: $CURSOR.execute($X + $Y, ...)
+
+  - id: ai-python-ssl-unverified-context
+    message: "Disabling TLS certificate or hostname validation in ssl context permits man-in-the-middle attacks. Use ssl.create_default_context()."
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+    pattern-either:
+      - pattern: ssl._create_unverified_context(...)
+      - pattern: $CTX.check_hostname = False
+      - pattern: $CTX.verify_mode = ssl.CERT_NONE
+      - pattern: $CTX.verify_mode = CERT_NONE
+
+  # JavaScript / TypeScript rules
+  - id: ai-js-eval-function
+    message: "Dynamic code evaluation via eval() or Function constructor can execute arbitrary code. Avoid dynamic evaluation."
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code ('Eval Injection')"
+    patterns:
+      - pattern-either:
+          - pattern: eval($ARG)
+          - pattern: new Function(..., $ARG)
+          - pattern: Function(..., $ARG)
+      - pattern-not: eval("...")
+      - pattern-not: new Function(..., "...")
+      - pattern-not: Function(..., "...")
+
+  - id: ai-js-child-process-exec
+    message: "child_process.exec with template literals or concatenation is vulnerable to command injection. Use execFile or spawn with argument arrays."
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+    patterns:
+      - pattern-either:
+          - pattern: child_process.exec(`...${...}...`, ...)
+          - pattern: child_process.exec($X + $Y, ...)
+          - pattern: exec(`...${...}...`, ...)
+          - pattern: exec($X + $Y, ...)
+
+  - id: ai-js-reject-unauthorized-false
+    message: "Setting rejectUnauthorized: false disables TLS certificate verification in Node.js HTTPS requests."
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+    patterns:
+      - pattern: "{..., rejectUnauthorized: false, ...}"
+
+  - id: ai-js-node-tls-reject-unauthorized-env
+    message: "Setting NODE_TLS_REJECT_UNAUTHORIZED to 0 disables TLS certificate validation process-wide."
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+    pattern-either:
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0
+      - pattern: process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = "0"
+      - pattern: process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
+      - pattern: process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = 0
+
+  - id: ai-js-inner-html
+    message: "Assigning dynamic content to innerHTML can lead to Cross-Site Scripting (XSS). Use textContent or DOMPurify."
+    severity: WARNING
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+    patterns:
+      - pattern: $EL.innerHTML = $VAL
+      - pattern-not: $EL.innerHTML = "..."
+
+  # Go rules
+  - id: ai-go-tls-insecure-skip-verify
+    message: "InsecureSkipVerify: true disables TLS certificate validation in Go."
+    severity: ERROR
+    languages: [go]
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+    pattern-either:
+      - pattern: 'tls.Config{..., InsecureSkipVerify: true, ...}'
+      - pattern: '$CFG.InsecureSkipVerify = true'
+
+  # Bash rules
+  - id: ai-bash-curl-pipe-shell
+    message: "Piping curl or wget into a shell executes unverified remote code. Download, inspect, and verify checksums before execution."
+    severity: ERROR
+    languages: [bash]
+    metadata:
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+    pattern-either:
+      - pattern: curl ... | sh
+      - pattern: curl ... | bash
+      - pattern: curl ... | sudo sh
+      - pattern: curl ... | sudo bash
+      - pattern: wget ... | sh
+      - pattern: wget ... | bash
+      - pattern: wget ... | sudo sh
+      - pattern: wget ... | sudo bash
+
+  - id: ai-bash-insecure-curl-wget
+    message: "Disabling TLS certificate verification with curl -k/--insecure or wget --no-check-certificate allows MITM attacks."
+    severity: ERROR
+    languages: [bash]
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+    pattern-either:
+      - pattern: curl ... -k ...
+      - pattern: curl ... --insecure ...
+      - pattern: wget ... --no-check-certificate ...
+
+  - id: ai-bash-chmod-777
+    message: "chmod 777 or a+rwx grants world-writable permissions. Use least privilege permissions like 755 or 644."
+    severity: WARNING
+    languages: [bash]
+    metadata:
+      cwe: "CWE-732: Incorrect Permission Assignment for Critical Resource"
+    pattern-either:
+      - pattern: chmod ... 777 ...
+      - pattern: chmod ... a+rwx ...
+      - pattern: sudo chmod ... 777 ...
+      - pattern: sudo chmod ... a+rwx ...

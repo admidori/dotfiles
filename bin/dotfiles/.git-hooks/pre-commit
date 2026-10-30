@@ -2,8 +2,8 @@
 #
 # Global pre-commit dispatcher.
 # Runs core security checks on staged files (conflict markers, oversized files,
-# secrets via gitleaks). If all checks pass, chains to the repo-local pre-commit
-# hook or pre-commit framework.
+# secrets via gitleaks, code security via semgrep, shell linting via shellcheck).
+# If all checks pass, chains to the repo-local pre-commit hook or pre-commit framework.
 #
 set -euo pipefail
 
@@ -17,9 +17,21 @@ SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 . "$SCRIPT_DIR/lib/check-large-files.sh"
 # shellcheck source=bin/dotfiles/.git-hooks/lib/check-gitleaks.sh
 . "$SCRIPT_DIR/lib/check-gitleaks.sh"
+# shellcheck source=bin/dotfiles/.git-hooks/lib/check-semgrep.sh
+. "$SCRIPT_DIR/lib/check-semgrep.sh"
+# shellcheck source=bin/dotfiles/.git-hooks/lib/check-shellcheck.sh
+. "$SCRIPT_DIR/lib/check-shellcheck.sh"
 
 staged_files=()
 mapfile -d '' staged_files < <(git diff --cached --name-only -z --diff-filter=ACMR)
+
+tmp_staged=""
+cleanup() {
+  if [ -n "$tmp_staged" ] && [ -d "$tmp_staged" ]; then
+    rm -rf "$tmp_staged"
+  fi
+}
+trap cleanup EXIT
 
 failed_checks=()
 
@@ -35,9 +47,25 @@ if ! check_gitleaks; then
   failed_checks+=("gitleaks")
 fi
 
+if [ "${#staged_files[@]}" -gt 0 ]; then
+  tmp_staged="$(mktemp -d "${TMPDIR:-/tmp}/git-hooks-staged.XXXXXX")"
+  export_staged_files "$tmp_staged" "${staged_files[@]}"
+
+  if ! check_semgrep "$tmp_staged"; then
+    failed_checks+=("semgrep")
+  fi
+
+  check_shellcheck "$tmp_staged" "${staged_files[@]}"
+fi
+
 if [ "${#failed_checks[@]}" -gt 0 ]; then
   echo "git-hooks: commit blocked: $(join_strings ", " "${failed_checks[@]}")" >&2
   exit 1
+fi
+
+if [ -n "$tmp_staged" ] && [ -d "$tmp_staged" ]; then
+  rm -rf "$tmp_staged"
+  tmp_staged=""
 fi
 
 chain_pre_commit "$@"
