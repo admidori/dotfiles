@@ -101,6 +101,7 @@ target="${@: -1}"
 if [ -d "$target" ]; then
   find "$target" -type f -exec grep -H ".*" {} + >> "$TEST_DIR/semgrep_target_contents.log" 2>/dev/null || true
   find "$target" -name .semgrepignore -printf '%P %s\n' > "$TEST_DIR/semgrep_ignores.log"
+  find "$target" -type l -printf '%P\n' > "$TEST_DIR/semgrep_symlinks.log"
 fi
 
 if [ -f "$TEST_DIR/semgrep_exit" ]; then
@@ -718,6 +719,39 @@ echo "x = 1" > "$r/sub/code.py"
 (cd "$r" && git commit -m "semgrepignore commit" >/dev/null 2>&1) || true
 check "only an empty root .semgrepignore reaches semgrep" \
   [ "$(cat "$TEST_DIR/semgrep_ignores.log")" = ".semgrepignore 0" ]
+
+# 9.11 A staged .semgrepignore symlink cannot truncate the file it points to
+r="$(create_repo)"
+outside="$TEST_DIR/outside_target"
+echo "keep me" > "$outside"
+ln -s "$outside" "$r/.semgrepignore"
+echo "x = 1" > "$r/code.py"
+(cd "$r" && git add .semgrepignore code.py)
+(cd "$r" && git commit -m "semgrepignore symlink" >/dev/null 2>&1) || true
+check "symlink target outside the repo is untouched" \
+  [ "$(cat "$outside")" = "keep me" ]
+check "only an empty root .semgrepignore reaches semgrep with a staged symlink" \
+  [ "$(cat "$TEST_DIR/semgrep_ignores.log")" = ".semgrepignore 0" ]
+check "no symlink is exported to scanners" \
+  [ ! -s "$TEST_DIR/semgrep_symlinks.log" ]
+
+# 9.12 semgrep scans files over its default 1 MB limit
+check "semgrep invoked with --max-target-bytes 0" \
+  grep -q -- "--max-target-bytes 0" "$TEST_DIR/semgrep.log"
+
+# 9.13 Replacing a symlink with a regular file (type change) is scanned
+r="$(create_repo)"
+ln -s code.py "$r/linked.py"
+echo "x = 1" > "$r/code.py"
+(cd "$r" && git add linked.py code.py && git commit -m "add symlink" >/dev/null 2>&1)
+rm "$r/linked.py"
+echo "typechange_marker = 1" > "$r/linked.py"
+(cd "$r" && git add linked.py)
+check "type change is staged as T" \
+  sh -c "cd '$r' && git diff --cached --name-status | grep -q '^T'"
+(cd "$r" && git commit -m "replace symlink with file" >/dev/null 2>&1) || true
+check "type-changed file content reaches semgrep" \
+  grep -q "typechange_marker" "$TEST_DIR/semgrep_target_contents.log"
 
 echo "==> Testing shellcheck execution (non-blocking)"
 # 10.1 shellcheck called for .sh and extensionless bash shebang, not zsh shebang

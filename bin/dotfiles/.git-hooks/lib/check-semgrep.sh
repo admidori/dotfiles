@@ -30,6 +30,9 @@ check_semgrep() {
     --metrics=off
     --disable-version-check
     --json
+    # The default 1 MB limit skips larger files silently; oversized files are
+    # blocked by the size check instead.
+    --max-target-bytes 0
     --config "$rules_file"
   )
 
@@ -41,7 +44,9 @@ check_semgrep() {
   # Every staged file is in scope. Without a .semgrepignore semgrep applies
   # built-in defaults that skip tests/, node_modules/ and the like, and a
   # staged .semgrepignore would let a change exempt itself from the scan.
-  find "$target_dir" -name .semgrepignore -type f -delete
+  # Remove every entry regardless of type so writing the empty file can
+  # never follow a link out of the export directory.
+  find "$target_dir" -name .semgrepignore -prune -exec rm -rf -- {} +
   : > "$target_dir/.semgrepignore"
 
   local json_out="" status=0

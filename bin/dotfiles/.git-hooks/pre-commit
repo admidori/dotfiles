@@ -25,8 +25,21 @@ SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # shellcheck source=bin/dotfiles/.git-hooks/lib/check-osv.sh
 . "$SCRIPT_DIR/lib/check-osv.sh"
 
+# staged_files includes type changes (T), so replacing a symlink with a regular
+# file is checked. Only regular blobs are exported for content scanners: a
+# symlink would be checked out as a link and could point scanners, or the
+# .semgrepignore reset, at files outside the repository.
 staged_files=()
-mapfile -d '' staged_files < <(git diff --cached --name-only -z --diff-filter=ACMR)
+regular_files=()
+raw_diff=()
+mapfile -d '' raw_diff < <(git diff --cached --raw -z --no-renames --diff-filter=ACMT)
+for ((i = 0; i + 1 < ${#raw_diff[@]}; i += 2)); do
+  staged_files+=("${raw_diff[i + 1]}")
+  read -r _ new_mode _ <<< "${raw_diff[i]}"
+  case "$new_mode" in
+    100644 | 100755) regular_files+=("${raw_diff[i + 1]}") ;;
+  esac
+done
 
 tmp_staged=""
 cleanup() {
@@ -50,17 +63,17 @@ if ! check_gitleaks; then
   failed_checks+=("gitleaks")
 fi
 
-if [ "${#staged_files[@]}" -gt 0 ]; then
+if [ "${#regular_files[@]}" -gt 0 ]; then
   tmp_staged="$(mktemp -d "${TMPDIR:-/tmp}/git-hooks-staged.XXXXXX")"
-  export_staged_files "$tmp_staged" "${staged_files[@]}"
+  export_staged_files "$tmp_staged" "${regular_files[@]}"
 
   if ! check_semgrep "$tmp_staged"; then
     failed_checks+=("semgrep")
   fi
 
-  check_shellcheck "$tmp_staged" "${staged_files[@]}"
+  check_shellcheck "$tmp_staged" "${regular_files[@]}"
 
-  if ! check_osv "$tmp_staged" "${staged_files[@]}"; then
+  if ! check_osv "$tmp_staged" "${regular_files[@]}"; then
     failed_checks+=("osv-scanner")
   fi
 fi
