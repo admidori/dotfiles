@@ -100,6 +100,20 @@ run_suite() {
   test_case block "GIT_CONFIG_PARAMETERS='core.hooksPath=/tmp' git commit" "git hooks redirection"
   test_case block "GIT_CONFIG_KEY_0=foo git commit" "git hooks redirection"
   test_case block "GIT_CONFIG_PARAMETERS='foo=bar' git commit" "git hooks redirection"
+  test_case block "git -c \"core.hooks\"\"Path=/tmp\" commit -m x" "git hooks redirection"
+  test_case block "git -c core.hooks\\Path=/tmp commit -m x" "git hooks redirection"
+  test_case block "env \"GIT_CONFIG_GLOBAL=/dev/null\" git commit -m x" "git hooks redirection"
+
+  # 3b. git started inside a subshell, command substitution or group, and
+  # command substitutions hidden in a double-quoted message
+  test_case block "(git commit --no-verify -m x)" "git hook bypass (--no-verify)"
+  test_case block "echo \$(git commit --no-verify -m x)" "git hook bypass (--no-verify)"
+  test_case block "echo \`git commit --no-verify -m x\`" "git hook bypass (--no-verify)"
+  test_case block "{ git commit --no-verify -m x; }" "git hook bypass (--no-verify)"
+  test_case block "(git commit -n -m x)" "git hook bypass (commit -n)"
+  test_case block "git commit -m \"\$(git commit --no-verify -m y)\"" "git hook bypass (--no-verify)"
+  test_case block "git commit -m \"\$(git commit -n -m y)\"" "git hook bypass (commit -n)"
+  test_case block "git commit -m \"\`git commit -n -m y\`\"" "git hook bypass (commit -n)"
 
   # 4. Commands that must stay allowed
   test_case allow "git commit -m x"
