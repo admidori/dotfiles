@@ -345,8 +345,23 @@ check "security check failure blocks commit before chaining" [ "$status" -ne 0 ]
 check "local hook does not run when security check fails" \
   not test -f "$TEST_DIR/should_not_run.log"
 
-# 7.3 Runs pre-commit run when .pre-commit-config.yaml exists and tool is available
+# 7.3a Without the local opt-in, .pre-commit-config.yaml alone is not run
 r="$(create_repo)"
+touch "$r/.pre-commit-config.yaml"
+rm -f "$TEST_DIR/pre_commit.log"
+echo "clean" > "$r/clean.txt"
+(cd "$r" && git add clean.txt .pre-commit-config.yaml)
+status=0
+(cd "$r" && git commit -m "pre-commit no opt-in" >/dev/null 2>"$TEST_DIR/err_pc_optin.log") || status=$?
+check "commit allowed without pre-commit opt-in" [ "$status" -eq 0 ]
+check "pre-commit framework not invoked without opt-in" \
+  not test -f "$TEST_DIR/pre_commit.log"
+check "hint printed explaining the opt-in" \
+  grep -q "hooks.preCommitFramework true" "$TEST_DIR/err_pc_optin.log"
+
+# 7.3 Runs pre-commit run when opted in and tool is available
+r="$(create_repo)"
+git -C "$r" config --local hooks.preCommitFramework true
 touch "$r/.pre-commit-config.yaml"
 rm -f "$TEST_DIR/pre_commit.log"
 echo "clean" > "$r/clean.txt"
@@ -357,8 +372,9 @@ check "commit succeeds and chains to pre-commit run" [ "$status" -eq 0 ]
 check "pre-commit framework invoked with run" \
   grep -q "run" "$TEST_DIR/pre_commit.log"
 
-# 7.4 Warns but allows commit when .pre-commit-config.yaml exists and tool is absent
+# 7.4 Warns but allows commit when opted in and the tool is absent
 r="$(create_repo)"
+git -C "$r" config --local hooks.preCommitFramework true
 touch "$r/.pre-commit-config.yaml"
 mv "$MOCK_BIN/pre-commit" "$MOCK_BIN/pre-commit.bak"
 echo "clean" > "$r/clean.txt"

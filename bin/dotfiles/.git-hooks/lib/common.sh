@@ -43,9 +43,17 @@ chain_pre_commit() {
     fi
   fi
 
-  # 2. pre-commit framework if .pre-commit-config.yaml exists in repo root
+  # 2. pre-commit framework, only after a per-repo opt-in. The config file
+  #    comes with the clone and makes pre-commit fetch and run arbitrary
+  #    code, so its presence alone must not be trusted. Local git config can't
+  #    be set by a clone, which makes it the opt-in (it replaces
+  #    `pre-commit install`, which refuses to run under core.hooksPath).
   toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" || toplevel=""
   if [ -n "$toplevel" ] && [ -f "$toplevel/.pre-commit-config.yaml" ]; then
+    if [ "$(git config --local --type=bool --get hooks.preCommitFramework 2>/dev/null)" != "true" ]; then
+      echo "git-hooks: .pre-commit-config.yaml not run; if you trust this repo: git config --local hooks.preCommitFramework true" >&2
+      return 0
+    fi
     if command -v pre-commit >/dev/null 2>&1; then
       exec pre-commit run --hook-stage pre-commit "$@"
     else
