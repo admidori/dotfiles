@@ -92,6 +92,57 @@ if [ "$resume_attempt_specified" = true ]; then
   fi
 fi
 
+# Validate AGY_TIMEOUT before locking or allocating artifacts
+agy_timeout_raw="${AGY_TIMEOUT:-}"
+if [ -z "$agy_timeout_raw" ]; then
+  agy_timeout_str="30m"
+  agy_timeout_seconds=1800
+elif [[ "$agy_timeout_raw" =~ ^[0-9]+$ ]]; then
+  minutes="$((10#$agy_timeout_raw))"
+  if [ "$minutes" -le 0 ]; then
+    echo "error: invalid AGY_TIMEOUT '$agy_timeout_raw' (use e.g. 40m, 1h30m, 90s, or minutes as a bare number)" >&2
+    exit 2
+  fi
+  agy_timeout_str="${agy_timeout_raw}m"
+  agy_timeout_seconds=$((minutes * 60))
+elif [[ "$agy_timeout_raw" =~ ^(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?$ ]]; then
+  h_part="${BASH_REMATCH[2]:-}"
+  m_part="${BASH_REMATCH[4]:-}"
+  s_part="${BASH_REMATCH[6]:-}"
+  if [ -z "$h_part" ] && [ -z "$m_part" ] && [ -z "$s_part" ]; then
+    echo "error: invalid AGY_TIMEOUT '$agy_timeout_raw' (use e.g. 40m, 1h30m, 90s, or minutes as a bare number)" >&2
+    exit 2
+  fi
+  h_sec=0
+  m_sec=0
+  s_sec=0
+  [ -n "$h_part" ] && h_sec=$((10#$h_part * 3600))
+  [ -n "$m_part" ] && m_sec=$((10#$m_part * 60))
+  [ -n "$s_part" ] && s_sec=$((10#$s_part))
+  agy_timeout_seconds=$((h_sec + m_sec + s_sec))
+  if [ "$agy_timeout_seconds" -le 0 ]; then
+    echo "error: invalid AGY_TIMEOUT '$agy_timeout_raw' (use e.g. 40m, 1h30m, 90s, or minutes as a bare number)" >&2
+    exit 2
+  fi
+  agy_timeout_str="$agy_timeout_raw"
+else
+  echo "error: invalid AGY_TIMEOUT '$agy_timeout_raw' (use e.g. 40m, 1h30m, 90s, or minutes as a bare number)" >&2
+  exit 2
+fi
+
+# The watch loop compares these numerically; a non-number would make the
+# grace check never fire and leave the runner waiting forever.
+grace_seconds="${AGY_RESULT_GRACE_SECONDS:-30}"
+timeout_margin_seconds="${AGY_TIMEOUT_MARGIN_SECONDS:-300}"
+for knob in AGY_RESULT_GRACE_SECONDS:"$grace_seconds" AGY_TIMEOUT_MARGIN_SECONDS:"$timeout_margin_seconds"; do
+  if ! [[ "${knob#*:}" =~ ^[0-9]{1,6}$ ]]; then
+    echo "error: invalid ${knob%%:*} '${knob#*:}' (whole seconds expected)" >&2
+    exit 2
+  fi
+done
+grace_seconds=$((10#$grace_seconds))
+timeout_margin_seconds=$((10#$timeout_margin_seconds))
+
 # Check flock prerequisite explicitly before locking.
 command -v flock >/dev/null || { echo "flock not found" >&2; exit 2; }
 
@@ -105,7 +156,7 @@ fi
 
 brief="${brief:-$step_dir/brief.md}"
 [ -f "$brief" ] || { echo "brief not found: $brief" >&2; exit 2; }
-for cmd in agy jq; do
+for cmd in agy jq setsid; do
   command -v "$cmd" >/dev/null || { echo "$cmd not found" >&2; exit 2; }
 done
 
@@ -504,9 +555,60 @@ EOF
 # Commands run only inside the sandbox (settings.json: proceed-in-sandbox),
 # so the run never needs a blanket permission bypass.
 agy_cwd="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
+agy_pid=""
+
+# Check whether any non-zombie process remains in the group or PID.
+# shellcheck disable=SC2009
+is_group_active() {
+  local pid="$1"
+  if ps -o stat= -g "$pid" 2>/dev/null | grep -v "^[[:space:]]*[Zz]" >/dev/null; then
+    return 0
+  fi
+  if ps -o stat= -p "$pid" 2>/dev/null | grep -v "^[[:space:]]*[Zz]" >/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+terminate_agy_group() {
+  local pid="$1"
+  [ -z "$pid" ] && return 0
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  local i
+  for ((i = 0; i < 50; i++)); do
+    if ! is_group_active "$pid"; then
+      break
+    fi
+    sleep 0.1
+  done
+  if is_group_active "$pid" || kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
+    kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  fi
+  wait "$pid" 2>/dev/null
+}
+
+# Invoked indirectly via signal traps.
+# shellcheck disable=SC2317
+on_signal() {
+  local sig="$1"
+  trap - INT TERM EXIT
+  if [ -n "${agy_pid:-}" ]; then
+    terminate_agy_group "$agy_pid"
+  fi
+  rmdir "$agy_cwd" 2>/dev/null || true
+  case "$sig" in
+    INT) exit 130 ;;
+    TERM) exit 143 ;;
+    *) exit 1 ;;
+  esac
+}
+
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
 trap 'rmdir "$agy_cwd" 2>/dev/null || true' EXIT
+
 args=(-p "$(cat "$prompt")" --output-format stream-json --mode accept-edits
-  --disable-slash-commands --print-timeout "${AGY_TIMEOUT:-30m}")
+  --disable-slash-commands --print-timeout "$agy_timeout_str")
 model_args=(--model "${AGY_MODEL:-gemini-3.1-pro-high}")
 [ -n "${AGY_EFFORT:-}" ] && model_args+=(--effort "$AGY_EFFORT")
 args+=("${model_args[@]}")
@@ -536,10 +638,60 @@ if [ "$context_status" = "missing" ]; then
   echo "==> notice: no shared exploration context at $context_file; preserving legacy run"
 fi
 start_sec="$(date +%s.%N)"
-set +e
-(cd "$agy_cwd" && agy "${args[@]}" </dev/null) >"$run" 2>"$stderr"
-rc=$?
-set -e
+start_epoch="$(date +%s)"
+deadline_seconds=$((agy_timeout_seconds + timeout_margin_seconds))
+
+terminated_after_result=false
+runner_timeout=false
+result_seen_epoch=""
+rc=0
+
+orig_pwd="$PWD"
+cd "$agy_cwd"
+setsid agy "${args[@]}" </dev/null >"$run" 2>"$stderr" &
+agy_pid=$!
+cd "$orig_pwd"
+
+while true; do
+  if ! kill -0 "$agy_pid" 2>/dev/null; then
+    set +e
+    wait "$agy_pid"
+    rc=$?
+    set -e
+    break
+  fi
+
+  now_epoch="$(date +%s)"
+
+  if [ -z "$result_seen_epoch" ]; then
+    if grep -E '"event"[[:space:]]*:[[:space:]]*"result"' "$run" >/dev/null 2>&1; then
+      result_seen_epoch="$now_epoch"
+    fi
+  fi
+
+  if [ -n "$result_seen_epoch" ]; then
+    if [ $((now_epoch - result_seen_epoch)) -ge "$grace_seconds" ]; then
+      set +e
+      terminate_agy_group "$agy_pid"
+      rc=$?
+      set -e
+      terminated_after_result=true
+      break
+    fi
+  else
+    if [ $((now_epoch - start_epoch)) -ge "$deadline_seconds" ]; then
+      set +e
+      terminate_agy_group "$agy_pid"
+      set -e
+      runner_timeout=true
+      rc=124
+      break
+    fi
+  fi
+
+  sleep 1
+done
+
 end_sec="$(date +%s.%N)"
 wall_duration="$(awk -v s="$start_sec" -v e="$end_sec" 'BEGIN { printf "%.3f", (e - s) }')"
 
@@ -575,10 +727,17 @@ for previous_state in "${compute_recovery_files[@]}"; do
   fi
 done
 status="$(jq -r '.status // "NO_RESULT"' <<<"$result")"
-if [ "$conversation_mismatch" = true ]; then
+if [ "$runner_timeout" = true ]; then
+  status="TIMEOUT"
+  rc=124
+elif [ "$conversation_mismatch" = true ]; then
   status="CONVERSATION_MISMATCH"
 elif [ "$compute_recovery_pending" = true ] && [ "$status" = "SUCCESS" ]; then
   status="RECOVERY_INCOMPLETE"
+fi
+
+if [ "$terminated_after_result" = true ] && [ "$status" = "SUCCESS" ]; then
+  rc=0
 fi
 
 wall_duration_num="$(jq -n --arg w "$wall_duration" '$w | tonumber')"
@@ -612,6 +771,8 @@ jq -n -c \
   --arg status "$status" \
   --argjson compute_recovery_pending "$compute_recovery_pending" \
   --argjson exit_code "$rc" \
+  --argjson terminated_after_result "$terminated_after_result" \
+  --argjson runner_timeout "$runner_timeout" \
   --argjson denied "$denied" \
   --argjson report_empty "$report_empty" \
   --argjson r "$result" \
@@ -622,6 +783,8 @@ jq -n -c \
     compute_backend: (if $compute_backend == "" then null else $compute_backend end),
     compute_recovery_pending: $compute_recovery_pending,
     exit_code: $exit_code, status: $status,
+    terminated_after_result: $terminated_after_result,
+    runner_timeout: $runner_timeout,
     denied_tool_calls: $denied, report_empty: $report_empty,
     duration_seconds: $r.duration_seconds, num_turns: $r.num_turns,
     usage: $r.usage, conversation_id: $r.conversation_id,
@@ -645,6 +808,12 @@ fi
 if [ -n "$resume_attempt" ]; then
   echo "    resumed conversation: $source_conv_id (attempt $resume_attempt)"
 fi
+if [ "$runner_timeout" = true ]; then
+  echo "==> error: runner deadline reached (${deadline_seconds}s); agy terminated" >&2
+fi
+if [ "$terminated_after_result" = true ]; then
+  echo "==> warning: agy did not exit after its result; terminated after ${grace_seconds}s grace"
+fi
 if [ "$conversation_mismatch" = true ]; then
   echo "==> error: conversation ID mismatch (expected $source_conv_id, got ${returned_conv_id:-none})" >&2
 fi
@@ -659,4 +828,10 @@ if [ "$compute_recovery_pending" = true ]; then
 fi
 echo "==> working tree:"
 git -C "$workdir" status --short || true
-[ "$rc" -eq 0 ] && [ "$status" = "SUCCESS" ] && [ "$report_empty" = false ]
+if [ "$rc" -eq 0 ] && [ "$status" = "SUCCESS" ] && [ "$report_empty" = false ]; then
+  exit 0
+fi
+if [ "$rc" -ne 0 ]; then
+  exit "$rc"
+fi
+exit 1
