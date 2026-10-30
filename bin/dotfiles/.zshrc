@@ -139,8 +139,16 @@ if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
 	# exp [path...]: open each path (default .) in Windows Explorer.
 	# explorer.exe needs a Windows path for anything but ".", hence wslpath;
 	# it also exits 1 even on success, so the status is not propagated.
+	# Paths are checked up front: wslpath converts a missing path without
+	# complaint and Explorer then silently opens Documents instead.
 	exp() {
 		local p
+		for p in "${@:-.}"; do
+			if [ ! -e "$p" ]; then
+				printf 'exp: no such file or directory: %s\n' "$p" >&2
+				return 1
+			fi
+		done
 		for p in "${@:-.}"; do
 			explorer.exe "$(wslpath -w "$p")"
 		done
@@ -150,11 +158,20 @@ fi
 
 # WSL: pdf <file.pdf...> opens files in the Windows SumatraPDF viewer.
 # Launched directly (no cmd.exe) and disowned so the shell is not held.
+# Missing files are rejected before launch so no empty viewer window opens.
 if [ -x /mnt/c/Users/admidori/AppData/Local/SumatraPDF/SumatraPDF.exe ]; then
 	pdf() {
 		local p
 		local -a args
+		if [ $# -eq 0 ]; then
+			printf 'usage: pdf <file.pdf>...\n' >&2
+			return 1
+		fi
 		for p in "$@"; do
+			if [ ! -f "$p" ]; then
+				printf 'pdf: no such file: %s\n' "$p" >&2
+				return 1
+			fi
 			args+=("$(wslpath -w "$p")")
 		done
 		/mnt/c/Users/admidori/AppData/Local/SumatraPDF/SumatraPDF.exe "${args[@]}" >/dev/null 2>&1 &!
