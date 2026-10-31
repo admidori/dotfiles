@@ -32,9 +32,10 @@ where relevant; keep required but unavailable checks pending.>
 
 ## Verification
 
-<Commands you must run and get passing before you finish. They run
-sandboxed, so they can't use the network. Specify command, working directory (if
-different from worktree), expected exit status, and evidence scope (static/mock/integration).>
+<Commands you must run and get passing before you finish. In host mode they run
+sandboxed without network access; in Docker Sandbox mode they follow the container
+network policy. Specify command, working directory (if different from worktree),
+expected exit status, and evidence scope (static/mock/integration/live).>
 
 - `<command>` (scope: <static|mock|integration>, expected: exit 0)
 

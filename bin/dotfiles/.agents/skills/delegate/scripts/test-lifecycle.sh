@@ -628,6 +628,46 @@ assert_ok "run argv contains custom model when AGY_MODEL is set" \
   jq -e '.argv | index("--model") as $i | .[$i + 1] == "gemini-custom-pro"' "$CALLS_JSONL"
 
 # -----------------------------------------------------------------------------
+# Case 9: Whitespace-only report rejected and recorded as report_empty=true
+# -----------------------------------------------------------------------------
+echo "==> Case 9: Whitespace-only report rejection"
+
+TASK_DIR_9="$TMP_TEST_DIR/task-9"
+STEP_DIR_9="$TASK_DIR_9/steps/01-step"
+mkdir -p "$STEP_DIR_9"
+echo "# Brief 9" > "$STEP_DIR_9/brief.md"
+
+WHITESPACE_SCRIPT="$TMP_TEST_DIR/whitespace_report.sh"
+cat <<'EOF' > "$WHITESPACE_SCRIPT"
+#!/usr/bin/env bash
+cat <<JSON
+{"event":"step_update","step_update":{"step_index":1,"state":"DONE"}}
+{"event":"result","result":{"status":"SUCCESS","duration_seconds":0.5,"num_turns":1,"usage":{"input_tokens":10,"output_tokens":5},"conversation_id":"conv-ws-1","response":"\n\n  \t\n"}}
+JSON
+exit 0
+EOF
+chmod +x "$WHITESPACE_SCRIPT"
+
+clear_logs
+OUTPUT_9="$TMP_TEST_DIR/output_9.log"
+set +e
+MOCK_RUN_SCRIPT="$WHITESPACE_SCRIPT" run_harness_task "$STEP_DIR_9" >"$OUTPUT_9" 2>&1
+rc_9=$?
+set -e
+
+assert_fail "whitespace-only report fails runner execution" \
+  [ "$rc_9" -eq 0 ]
+
+assert_ok "whitespace-only report exits with code 1" \
+  [ "$rc_9" -eq 1 ]
+
+assert_ok "whitespace-only report prints empty report warning" \
+  grep -Fq "==> warning: no report was returned; see" "$OUTPUT_9"
+
+assert_ok "metrics records report_empty=true for whitespace-only response" \
+  jq -e '.report_empty == true and .status == "SUCCESS"' "$TASK_DIR_9/metrics.jsonl"
+
+# -----------------------------------------------------------------------------
 echo "=========================================="
 echo "Lifecycle tests passed: $PASSED, failed: $FAILED"
 echo "=========================================="

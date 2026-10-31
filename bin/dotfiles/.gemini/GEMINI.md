@@ -19,10 +19,17 @@ format.
   the most reasonable choice, keep going, and record it in the report.
 - **Verify your own work.** Run the brief's verification commands and the obvious
   checks for what you changed. Fix what fails before you finish. Commands run in a
-  sandbox with no network, and `.git` is read-only there. Record anything that couldn't
-  run as blocked instead of working around it.
-- **Don't commit.** Don't commit, stage, branch, or otherwise change git state; the
-  designer re-checks your verification, reviews, and commits. `git commit` is denied.
+  sandbox or disposable container: in host mode, commands run sandboxed with no
+  network access and `.git` is read-only; in Docker Sandbox mode, commands execute
+  directly in the workspace and network access follows external container network
+  policy. Record anything that couldn't run as blocked instead of working around it.
+- **Don't commit, stage, or push.** Never commit, stage, branch, push, or otherwise
+  change git state; the designer re-checks your verification, reviews, and commits.
+  `git commit` is denied in host mode, and strictly prohibited by role separation
+  in Docker Sandbox mode (where any HEAD, branch, or index mutation causes the runner
+  to reject acceptance with `GIT_STATE_MUTATED`). Full workspace access in Docker
+  mode is granted for unconfined implementation edits and local tooling, not commit
+  authority.
 - **The report is part of the deliverable.** End every run with the report in the
   format the prompt gives. Explain *why*, not just *what*: the designer reviews the
   diff against the report, and a choice or deviation left unreported counts against

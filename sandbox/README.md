@@ -13,12 +13,12 @@ sandbox environment.
 - [Host Prerequisites & Keyring Unlock](#host-prerequisites--keyring-unlock)
 - [Pre-Flight: Check Proxy Interception Before Any Login](#pre-flight-check-proxy-interception-before-any-login)
 - [Kit Definitions](#kit-definitions)
-- [Building the Kits](#building-the-kits)
+- [Kit Composition & Building](#kit-composition--building)
 - [Creating a Task Sandbox](#creating-a-task-sandbox)
 - [Entering the Sandbox](#entering-the-sandbox)
 - [Sentinel Verification (Secret-Free)](#sentinel-verification-secret-free)
 - [Running Antigravity Inside the Sandbox](#running-antigravity-inside-the-sandbox)
-- [Sanity Check Marker](#sanity-check-marker)
+- [Accidental-Host Guard & Environment Marker](#accidental-host-guard--environment-marker)
 - [Preserving Work & Cleanup](#preserving-work--cleanup)
 
 ---
@@ -67,7 +67,8 @@ internal access within the container boundary:
   specified host repository checkout read-only to seed the container clone.
   This is the only intended host mount; no writable host workspace, home directory,
   Docker daemon socket (`/var/run/docker.sock`), or host credential store is mounted.
-- **No Native Docker Socket:** The host Docker socket is never mounted into the container.
+- **No Native Host Docker Socket:** The host Docker socket is never mounted into the container.
+  Any Docker socket present inside the microVM is VM-local, not a host bind.
 - **SSH Agent Forwarding Disabled:** Explicit SSH-agent forwarding must be disabled
   separately (ensure `SSH_AUTH_SOCK` is not forwarded or mounted into the sandbox).
 - **Skills Flag Boundary:** `--skills off` disables the shared skills store.
@@ -189,17 +190,12 @@ The kit sources are located under `sandbox/kits/`:
 
 ---
 
-## Building the Kits
+## Kit Composition & Building
 
-Build the workload and mixin kits using the `sbx` CLI on the host:
-
-```bash
-# Build the Codex workload kit
-sbx kit build sandbox/kits/codex-workload
-
-# Build the Antigravity mixin kit
-sbx kit build sandbox/kits/antigravity-mixin
-```
+In `sbx 0.50.1`, image and kit builds occur automatically as part of `sbx create`
+(there is no standalone `sbx kit build` subcommand). When `--kit` and the workload path
+are passed to `sbx create`, the host daemon builds and composes the workload and mixin
+layers automatically.
 
 ---
 
@@ -246,6 +242,25 @@ sbx exec -it dotfiles-agy-task-01 bash
 
 ---
 
+## Load the reviewed agent instructions
+
+After checking out the reviewed task branch in the private clone, link only
+instructions and the shared delegate skill. Run these inside the Sandbox with
+the clone as cwd, and only when the destination files do not already exist:
+
+```sh
+repo=$(pwd -P)
+mkdir -p "$HOME/.codex" "$HOME/.gemini" "$HOME/.agents/skills"
+ln -s "$repo/bin/dotfiles/.codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
+ln -s "$repo/bin/dotfiles/.codex/AGENTS.md" "$HOME/.gemini/AGENTS.md"
+ln -s "$repo/bin/dotfiles/.gemini/GEMINI.md" "$HOME/.gemini/GEMINI.md"
+ln -s "$repo/bin/dotfiles/.agents/skills/delegate" "$HOME/.agents/skills/delegate"
+```
+
+Preserve the kit's Codex proxy configuration and Antigravity OAuth/settings files.
+Install project verification dependencies as needed under the external network policy;
+these kits do not install every package from the host dotfiles installer.
+
 ## Sentinel Verification (Secret-Free)
 
 Inside the sandbox container, verify that credentials and configurations contain
@@ -278,7 +293,7 @@ all_sentinels_valid: True
 ## Running Antigravity Inside the Sandbox
 
 Inside the container, `agy` runs with inner sandboxing disabled via settings.
-Headless and automated calls must still pass full-access bypass flags:
+For standalone headless testing, pass full-access bypass flags:
 
 ```bash
 agy --dangerously-skip-permissions --mode accept-edits -p "Implement task step..."
@@ -287,18 +302,36 @@ agy --dangerously-skip-permissions --mode accept-edits -p "Implement task step..
 - `--dangerously-skip-permissions`: Bypasses confirmation prompts for shell commands and file edits.
 - `--mode accept-edits`: Automatically accepts generated workspace changes.
 
+### Sequential Delegation Runner Mode
+
+For automated delegation loops inside the container, use the harness runner in `docker-sandbox` mode:
+
+```bash
+HARNESS_EXECUTION_MODE=docker-sandbox \
+  bin/dotfiles/.agents/skills/delegate/scripts/run-task.sh <step-dir> <workdir> [brief] [--resume-attempt <N>]
+```
+
+- **Sequential execution:** Codex (designer) and Antigravity (implementer) operate sequentially within the same task-private repository clone. No additional implementation worktree is required.
+- **Automated full access:** The runner passes `--dangerously-skip-permissions` and `--settings '{"enableTerminalSandbox":false}'` and runs directly from `$workdir`.
+- **Role separation & mutation detection:** Antigravity must never stage or commit changes. The runner captures HEAD, symbolic branch, and index state before the model probe and implementation run, rejecting acceptance with `status: "GIT_STATE_MUTATED"` (nonzero exit) if any Git state changed.
+- **Advisory locking:** The runner takes a nonblocking workdir flock (`git rev-parse --git-path harness.lock`) to prevent concurrent runner collisions across steps targeting the same workdir. Note that full-access container execution has permission to defeat advisory locks; locks protect against concurrent runner processes, not malicious processes.
+- **External network policy:** Commands executed during verification follow the container's external network policy.
+
 ---
 
-## Sanity Check Marker
+## Accidental-Host Guard & Environment Marker
 
 The kits place a root-owned marker inside the container filesystem:
 - Path: `/etc/agent-harness/docker-sandbox`
 - Permissions: `0644`, owner `root:root` (UID 0, GID 0)
 
-Runner harnesses sanity-check both `[ -f /.dockerenv ]` and
-`[ -f /etc/agent-harness/docker-sandbox ]` before enabling full-access bypass flags.
-This ensures accidental host execution fails fast rather than executing
-unconfined commands on the host system.
+> [!NOTE]
+> The actual `sbx` microVM rootfs has **NO `/.dockerenv`** file. Runner harnesses must not check or manufacture `/.dockerenv`.
+> Instead, the runner accidental-host guard checks:
+> 1. Nonempty environment variables: `SANDBOX_ID`, `SANDBOX_VM_ID`, and `SBX_AGENT`.
+> 2. Existing, root-owned, non-symlink marker: `/etc/agent-harness/docker-sandbox`.
+>
+> This guard provides opt-in safety against accidental execution on the host development machine, not an isolation boundary against malicious processes.
 
 ---
 

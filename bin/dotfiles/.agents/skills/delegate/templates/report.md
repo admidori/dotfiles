@@ -32,10 +32,12 @@
   - Keep logs bounded and secret-free; evidence may reference actual tool
     outputs without inventing files. Mock success is not live verification;
     after relevant code changes, rerun affected checks.
-- Commands run in a sandbox: there is no network access, `.git` is
-  read-only, and `git commit` is denied. Don't try to work around a blocked
-  command. Record it under "Verification" as blocked and carry on.
-- Don't commit, stage, or branch. The designer reviews and commits.
+- Environment & boundaries: In host mode, commands run sandboxed without
+  network access, `.git` is read-only, and `git commit` is denied. In Docker
+  Sandbox mode, commands run with guarded container access and external network policy.
+  In both modes, role separation is strict: do not commit, stage, or branch
+  (`git commit`, `git add`, checkout). In Docker Sandbox mode, the runner rejects detected Git mutations
+  (`status: GIT_STATE_MUTATED`, nonzero exit). The designer reviews and commits.
 - Report discoveries and corrections below; do not edit the shared context.md.
   The designer verifies and merges findings before the next handoff.
 

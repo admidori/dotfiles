@@ -17,7 +17,8 @@
 # rework run keeps the earlier attempt's record. [brief] defaults to
 # <step-dir>/brief.md; pass a rework brief for later attempts.
 #
-# Env: HARNESS_VARIANT (label for comparing harness changes, default
+# Env: HARNESS_EXECUTION_MODE (host|docker-sandbox, default host),
+# HARNESS_VARIANT (label for comparing harness changes, default
 # "baseline"), HARNESS_DESIGNER (e.g. "Claude (Opus 5.5)"),
 # AGY_MODEL (default gemini-3.8-flash-high),
 # AGY_EFFORT, AGY_TIMEOUT (default 30m).
@@ -143,6 +144,33 @@ done
 grace_seconds=$((10#$grace_seconds))
 timeout_margin_seconds=$((10#$timeout_margin_seconds))
 
+# Validate execution mode before locking or allocating artifacts
+execution_mode="${HARNESS_EXECUTION_MODE:-host}"
+case "$execution_mode" in
+  host)
+    ;;
+  docker-sandbox)
+    if [ -z "${SANDBOX_ID:-}" ] || [ -z "${SANDBOX_VM_ID:-}" ] || [ -z "${SBX_AGENT:-}" ]; then
+      echo "error: docker-sandbox execution mode requires nonempty SANDBOX_ID, SANDBOX_VM_ID, and SBX_AGENT" >&2
+      exit 2
+    fi
+    marker_file="/etc/agent-harness/docker-sandbox"
+    if [ ! -e "$marker_file" ] || [ -L "$marker_file" ] || [ ! -f "$marker_file" ]; then
+      echo "error: docker-sandbox marker file missing or invalid ($marker_file)" >&2
+      exit 2
+    fi
+    marker_uid="$(stat -c '%u' "$marker_file" 2>/dev/null || echo "unknown")"
+    if [ "$marker_uid" != "0" ]; then
+      echo "error: docker-sandbox marker file must be owned by root (uid 0), got uid $marker_uid" >&2
+      exit 2
+    fi
+    ;;
+  *)
+    echo "error: invalid HARNESS_EXECUTION_MODE '$execution_mode' (expected 'host' or 'docker-sandbox')" >&2
+    exit 2
+    ;;
+esac
+
 # Check flock prerequisite explicitly before locking.
 command -v flock >/dev/null || { echo "flock not found" >&2; exit 2; }
 
@@ -151,6 +179,35 @@ lock_file="$step_dir/.lock"
 exec 9>>"$lock_file"
 if ! flock -n 9; then
   echo "error: step directory is locked by another process: $step_dir" >&2
+  exit 1
+fi
+
+# A nonblocking workdir-level flock prevents concurrent runs against the same workdir.
+# Advisory locks can be defeated in full-access environments, but prevent concurrent runner collisions.
+workdir_lock_file=""
+git_lock_rel="$(git -C "$workdir" rev-parse --git-path harness.lock 2>/dev/null || true)"
+if [ -n "$git_lock_rel" ]; then
+  if [[ "$git_lock_rel" = /* ]]; then
+    workdir_lock_file="$git_lock_rel"
+  else
+    workdir_lock_file="$workdir/$git_lock_rel"
+  fi
+else
+  harness_state_dir="${AGENT_HARNESS_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-harness}"
+  lock_hash="$(printf '%s' "$workdir" | sha256sum | cut -d' ' -f1)"
+  workdir_lock_file="$harness_state_dir/locks/${lock_hash}.lock"
+fi
+mkdir -p "$(dirname "$workdir_lock_file")" 2>/dev/null || true
+if ! touch "$workdir_lock_file" 2>/dev/null; then
+  harness_state_dir="${AGENT_HARNESS_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-harness}"
+  lock_hash="$(printf '%s' "$workdir" | sha256sum | cut -d' ' -f1)"
+  workdir_lock_file="$harness_state_dir/locks/${lock_hash}.lock"
+  mkdir -p "$(dirname "$workdir_lock_file")" 2>/dev/null || true
+  touch "$workdir_lock_file" 2>/dev/null || true
+fi
+exec 8>>"$workdir_lock_file"
+if ! flock -n 8; then
+  echo "error: workdir is locked by another process: $workdir" >&2
   exit 1
 fi
 
@@ -288,15 +345,36 @@ if [ -n "$resume_attempt" ]; then
   fi
 fi
 
-# agy mounts every workspace folder (its cwd and any --add-dir) read-only
-# inside the terminal sandbox in headless runs, whatever settings.json
-# allows. So run it from an empty scratch dir and leave the project out of
-# the workspace: file edits then go through the write_file permissions, and
-# sandboxed commands (formatters, builds, tests) can write to the project.
-# Commands run only inside the sandbox (settings.json: proceed-in-sandbox),
-# so the run never needs a blanket permission bypass.
-agy_cwd="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
+owned_scratch_dir=""
+run_cwd=""
+mode_flags=()
+
+if [ "$execution_mode" = "host" ]; then
+  # agy mounts every workspace folder (its cwd and any --add-dir) read-only
+  # inside the terminal sandbox in headless runs, whatever settings.json
+  # allows. So run it from an empty scratch dir and leave the project out of
+  # the workspace: file edits then go through the write_file permissions, and
+  # sandboxed commands (formatters, builds, tests) can write to the project.
+  # Commands run only inside the sandbox (settings.json: proceed-in-sandbox),
+  # so the run never needs a blanket permission bypass.
+  owned_scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
+  run_cwd="$owned_scratch_dir"
+  mode_flags=()
+else
+  # docker-sandbox mode runs directly in the actual workdir with full access bypass flags.
+  owned_scratch_dir=""
+  run_cwd="$workdir"
+  mode_flags=(--dangerously-skip-permissions --settings '{"enableTerminalSandbox":false}')
+fi
 agy_pid=""
+
+# Invoked indirectly via traps.
+# shellcheck disable=SC2317,SC2329
+cleanup_scratch() {
+  if [ -n "$owned_scratch_dir" ] && [ -d "$owned_scratch_dir" ] && [ "$owned_scratch_dir" != "$workdir" ]; then
+    rmdir "$owned_scratch_dir" 2>/dev/null || rm -rf "$owned_scratch_dir" 2>/dev/null || true
+  fi
+}
 
 # Check whether any non-zombie process remains in process group <pid>.
 # Reads /proc directly: minimal images (e.g. debian:bookworm-slim) ship
@@ -337,14 +415,14 @@ terminate_agy_group() {
 }
 
 # Invoked indirectly via signal traps.
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 on_signal() {
   local sig="$1"
   trap - INT TERM EXIT
   if [ -n "${agy_pid:-}" ]; then
     terminate_agy_group "$agy_pid"
   fi
-  rmdir "$agy_cwd" 2>/dev/null || rm -rf "$agy_cwd" 2>/dev/null || true
+  cleanup_scratch
   case "$sig" in
     INT) exit 130 ;;
     TERM) exit 143 ;;
@@ -354,18 +432,46 @@ on_signal() {
 
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
-trap 'rmdir "$agy_cwd" 2>/dev/null || rm -rf "$agy_cwd" 2>/dev/null || true' EXIT
+trap 'cleanup_scratch' EXIT
 
 effective_model="${AGY_MODEL:-gemini-3.8-flash-high}"
 model_args=(--model "$effective_model")
 [ -n "${AGY_EFFORT:-}" ] && model_args+=(--effort "$AGY_EFFORT")
 
+capture_git_state() {
+  local dir="$1"
+  if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    local head branch index_raw index_hash
+    head="$(git -C "$dir" rev-parse --verify -q HEAD 2>/dev/null || echo "NO_HEAD")"
+    branch="$(git -C "$dir" symbolic-ref -q --short HEAD 2>/dev/null || git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "DETACHED_OR_UNKNOWN")"
+    if ! index_raw="$(git -C "$dir" ls-files --stage 2>/dev/null)"; then
+      index_hash="INDEX_READ_FAILED"
+    else
+      index_hash="$(printf '%s' "$index_raw" | sha256sum | cut -d' ' -f1)"
+    fi
+    printf '%s\n%s\n%s\n' "$head" "$branch" "$index_hash"
+  else
+    printf 'no-git\nno-git\nno-git\n'
+  fi
+}
+
+pre_git_head=""
+pre_git_branch=""
+pre_git_index=""
+if [ "$execution_mode" = "docker-sandbox" ]; then
+  {
+    read -r pre_git_head
+    read -r pre_git_branch
+    read -r pre_git_index
+  } <<<"$(capture_git_state "$workdir")"
+fi
+
 # Ask agy which model this run will use rather than trusting AGY_MODEL or
 # guessing: the commit's co-author trailer must name the resolved model.
 # Probe with the same model/effort arguments used for implementation.
 # Print-mode /model answers without a turn or quota.
-model_json="$( (cd "$agy_cwd" && timeout 60 agy -p "/model" --output-format json \
-  "${model_args[@]}" </dev/null 2>/dev/null) | jq -c '.command.data // empty' 2>/dev/null || true)"
+model_json="$( (cd "$run_cwd" && timeout 60 agy -p "/model" --output-format json \
+  "${model_args[@]}" "${mode_flags[@]}" </dev/null 2>/dev/null) | jq -c '.command.data // empty' 2>/dev/null || true)"
 [ -n "$model_json" ] || model_json='{}'
 model_id="$(jq -r 'if has("id") and (.id | type == "string") and (.id | test("\\S")) then .id else "unknown" end' <<<"$model_json" 2>/dev/null || echo "unknown")"
 if [ -z "$model_id" ] || [ "$model_id" = "unknown" ]; then
@@ -498,7 +604,16 @@ if [ -n "$compute_backend" ]; then
 fi
 
 {
-  cat <<EOF
+  if [ "$execution_mode" = "docker-sandbox" ]; then
+    cat <<EOF
+# Project directory
+
+The project for this step is \`$workdir\`.
+Read its AGENTS.md first, if there is one.
+
+EOF
+  else
+    cat <<EOF
 # Project directory
 
 The project for this step is \`$workdir\`. It is not your current
@@ -507,6 +622,7 @@ commands as \`cd $workdir && <command>\`. Read its AGENTS.md first, if
 there is one.
 
 EOF
+  fi
   if [ "$context_status" = "present" ]; then
     cat <<EOF
 # Shared exploration context
@@ -639,6 +755,7 @@ EOF
 args=(-p "$(cat "$prompt")" --output-format stream-json --mode accept-edits
   --disable-slash-commands --print-timeout "$agy_timeout_str")
 args+=("${model_args[@]}")
+args+=("${mode_flags[@]}")
 if [ -n "$resume_attempt" ]; then
   args+=(--conversation "$source_conv_id")
 fi
@@ -661,7 +778,7 @@ result_seen_epoch=""
 rc=0
 
 orig_pwd="$PWD"
-cd "$agy_cwd"
+cd "$run_cwd"
 setsid agy "${args[@]}" </dev/null >"$run" 2>"$stderr" &
 agy_pid=$!
 cd "$orig_pwd"
@@ -732,7 +849,9 @@ denied="$(jq -R 'fromjson? | select(.event == "step_update") | .step_update
     | test("denied|not permitted|requires approval|approval required"; "i")))' \
   "$run" | jq -s 'length')"
 report_empty=false
-[ -s "$report" ] || report_empty=true
+if [ ! -f "$report" ] || ! grep -q '[^[:space:]]' "$report"; then
+  report_empty=true
+fi
 
 compute_recovery_pending=false
 for previous_state in "${compute_recovery_files[@]}"; do
@@ -740,6 +859,25 @@ for previous_state in "${compute_recovery_files[@]}"; do
     compute_recovery_pending=true
   fi
 done
+git_state_changed=false
+if [ "$execution_mode" = "docker-sandbox" ]; then
+  post_git_head=""
+  post_git_branch=""
+  post_git_index=""
+  {
+    read -r post_git_head
+    read -r post_git_branch
+    read -r post_git_index
+  } <<<"$(capture_git_state "$workdir")"
+
+  if [ "$pre_git_index" = "INDEX_READ_FAILED" ] || [ "$post_git_index" = "INDEX_READ_FAILED" ] || \
+     [ "$post_git_head" != "$pre_git_head" ] || \
+     [ "$post_git_branch" != "$pre_git_branch" ] || \
+     [ "$post_git_index" != "$pre_git_index" ]; then
+    git_state_changed=true
+  fi
+fi
+
 status="$(jq -r '.status // "NO_RESULT"' <<<"$result")"
 if [ "$runner_timeout" = true ]; then
   status="TIMEOUT"
@@ -752,6 +890,13 @@ fi
 
 if [ "$terminated_after_result" = true ] && [ "$status" = "SUCCESS" ]; then
   rc=0
+fi
+
+if [ "$git_state_changed" = true ]; then
+  status="GIT_STATE_MUTATED"
+  if [ "$rc" -eq 0 ]; then
+    rc=1
+  fi
 fi
 
 wall_duration_num="$(jq -n --arg w "$wall_duration" '$w | tonumber')"
@@ -771,6 +916,8 @@ jq -n -c \
   --arg step "$(basename "$step_dir")" \
   --arg step_dir "$step_dir" \
   --arg workdir "$workdir" \
+  --arg execution_mode "$execution_mode" \
+  --argjson git_state_changed "$git_state_changed" \
   --arg mode "$mode" \
   --argjson source_attempt "$source_attempt_json" \
   --arg counter_scope "conversation" \
@@ -797,6 +944,8 @@ jq -n -c \
     compute_backend: (if $compute_backend == "" then null else $compute_backend end),
     compute_recovery_pending: $compute_recovery_pending,
     exit_code: $exit_code, status: $status,
+    execution_mode: $execution_mode,
+    git_state_changed: $git_state_changed,
     terminated_after_result: $terminated_after_result,
     runner_timeout: $runner_timeout,
     denied_tool_calls: $denied, report_empty: $report_empty,
@@ -833,6 +982,9 @@ if [ "$conversation_mismatch" = true ]; then
 fi
 if [ "$denied" -gt 0 ]; then
   echo "==> warning: $denied tool call(s) denied; the report's verification may be incomplete"
+fi
+if [ "$git_state_changed" = true ]; then
+  echo "==> error: git state changed during docker-sandbox execution (HEAD, branch, or index modified)" >&2
 fi
 if [ "$report_empty" = true ]; then
   echo "==> warning: no report was returned; see $stderr"
