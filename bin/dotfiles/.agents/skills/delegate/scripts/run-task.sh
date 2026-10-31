@@ -19,7 +19,7 @@
 #
 # Env: HARNESS_VARIANT (label for comparing harness changes, default
 # "baseline"), HARNESS_DESIGNER (e.g. "Claude (Opus 5.5)"),
-# AGY_MODEL (default gemini-3.1-pro-high),
+# AGY_MODEL (default gemini-3.8-flash-high),
 # AGY_EFFORT, AGY_TIMEOUT (default 30m).
 #
 set -euo pipefail
@@ -288,6 +288,87 @@ if [ -n "$resume_attempt" ]; then
   fi
 fi
 
+# agy mounts every workspace folder (its cwd and any --add-dir) read-only
+# inside the terminal sandbox in headless runs, whatever settings.json
+# allows. So run it from an empty scratch dir and leave the project out of
+# the workspace: file edits then go through the write_file permissions, and
+# sandboxed commands (formatters, builds, tests) can write to the project.
+# Commands run only inside the sandbox (settings.json: proceed-in-sandbox),
+# so the run never needs a blanket permission bypass.
+agy_cwd="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
+agy_pid=""
+
+# Check whether any non-zombie process remains in the group or PID.
+# shellcheck disable=SC2009
+is_group_active() {
+  local pid="$1"
+  if ps -o stat= -g "$pid" 2>/dev/null | grep -v "^[[:space:]]*[Zz]" >/dev/null; then
+    return 0
+  fi
+  if ps -o stat= -p "$pid" 2>/dev/null | grep -v "^[[:space:]]*[Zz]" >/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+terminate_agy_group() {
+  local pid="$1"
+  [ -z "$pid" ] && return 0
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  local i
+  for ((i = 0; i < 50; i++)); do
+    if ! is_group_active "$pid"; then
+      break
+    fi
+    sleep 0.1
+  done
+  if is_group_active "$pid" || kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
+    kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  fi
+  wait "$pid" 2>/dev/null
+}
+
+# Invoked indirectly via signal traps.
+# shellcheck disable=SC2317
+on_signal() {
+  local sig="$1"
+  trap - INT TERM EXIT
+  if [ -n "${agy_pid:-}" ]; then
+    terminate_agy_group "$agy_pid"
+  fi
+  rmdir "$agy_cwd" 2>/dev/null || rm -rf "$agy_cwd" 2>/dev/null || true
+  case "$sig" in
+    INT) exit 130 ;;
+    TERM) exit 143 ;;
+    *) exit 1 ;;
+  esac
+}
+
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
+trap 'rmdir "$agy_cwd" 2>/dev/null || rm -rf "$agy_cwd" 2>/dev/null || true' EXIT
+
+effective_model="${AGY_MODEL:-gemini-3.8-flash-high}"
+model_args=(--model "$effective_model")
+[ -n "${AGY_EFFORT:-}" ] && model_args+=(--effort "$AGY_EFFORT")
+
+# Ask agy which model this run will use rather than trusting AGY_MODEL or
+# guessing: the commit's co-author trailer must name the resolved model.
+# Probe with the same model/effort arguments used for implementation.
+# Print-mode /model answers without a turn or quota.
+model_json="$( (cd "$agy_cwd" && timeout 60 agy -p "/model" --output-format json \
+  "${model_args[@]}" </dev/null 2>/dev/null) | jq -c '.command.data // empty' 2>/dev/null || true)"
+[ -n "$model_json" ] || model_json='{}'
+model_id="$(jq -r 'if has("id") and (.id | type == "string") and (.id | test("\\S")) then .id else "unknown" end' <<<"$model_json" 2>/dev/null || echo "unknown")"
+if [ -z "$model_id" ] || [ "$model_id" = "unknown" ]; then
+  echo "error: could not resolve model '$effective_model' via 'agy -p /model'; check AGY_MODEL (available models: agy -p /model)" >&2
+  exit 2
+fi
+# "Gemini 3.8 Flash (High)" -> "Gemini 3.8 Flash": the effort suffix is a run
+# setting, not part of the model's name.
+model_name="$(jq -r '.label // "unknown" | sub(" \\([^)]*\\)$"; "")' <<<"$model_json")"
+trailer="Co-authored-by: Antigravity ($model_name) <noreply@google.com>"
+
 is_attempt_occupied() {
   local a="$1"
   local f
@@ -547,87 +628,12 @@ EOF
   cat "$skill_dir/templates/report.md"
 } >"$prompt"
 
-# agy mounts every workspace folder (its cwd and any --add-dir) read-only
-# inside the terminal sandbox in headless runs, whatever settings.json
-# allows. So run it from an empty scratch dir and leave the project out of
-# the workspace: file edits then go through the write_file permissions, and
-# sandboxed commands (formatters, builds, tests) can write to the project.
-# Commands run only inside the sandbox (settings.json: proceed-in-sandbox),
-# so the run never needs a blanket permission bypass.
-agy_cwd="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
-agy_pid=""
-
-# Check whether any non-zombie process remains in the group or PID.
-# shellcheck disable=SC2009
-is_group_active() {
-  local pid="$1"
-  if ps -o stat= -g "$pid" 2>/dev/null | grep -v "^[[:space:]]*[Zz]" >/dev/null; then
-    return 0
-  fi
-  if ps -o stat= -p "$pid" 2>/dev/null | grep -v "^[[:space:]]*[Zz]" >/dev/null; then
-    return 0
-  fi
-  return 1
-}
-
-terminate_agy_group() {
-  local pid="$1"
-  [ -z "$pid" ] && return 0
-  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-  local i
-  for ((i = 0; i < 50; i++)); do
-    if ! is_group_active "$pid"; then
-      break
-    fi
-    sleep 0.1
-  done
-  if is_group_active "$pid" || kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
-    kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-  fi
-  wait "$pid" 2>/dev/null
-}
-
-# Invoked indirectly via signal traps.
-# shellcheck disable=SC2317
-on_signal() {
-  local sig="$1"
-  trap - INT TERM EXIT
-  if [ -n "${agy_pid:-}" ]; then
-    terminate_agy_group "$agy_pid"
-  fi
-  rmdir "$agy_cwd" 2>/dev/null || true
-  case "$sig" in
-    INT) exit 130 ;;
-    TERM) exit 143 ;;
-    *) exit 1 ;;
-  esac
-}
-
-trap 'on_signal INT' INT
-trap 'on_signal TERM' TERM
-trap 'rmdir "$agy_cwd" 2>/dev/null || true' EXIT
-
 args=(-p "$(cat "$prompt")" --output-format stream-json --mode accept-edits
   --disable-slash-commands --print-timeout "$agy_timeout_str")
-model_args=(--model "${AGY_MODEL:-gemini-3.1-pro-high}")
-[ -n "${AGY_EFFORT:-}" ] && model_args+=(--effort "$AGY_EFFORT")
 args+=("${model_args[@]}")
 if [ -n "$resume_attempt" ]; then
   args+=(--conversation "$source_conv_id")
 fi
-
-# Ask agy which model this run will use rather than trusting AGY_MODEL or
-# guessing: the commit's co-author trailer must name the resolved model.
-# Probe with the same model/effort arguments used for implementation.
-# Print-mode /model answers without a turn or quota.
-model_json="$( (cd "$agy_cwd" && timeout 60 agy -p "/model" --output-format json \
-  "${model_args[@]}" </dev/null 2>/dev/null) | jq -c '.command.data // empty' 2>/dev/null || true)"
-[ -n "$model_json" ] || model_json='{}'
-model_id="$(jq -r '.id // "unknown"' <<<"$model_json")"
-# "Gemini 3.1 Pro (High)" -> "Gemini 3.1 Pro": the effort suffix is a run
-# setting, not part of the model's name.
-model_name="$(jq -r '.label // "unknown" | sub(" \\([^)]*\\)$"; "")' <<<"$model_json")"
-trailer="Co-authored-by: Antigravity ($model_name) <noreply@google.com>"
 
 if [ -n "$resume_attempt" ]; then
   echo "==> step $(basename "$step_dir"), attempt $attempt (resuming attempt $resume_attempt): running agy ($model_id) on $workdir"

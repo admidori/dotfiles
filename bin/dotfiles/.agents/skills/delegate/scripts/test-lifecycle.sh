@@ -56,6 +56,7 @@ trap cleanup EXIT
 MOCK_LOG_DIR="$TMP_TEST_DIR/logs"
 mkdir -p "$MOCK_LOG_DIR"
 PROBE_LOG="$MOCK_LOG_DIR/agy_probe.log"
+PROBE_JSONL="$MOCK_LOG_DIR/agy_probe.jsonl"
 CALLS_LOG="$MOCK_LOG_DIR/agy_calls.log"
 CALLS_JSONL="$MOCK_LOG_DIR/agy_calls.jsonl"
 
@@ -66,6 +67,15 @@ cat <<'EOF' > "$FAKE_BIN_DIR/agy"
 #!/usr/bin/env bash
 if [ "$1" = "-p" ] && [ "$2" = "/model" ]; then
   echo "$*" >> "${MOCK_LOG_DIR}/agy_probe.log"
+  jq -n -c '{argv: $ARGS.positional}' --args -- "$@" >> "${MOCK_LOG_DIR}/agy_probe.jsonl"
+  if [ -n "${MOCK_PROBE_EMPTY:-}" ]; then
+    echo '{}'
+    exit 0
+  fi
+  if [ -n "${MOCK_PROBE_RESPONSE:-}" ]; then
+    echo "$MOCK_PROBE_RESPONSE"
+    exit 0
+  fi
   echo '{"command":{"data":{"id":"mock-gemini","label":"Mock Gemini"}}}'
   exit 0
 fi
@@ -95,6 +105,8 @@ run_harness_task() {
   shift
   MOCK_LOG_DIR="$MOCK_LOG_DIR" PATH="$FAKE_BIN_DIR:$PATH" \
     MOCK_RUN_SCRIPT="${MOCK_RUN_SCRIPT:-}" \
+    MOCK_PROBE_EMPTY="${MOCK_PROBE_EMPTY:-}" \
+    MOCK_PROBE_RESPONSE="${MOCK_PROBE_RESPONSE:-}" \
     "$RUN_TASK_BIN" "$step_dir" "$MOCK_WORKDIR" "$@"
 }
 
@@ -105,8 +117,21 @@ run_with_timeout() {
   AGY_TIMEOUT="$to" run_harness_task "$step_dir" "$@"
 }
 
+run_with_model() {
+  local model="$1"
+  local step_dir="$2"
+  shift 2
+  AGY_MODEL="$model" run_harness_task "$step_dir" "$@"
+}
+
+has_no_artifacts() {
+  local dir="$1"
+  ! ls "$dir"/prompt-* "$dir"/run-* "$dir"/report-* >/dev/null 2>&1
+}
+
 clear_logs() {
   : > "$PROBE_LOG"
+  : > "$PROBE_JSONL"
   : > "$CALLS_LOG"
   : > "$CALLS_JSONL"
 }
@@ -495,6 +520,105 @@ test_invalid_knob() {
 
 test_invalid_knob AGY_RESULT_GRACE_SECONDS abc "08-bad-grace"
 test_invalid_knob AGY_TIMEOUT_MARGIN_SECONDS 1.5 "09-bad-margin"
+
+# -----------------------------------------------------------------------------
+# Case 7: Model probe failure and fail-fast before attempt allocation
+# -----------------------------------------------------------------------------
+echo "==> Case 7: Model probe failure and fail-fast before attempt allocation"
+
+TASK_DIR_7="$TMP_TEST_DIR/task-7"
+STEP_DIR_7="$TASK_DIR_7/steps/01-step"
+mkdir -p "$STEP_DIR_7"
+echo "# Brief 7" > "$STEP_DIR_7/brief.md"
+
+clear_logs
+OUTPUT_7="$TMP_TEST_DIR/output_7.log"
+set +e
+MOCK_PROBE_EMPTY=1 run_harness_task "$STEP_DIR_7" >"$OUTPUT_7" 2>&1
+rc_7=$?
+set -e
+
+assert_ok "empty probe causes runner to exit 2" \
+  [ "$rc_7" -eq 2 ]
+
+assert_ok "empty probe prints error naming default model and checking AGY_MODEL" \
+  grep -Fq "error: could not resolve model 'gemini-3.8-flash-high' via 'agy -p /model'; check AGY_MODEL (available models: agy -p /model)" "$OUTPUT_7"
+
+assert_ok "no artifacts created when probe fails" \
+  has_no_artifacts "$STEP_DIR_7"
+
+assert_ok "no metrics row written when probe fails" \
+  [ ! -f "$TASK_DIR_7/metrics.jsonl" ]
+
+# A following normal run on the same step must get attempt 1
+clear_logs
+OUTPUT_7B="$TMP_TEST_DIR/output_7b.log"
+assert_ok "following normal run succeeds" \
+  run_harness_task "$STEP_DIR_7" >"$OUTPUT_7B" 2>&1
+
+assert_ok "following run receives attempt 1" \
+  test -s "$STEP_DIR_7/prompt-1.md"
+
+assert_ok "following run creates report-1.md" \
+  test -s "$STEP_DIR_7/report-1.md"
+
+assert_ok "following run records attempt 1 in metrics" \
+  jq -e '.attempt == 1 and .status == "SUCCESS"' "$TASK_DIR_7/metrics.jsonl"
+
+# Probe failure with explicit custom AGY_MODEL names the custom model
+clear_logs
+OUTPUT_7C="$TMP_TEST_DIR/output_7c.log"
+set +e
+MOCK_PROBE_EMPTY=1 run_with_model "custom-test-model" "$STEP_DIR_7" >"$OUTPUT_7C" 2>&1
+rc_7c=$?
+set -e
+
+assert_ok "probe failure with custom AGY_MODEL exits 2" \
+  [ "$rc_7c" -eq 2 ]
+
+assert_ok "error message names the custom requested model" \
+  grep -Fq "error: could not resolve model 'custom-test-model' via 'agy -p /model'; check AGY_MODEL (available models: agy -p /model)" "$OUTPUT_7C"
+
+# -----------------------------------------------------------------------------
+# Case 8: Default model passed to probe and run argv
+# -----------------------------------------------------------------------------
+echo "==> Case 8: Default model passed to probe and run argv"
+
+TASK_DIR_8="$TMP_TEST_DIR/task-8"
+STEP_DIR_8="$TASK_DIR_8/steps/01-step"
+mkdir -p "$STEP_DIR_8"
+echo "# Brief 8" > "$STEP_DIR_8/brief.md"
+
+clear_logs
+unset AGY_MODEL || true
+assert_ok "run with unset AGY_MODEL succeeds" \
+  run_harness_task "$STEP_DIR_8"
+
+# shellcheck disable=SC2016
+assert_ok "probe argv contains --model gemini-3.8-flash-high when AGY_MODEL is unset" \
+  jq -e '.argv | index("--model") as $i | .[$i + 1] == "gemini-3.8-flash-high"' "$PROBE_JSONL"
+
+# shellcheck disable=SC2016
+assert_ok "run argv contains --model gemini-3.8-flash-high when AGY_MODEL is unset" \
+  jq -e '.argv | index("--model") as $i | .[$i + 1] == "gemini-3.8-flash-high"' "$CALLS_JSONL"
+
+# Custom AGY_MODEL is passed to both probe and run argv
+TASK_DIR_8B="$TMP_TEST_DIR/task-8b"
+STEP_DIR_8B="$TASK_DIR_8B/steps/01-step"
+mkdir -p "$STEP_DIR_8B"
+echo "# Brief 8B" > "$STEP_DIR_8B/brief.md"
+
+clear_logs
+assert_ok "run with custom AGY_MODEL succeeds" \
+  run_with_model "gemini-custom-pro" "$STEP_DIR_8B"
+
+# shellcheck disable=SC2016
+assert_ok "probe argv contains custom model when AGY_MODEL is set" \
+  jq -e '.argv | index("--model") as $i | .[$i + 1] == "gemini-custom-pro"' "$PROBE_JSONL"
+
+# shellcheck disable=SC2016
+assert_ok "run argv contains custom model when AGY_MODEL is set" \
+  jq -e '.argv | index("--model") as $i | .[$i + 1] == "gemini-custom-pro"' "$CALLS_JSONL"
 
 # -----------------------------------------------------------------------------
 echo "=========================================="
