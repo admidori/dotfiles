@@ -83,9 +83,31 @@ implementation.
   - Codex → `Co-authored-by: Codex (<model>) <noreply@openai.com>` (e.g. `Codex (gpt-5.6-sol)`)
   - Claude → `Co-authored-by: Claude (<model>) <noreply@anthropic.com>` (e.g. `Claude (Opus 4.8)`)
   - Antigravity → `Co-authored-by: Antigravity (<model>) <noreply@google.com>` (e.g. `Antigravity (Gemini 3.1 Pro)`)
-- Read `<model>` from the actual configuration at commit time. Never write it from
-  memory, and never shorten it to a family name such as `GPT-5`:
-  - Codex: the `model` key in `~/.codex/config.toml`, unless the session overrides it.
+- Read `<model>` from the actual configuration or executing session at commit time.
+  Never write it from memory, and never shorten it to a family name such as `GPT-6`:
+  - Codex: resolve from the executing session via `resolve-codex-model.py`
+    (inspects the active session's latest `turn_context` record under
+    `${CODEX_HOME:-~/.codex}/sessions`). App, CLI, or profile overrides take precedence over
+    `~/.codex/config.toml` defaults, which must not be used as fallback.
+    Always resolve the model before delegation and before committing, and stop
+    on resolution failure:
+    ```bash
+    if ! CODEX_MODEL="$(~/.agents/skills/delegate/scripts/resolve-codex-model.py)"; then
+      echo "Failed to resolve Codex model from session" >&2
+      exit 1
+    fi
+    ```
+    On-disk rollout JSONL logs are an observed internal format, not a stable
+    public API. If the format changes or metadata is missing/malformed, the
+    resolver fails fast with an actionable error. Never guess or fall back to
+    generic model identifiers, family names, or config defaults when session
+    evidence is missing, ambiguous, or invalid.
+    When a host designer calls a remote delegate runner over SSH without
+    forwarding local session histories or credentials, resolve the model on the
+    originating host first and pass `HARNESS_DESIGNER="Codex ($CODEX_MODEL)"`.
+    The remote runner retains supplied labels as unverified by the remote runner
+    without pretending they are session-derived and without copying histories or
+    credentials.
   - Antigravity: the trailer the `delegate` runner prints and records for that run, or
     the model `agy -p "/model"` reports.
 - A commit carries a trailer for every agent that contributed to it. When a designer

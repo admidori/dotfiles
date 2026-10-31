@@ -112,6 +112,11 @@ Repeat for each step in order, one step per run. Never batch steps.
      - If any Git state changed after `agy` completes (on either `SUCCESS` or error exit), the runner overrides status to `GIT_STATE_MUTATED`, records `git_state_changed: true` in `metrics.jsonl`, prints an error notice, and exits with code 1. Git mutations are preserved for designer inspection (never silently undone).
    - **Model resolution and probe:**
      - The runner defaults to `gemini-3.8-flash-high` when `AGY_MODEL` is unset or empty; the run stops (exit 2) if the model cannot be resolved. Set `AGY_MODEL` to override the model and `AGY_EFFORT` to override reasoning effort. The model probe and implementation receive the same arguments and execution mode flags.
+   - **Designer attribution and session resolution:**
+     - Before the model probe or allocating attempt files, the runner derives the designer label and records provenance fields `designer_source` (`codex-session`, `provided`, or `unknown`) and `designer_session_id`.
+     - When `CODEX_THREAD_ID` is present locally and `HARNESS_DESIGNER` is unset, `unknown`, `Codex`, or starts with `Codex (...)`, the runner invokes `resolve-codex-model.py` to resolve the executing session's model from its latest complete `turn_context` record under `CODEX_HOME/sessions`, setting the label to `Codex (<resolved-model>)` and overriding stale text.
+     - If session resolution fails in this identified Codex path, the runner stops immediately (exit 2) before invoking `agy` or allocating attempt files.
+     - Explicit non-Codex designer labels (e.g. `Claude (Opus 4.8)`) are preserved. For remote designer calls over SSH without forwarding local session logs or credentials, explicit supplied labels are retained with `designer_source: "provided"`. Supplied labels are unverified by the remote runner; do not assume they are session-derived.
    - Under Codex on the host, `agy` needs network access and writes outside the workspace, so request sandbox escalation for this command rather than widening the sandbox.
    - **Timeout and process management:**
      - It blocks until Antigravity finishes (default limit 30m, `AGY_TIMEOUT`). `AGY_TIMEOUT` format: `40m`, `1h30m`, `90s`, or a bare number of minutes; invalid values exit 2 before anything runs.
@@ -147,9 +152,15 @@ Repeat for each step in order, one step per run. Never batch steps.
 8. **Rework if needed.** Polish trivial issues yourself and list them in the review. For anything substantive:
    - Decide whether the rework should start fresh or reuse conversation context. If the model had good context on the problem and only needs a correction, use `--resume-attempt <N>` with the latest attempt number. If the model was confused or polluted its context, start a fresh attempt by omitting `--resume-attempt`.
    - Write a rework brief in the step directory describing the defect and pointing at the uncommitted attempt in the tree, carry corrected or retracted claims explicitly into the rework brief so the model does not repeat superseded assumptions, update `context.md` if the previous attempt revealed new constraints or rejected paths, and run the runner again:
+     ```bash
+     # Under Codex, resolve the model from the active session (stops on failure):
+     if ! CODEX_MODEL="$(<skill-dir>/scripts/resolve-codex-model.py)"; then
+       echo "Failed to resolve Codex model from session" >&2
+       exit 1
+     fi
+     HARNESS_DESIGNER="Codex ($CODEX_MODEL)" <skill-dir>/scripts/run-task.sh <step-dir> <impl-worktree> <rework-brief> [--resume-attempt <N>]
      ```
-     HARNESS_DESIGNER="<you> (<model>)" <skill-dir>/scripts/run-task.sh <step-dir> <impl-worktree> <rework-brief> [--resume-attempt <N>]
-     ```
+     (When running locally with `CODEX_THREAD_ID` set, `run-task.sh` also resolves and overrides stale Codex labels automatically).
    - The attempt counter advances, keeping earlier artifacts intact. Bound rework at two rounds, then bring it to the operator. If the review shows the step's premise was wrong, stop (step 10).
 
 9. **Commit or checkpoint this reviewed step.** Under standing authorization, once this step's review is complete, required fixes are done, and relevant re-verification passes, commit in the implementation worktree (Host mode) or the task-private clone (Docker Sandbox mode) before proceeding, without asking for commit approval. The commit covers only this step, with a Conventional Commits message whose body draws on the design's reasoning, and both trailers:
@@ -157,7 +168,17 @@ Repeat for each step in order, one step per run. Never batch steps.
    Co-authored-by: <you> (<model>) <noreply@...>
    Co-authored-by: Antigravity (<model>) <noreply@google.com>
    ```
-   Both trailers are mandatory on every delegated step, including a step you only reviewed or polished. Take Antigravity's trailer verbatim from the runner's `trailer for the commit:` line, or from the run's `trailer` field in `metrics.jsonl`. Take your own model from your actual configuration, never from memory; for Codex that is the `model` key in `~/.codex/config.toml`. If your harness already appends your own trailer, don't duplicate it — check `git log -1`. Record the commit SHA in the review, confirm `git status` is clean, report the commit to the operator in a line or two, and continue. Don't push or merge mid-loop; standing local commit authority never authorizes pushing or creating a PR.
+   Both trailers are mandatory on every delegated step, including a step you only reviewed or polished. Take Antigravity's trailer verbatim from the runner's `trailer for the commit:` line, or from the run's `trailer` field in `metrics.jsonl`. Take your own model from your actual configuration or active session, never from memory:
+   - Codex: resolve from the executing session via `<skill-dir>/scripts/resolve-codex-model.py` again at commit time, never from an earlier metrics row, memory, static assumptions, or generic family names like `GPT-6`. App, CLI, or profile overrides take precedence over `config.toml` defaults; the latest complete `turn_context` record in the session rollout is the source of truth. If resolution fails, stop rather than guess.
+     ```bash
+     if ! CODEX_MODEL="$(<skill-dir>/scripts/resolve-codex-model.py)"; then
+       echo "Failed to resolve Codex model from session" >&2
+       exit 1
+     fi
+     ```
+     On-disk rollout JSONL logs are an observed internal format, not a stable public API; if format changes or evidence is missing/ambiguous, fail fast. For remote designer calls over SSH without copying histories or credentials, resolve on the host first and pass `HARNESS_DESIGNER="Codex ($CODEX_MODEL)"`.
+   - Claude: take your model from your actual configuration; Claude Code appends its own versioned co-author trailer automatically (check `git log -1` to avoid duplicates).
+   Record the commit SHA in the review, confirm `git status` is clean, report the commit to the operator in a line or two, and continue. Don't push or merge mid-loop; standing local commit authority never authorizes pushing or creating a PR.
 
    If commits are explicitly deferred by the operator or blocked by stricter constraints, save the accepted checkpoint and record its base, predecessor, verification results, and deferred commit status in the review before proceeding.
 

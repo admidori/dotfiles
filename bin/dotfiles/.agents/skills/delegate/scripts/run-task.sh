@@ -466,6 +466,56 @@ if [ "$execution_mode" = "docker-sandbox" ]; then
   } <<<"$(capture_git_state "$workdir")"
 fi
 
+# Derive designer label and provenance before agy model probe and attempt allocation.
+designer=""
+designer_source="unknown"
+designer_session_id=""
+
+is_codex_designer_label() {
+  local label="$1"
+  [ -z "$label" ] || [ "$label" = "unknown" ] || [ "$label" = "Codex" ] || [[ "$label" =~ ^Codex\ \(.*\) ]]
+}
+
+if [ -n "${CODEX_THREAD_ID:-}" ] && is_codex_designer_label "${HARNESS_DESIGNER:-}"; then
+  resolver_bin="$skill_dir/scripts/resolve-codex-model.py"
+  if [ ! -f "$resolver_bin" ]; then
+    echo "error: resolver script not found: $resolver_bin" >&2
+    exit 2
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "error: python3 required to resolve Codex model" >&2
+    exit 2
+  fi
+
+  resolver_err_file="$(mktemp "${TMPDIR:-/tmp}/codex-resolver-err.XXXXXX")"
+  if ! resolver_json="$(python3 "$resolver_bin" --json 2>"$resolver_err_file")"; then
+    cat "$resolver_err_file" >&2
+    rm -f "$resolver_err_file"
+    echo "error: failed to resolve Codex model for session ${CODEX_THREAD_ID}" >&2
+    exit 2
+  fi
+  rm -f "$resolver_err_file"
+
+  resolved_model="$(jq -r '.model // empty' <<<"$resolver_json" 2>/dev/null || true)"
+  resolved_session="$(jq -r '.session_id // empty' <<<"$resolver_json" 2>/dev/null || true)"
+  if [ -z "$resolved_model" ]; then
+    echo "error: resolver did not return a valid model" >&2
+    exit 2
+  fi
+
+  designer="Codex ($resolved_model)"
+  designer_source="codex-session"
+  designer_session_id="$resolved_session"
+elif [ -n "${HARNESS_DESIGNER:-}" ] && [ "${HARNESS_DESIGNER}" != "unknown" ]; then
+  designer="$HARNESS_DESIGNER"
+  designer_source="provided"
+  designer_session_id=""
+else
+  designer="unknown"
+  designer_source="unknown"
+  designer_session_id=""
+fi
+
 # Ask agy which model this run will use rather than trusting AGY_MODEL or
 # guessing: the commit's co-author trailer must name the resolved model.
 # Probe with the same model/effort arguments used for implementation.
@@ -925,7 +975,9 @@ jq -n -c \
   --argjson attempt "$attempt" \
   --arg variant "${HARNESS_VARIANT:-baseline}" \
   --arg harness_rev "$harness_rev" \
-  --arg designer "${HARNESS_DESIGNER:-unknown}" \
+  --arg designer "$designer" \
+  --arg designer_source "$designer_source" \
+  --arg designer_session_id "$designer_session_id" \
   --arg model "$model_id" \
   --arg trailer "$trailer" \
   --arg compute_backend "$compute_backend" \
@@ -939,7 +991,10 @@ jq -n -c \
   --argjson r "$result" \
   --argjson requested_conversation_id "$requested_conv_id_json" \
   '{ts: $ts, task: $task, step: $step, attempt: $attempt, variant: $variant,
-    harness_rev: $harness_rev, designer: $designer, model: $model,
+    harness_rev: $harness_rev, designer: $designer,
+    designer_source: $designer_source,
+    designer_session_id: (if $designer_session_id == "" then null else $designer_session_id end),
+    model: $model,
     trailer: $trailer,
     compute_backend: (if $compute_backend == "" then null else $compute_backend end),
     compute_recovery_pending: $compute_recovery_pending,
