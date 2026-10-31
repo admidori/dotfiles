@@ -176,7 +176,17 @@ The kit sources are located under `sandbox/kits/`:
   - `com.docker.sandbox/network-policy@1` (Google AI APIs, OAuth endpoints, `antigravity.google`)
   - `com.docker.sandbox/credential@1` for service `antigravity` (`passthrough: false`,
     sentinels `agy-oauth-access-proxy-managed` / `agy-oauth-refresh-proxy-managed`,
-    `auth_method: consumer`)
+    `auth_method: consumer`, template expiry `2000-01-01T00:00:00Z`).
+    - *Intentional Past Expiry & Token Refresh:* The credential template sets `expiry`
+      to a past timestamp (`2000-01-01T00:00:00Z`). This past expiry is intentional:
+      it prompts the client to use its sentinel refresh token through the host proxy
+      instead of treating an expired real access token as permanently valid (the year-9999
+      sentinel expiry produced HTTP 401 errors that cleared after requesting refresh).
+    - *Verification Scope:* Token refresh driven by past expiry is live-verified across
+      fresh sandbox invocations and guest stop/restart cycles (where the credential file
+      retains sentinel markers and inference succeeds without browser login).
+      Long-duration session renewal during continuous execution without process
+      restart remains untested.
 - **Installer Handling & Floating Version Notice:**
   - Official `agy` is fetched during image build via HTTPS installer
     (`https://antigravity.google/cli/install.sh`) into a temporary file. No binaries
