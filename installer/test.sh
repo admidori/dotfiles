@@ -75,6 +75,10 @@ check "mcp_config.json contains coder server declaration" \
 check "mcp_config.json contains colab server declaration" \
   check_json "$HOME/.gemini/config/mcp_config.json" '.mcpServers.colab.command == "uvx" and .mcpServers.colab.args == ["git+https://github.com/googlecolab/colab-mcp"]'
 
+echo "==> Verifying the optional host-side keyring helper"
+check "~/.keyring/unlock.py is linked" test -f "$HOME/.keyring/unlock.py"
+check "keyring helper tests pass" python3 -I "$REPO_ROOT/installer/test-keyring-unlock.py"
+
 echo "==> Verifying merged skills dir (dotfiles + third-party content coexist)"
 check "~/.claude/skills is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/skills"
 check "~/.claude/skills/cleanup is a symlink" test -L "$HOME/.claude/skills/cleanup"

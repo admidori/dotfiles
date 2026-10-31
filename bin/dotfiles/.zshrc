@@ -137,6 +137,13 @@ if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
 	alias ssh-add='ssh-add.exe'
 	[[ -x /mnt/c/Users/admidori/AppData/Local/Microsoft/WinGet/Links/op.exe ]] && alias op='/mnt/c/Users/admidori/AppData/Local/Microsoft/WinGet/Links/op.exe'
 
+	# Resolve the unlock password only when explicitly requested, never at shell startup.
+	keyring-unlock() {
+		/usr/bin/python3 -I "$HOME/.keyring/unlock.py" \
+			--op /mnt/c/Users/admidori/AppData/Local/Microsoft/WinGet/Links/op.exe \
+			--reference 'op://Credentials/WSL Keyring/password' "$@"
+	}
+
 	# exp [path...]: open each path (default .) in Windows Explorer.
 	# explorer.exe needs a Windows path for anything but ".", hence wslpath;
 	# it also exits 1 even on success, so the status is not propagated.
