@@ -15,6 +15,14 @@ import sys
 SERVICE = "org.freedesktop.secrets"
 COLLECTION = "/org/freedesktop/secrets/collection/login"
 BUSCTL = "/usr/bin/busctl"
+SYSTEMD_SERVICE = "org.freedesktop.systemd1"
+SYSTEMD_PATH = "/org/freedesktop/systemd1"
+SYSTEMD_MANAGER = "org.freedesktop.systemd1.Manager"
+SYSTEMD_UNIT = "org.freedesktop.systemd1.Unit"
+SYSTEMD_SERVICE_IFACE = "org.freedesktop.systemd1.Service"
+SYSTEMD_SOCKET_IFACE = "org.freedesktop.systemd1.Socket"
+KEYRING_SERVICE = "gnome-keyring-daemon.service"
+KEYRING_SOCKET = "gnome-keyring-daemon.socket"
 
 
 class UnlockError(Exception):
@@ -61,6 +69,93 @@ def control_endpoint():
     return Path(directory[0]) / "control", owner[0]
 
 
+def is_valid_unit_path(unit_data):
+    if (not isinstance(unit_data, list) or len(unit_data) != 1
+            or not isinstance(unit_data[0], str)
+            or not unit_data[0].isascii()
+            or not unit_data[0].startswith("/org/freedesktop/systemd1/unit/")
+            or len(unit_data[0]) <= len("/org/freedesktop/systemd1/unit/")
+            or "//" in unit_data[0] or unit_data[0].endswith("/")
+            or not all(c.isalnum() or c in "_/" for c in unit_data[0])):
+        return False
+    return True
+
+
+def verify_systemd_peer(peer_pid, control_path, daemon_pid):
+    try:
+        manager = bus_json(
+            "call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+            "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+            "s", SYSTEMD_SERVICE,
+        )
+        if (not isinstance(manager, list) or len(manager) != 1
+                or type(manager[0]) is not int or manager[0] <= 0
+                or manager[0] != peer_pid):
+            return False
+
+        service_data = bus_json(
+            "call", SYSTEMD_SERVICE, SYSTEMD_PATH,
+            SYSTEMD_MANAGER, "GetUnit", "s", KEYRING_SERVICE,
+        )
+        socket_data = bus_json(
+            "call", SYSTEMD_SERVICE, SYSTEMD_PATH,
+            SYSTEMD_MANAGER, "GetUnit", "s", KEYRING_SOCKET,
+        )
+        if (not is_valid_unit_path(service_data)
+                or not is_valid_unit_path(socket_data)):
+            return False
+        service_path = service_data[0]
+        socket_path = socket_data[0]
+        if service_path == socket_path:
+            return False
+
+        service_active = bus_json(
+            "get-property", SYSTEMD_SERVICE, service_path,
+            SYSTEMD_UNIT, "ActiveState",
+        )
+        if service_active != "active":
+            return False
+
+        service_main_pid = bus_json(
+            "get-property", SYSTEMD_SERVICE, service_path,
+            SYSTEMD_SERVICE_IFACE, "MainPID",
+        )
+        if (type(service_main_pid) is not int or service_main_pid <= 0
+                or service_main_pid != daemon_pid):
+            return False
+
+        socket_active = bus_json(
+            "get-property", SYSTEMD_SERVICE, socket_path,
+            SYSTEMD_UNIT, "ActiveState",
+        )
+        if socket_active != "active":
+            return False
+
+        socket_listen = bus_json(
+            "get-property", SYSTEMD_SERVICE, socket_path,
+            SYSTEMD_SOCKET_IFACE, "Listen",
+        )
+        if (not isinstance(socket_listen, list)
+                or not all(isinstance(item, list) and len(item) == 2
+                           and all(isinstance(value, str) for value in item)
+                           for item in socket_listen)
+                or ["Stream", str(control_path)] not in socket_listen):
+            return False
+
+        socket_triggers = bus_json(
+            "get-property", SYSTEMD_SERVICE, socket_path,
+            SYSTEMD_UNIT, "Triggers",
+        )
+        if (not isinstance(socket_triggers, list)
+                or not all(isinstance(item, str) for item in socket_triggers)
+                or KEYRING_SERVICE not in socket_triggers):
+            return False
+
+        return True
+    except (UnlockError, OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def read_password(op, reference):
     if not Path(op).is_absolute():
         raise UnlockError("The 1Password executable must be an absolute path.")
@@ -103,7 +198,10 @@ def unlock(op, reference):
         pid, uid, _ = struct.unpack(
             "3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED,
                                        struct.calcsize("3i")))
-        if uid != os.getuid() or pid != expected_pid:
+        if uid != os.getuid():
+            raise UnlockError("The control socket does not belong to the D-Bus keyring.")
+        if (pid != expected_pid
+                and not verify_systemd_peer(pid, path, expected_pid)):
             raise UnlockError("The control socket does not belong to the D-Bus keyring.")
         password = read_password(op, reference)
         # GNOME's PAM control protocol: credentials byte, big-endian packet size,

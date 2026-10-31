@@ -45,8 +45,13 @@ unlocked GNOME keyring. OAuth tokens remain in the GNOME keyring.
 
 The helper requires Python 3, busctl, GNOME Keyring, and the Windows CLI.
 The control protocol is GNOME-specific, rather than the portable Secret
-Service API. Missing keyrings, mismatched daemon/socket ownership, denied
-passwords, and timeouts cause failure instead of a plaintext fallback.
+Service API. The control socket must be owned by the user, and the connecting
+peer process must either match the Secret Service daemon PID directly or match
+the user systemd manager when systemd socket activation is in use (requiring
+active `gnome-keyring-daemon.socket` and `.service` units, matching socket
+listen path, service triggers, and service main PID). Missing keyrings,
+mismatched daemon/socket ownership, denied passwords, and timeouts cause
+failure instead of a plaintext fallback.
 The command and its optional reference/executable overrides can also be used
 directly:
 

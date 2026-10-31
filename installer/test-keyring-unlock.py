@@ -27,6 +27,31 @@ helper = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helper)
 REFERENCE = "op://Test/Fixture/password"
 DUMMY = b"non-credential test fixture\n"
+SYSTEMD_FIXTURE = {
+    ("call", "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+     "GetConnectionUnixProcessID", "s", helper.SYSTEMD_SERVICE): [235],
+    ("call", helper.SYSTEMD_SERVICE, helper.SYSTEMD_PATH, helper.SYSTEMD_MANAGER,
+     "GetUnit", "s", helper.KEYRING_SERVICE):
+        ["/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice"],
+    ("call", helper.SYSTEMD_SERVICE, helper.SYSTEMD_PATH, helper.SYSTEMD_MANAGER,
+     "GetUnit", "s", helper.KEYRING_SOCKET):
+        ["/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket"],
+    ("get-property", helper.SYSTEMD_SERVICE,
+     "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+     helper.SYSTEMD_UNIT, "ActiveState"): "active",
+    ("get-property", helper.SYSTEMD_SERVICE,
+     "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+     helper.SYSTEMD_SERVICE_IFACE, "MainPID"): 1234,
+    ("get-property", helper.SYSTEMD_SERVICE,
+     "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+     helper.SYSTEMD_UNIT, "ActiveState"): "active",
+    ("get-property", helper.SYSTEMD_SERVICE,
+     "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+     helper.SYSTEMD_SOCKET_IFACE, "Listen"): [["Stream", "/fixture/control"]],
+    ("get-property", helper.SYSTEMD_SERVICE,
+     "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+     helper.SYSTEMD_UNIT, "Triggers"): [helper.KEYRING_SERVICE],
+}
 
 
 class UnlockTests(unittest.TestCase):
@@ -47,15 +72,27 @@ class UnlockTests(unittest.TestCase):
         return connection
 
     def run_unlock(self, connection, states=(True, False), mode=stat.S_IFSOCK,
-                   owner=None):
+                   owner=None, bus_data=None):
         info = SimpleNamespace(st_mode=mode,
                                st_uid=os.getuid() if owner is None else owner)
+
+        def fake_bus_json(*args):
+            if bus_data is not None and args in bus_data:
+                val = bus_data[args]
+                if isinstance(val, Exception):
+                    raise val
+                return val
+            raise helper.UnlockError(
+                "Cannot contact the login keyring on the user D-Bus.")
+
         with patch.object(helper, "is_locked", side_effect=states), \
              patch.object(helper, "control_endpoint",
                           return_value=(Path("/fixture/control"), 1234)), \
              patch.object(Path, "lstat", return_value=info), \
              patch.object(helper.socket, "socket", return_value=connection), \
-             patch.object(helper, "read_password", return_value=DUMMY) as read:
+             patch.object(helper, "read_password", return_value=DUMMY) as read, \
+             patch.object(helper, "bus_json", side_effect=fake_bus_json) as bus_mock:
+            self.bus_mock = bus_mock
             try:
                 return helper.unlock("/fixture/op.exe", REFERENCE), read
             finally:
@@ -76,21 +113,27 @@ class UnlockTests(unittest.TestCase):
         self.assertEqual(self.password_reads, 1)
         self.assertEqual(connection.sendall.call_args_list[0].args, (b"\0",))
         packet = connection.sendall.call_args_list[1].args[0]
-        self.assertEqual(packet, struct.pack(">III", 12 + len(DUMMY), 1, len(DUMMY)) + DUMMY)
+        expected = (struct.pack(">III", 12 + len(DUMMY), 1, len(DUMMY))
+                    + DUMMY)
+        self.assertEqual(packet, expected)
 
     def test_wrong_peer_rejected_before_secret_access(self):
         for pid, uid in ((5678, os.getuid()), (1234, os.getuid() + 1)):
+            connection = self.fake_socket(pid=pid, uid=uid)
             with self.subTest(pid=pid, uid=uid), self.assertRaises(helper.UnlockError):
-                self.run_unlock(self.fake_socket(pid=pid, uid=uid))
+                self.run_unlock(connection)
             self.assertEqual(self.password_reads, 0)
+            connection.sendall.assert_not_called()
 
     def test_non_socket_and_foreign_socket_rejected(self):
         for mode, owner in ((stat.S_IFLNK, os.getuid()),
                             (stat.S_IFREG, os.getuid()),
                             (stat.S_IFSOCK, os.getuid() + 1)):
+            connection = self.fake_socket()
             with self.subTest(mode=mode, owner=owner), self.assertRaises(helper.UnlockError):
-                self.run_unlock(self.fake_socket(), mode=mode, owner=owner)
+                self.run_unlock(connection, mode=mode, owner=owner)
             self.assertEqual(self.password_reads, 0)
+            connection.sendall.assert_not_called()
 
     def test_denied_malformed_and_truncated_responses_fail(self):
         for response in (struct.pack(">II", 8, 1), struct.pack(">I", 999999), b""):
@@ -151,6 +194,230 @@ class UnlockTests(unittest.TestCase):
         with patch.object(helper, "bus_json", return_value="false"), \
              self.assertRaises(helper.UnlockError):
             helper.is_locked()
+
+    def test_direct_peer_bypasses_systemd_queries(self):
+        connection = self.fake_socket(pid=1234)
+        result, _ = self.run_unlock(connection)
+        self.assertEqual(result, "Login keyring unlocked.")
+        self.assertEqual(self.password_reads, 1)
+        self.bus_mock.assert_not_called()
+
+    def test_systemd_activation_accepted(self):
+        connection = self.fake_socket(pid=235)
+        result, _ = self.run_unlock(connection, bus_data=SYSTEMD_FIXTURE)
+        self.assertEqual(result, "Login keyring unlocked.")
+        self.assertEqual(self.password_reads, 1)
+        self.assertEqual(connection.sendall.call_args_list[0].args, (b"\0",))
+        packet = connection.sendall.call_args_list[1].args[0]
+        expected = (struct.pack(">III", 12 + len(DUMMY), 1, len(DUMMY))
+                    + DUMMY)
+        self.assertEqual(packet, expected)
+
+    def test_systemd_wrong_manager_pid_rejected(self):
+        for peer_pid, manager_pid in ((235, 999), (999, 235)):
+            with self.subTest(peer_pid=peer_pid, manager_pid=manager_pid):
+                bus_data = dict(SYSTEMD_FIXTURE)
+                bus_data[("call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                          "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+                          "s", helper.SYSTEMD_SERVICE)] = [manager_pid]
+                connection = self.fake_socket(pid=peer_pid)
+                with self.assertRaises(helper.UnlockError):
+                    self.run_unlock(connection, bus_data=bus_data)
+                self.assertEqual(self.password_reads, 0)
+                connection.sendall.assert_not_called()
+
+    def test_systemd_wrong_main_pid_rejected(self):
+        bus_data = dict(SYSTEMD_FIXTURE)
+        bus_data[("get-property", helper.SYSTEMD_SERVICE,
+                  "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+                  helper.SYSTEMD_SERVICE_IFACE, "MainPID")] = 9999
+        connection = self.fake_socket(pid=235)
+        with self.assertRaises(helper.UnlockError):
+            self.run_unlock(connection, bus_data=bus_data)
+        self.assertEqual(self.password_reads, 0)
+        connection.sendall.assert_not_called()
+
+    def test_systemd_inactive_units_rejected(self):
+        cases = (
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+              helper.SYSTEMD_UNIT, "ActiveState"), "inactive"),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+              helper.SYSTEMD_UNIT, "ActiveState"), "failed"),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+              helper.SYSTEMD_UNIT, "ActiveState"), "activating"),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+              helper.SYSTEMD_UNIT, "ActiveState"), "inactive"),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+              helper.SYSTEMD_UNIT, "ActiveState"), "failed"),
+        )
+        for key, state in cases:
+            with self.subTest(key=key, state=state):
+                bus_data = dict(SYSTEMD_FIXTURE)
+                bus_data[key] = state
+                connection = self.fake_socket(pid=235)
+                with self.assertRaises(helper.UnlockError):
+                    self.run_unlock(connection, bus_data=bus_data)
+                self.assertEqual(self.password_reads, 0)
+                connection.sendall.assert_not_called()
+
+    def test_systemd_wrong_listen_path_or_type_rejected(self):
+        cases = (
+            [["Stream", "/wrong/control"]],
+            [["Datagram", "/fixture/control"]],
+            [["Stream"]],
+            [],
+            [["Stream", "/fixture/control/extra"]],
+            [["Stream", "/fixture/control"], None],
+            [["Stream", "/fixture/control"], ["Stream"]],
+            [["Stream", "/fixture/control"], ["Stream", 123]],
+        )
+        for listen in cases:
+            with self.subTest(listen=listen):
+                bus_data = dict(SYSTEMD_FIXTURE)
+                bus_data[("get-property", helper.SYSTEMD_SERVICE,
+                          "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+                          helper.SYSTEMD_SOCKET_IFACE, "Listen")] = listen
+                connection = self.fake_socket(pid=235)
+                with self.assertRaises(helper.UnlockError):
+                    self.run_unlock(connection, bus_data=bus_data)
+                self.assertEqual(self.password_reads, 0)
+                connection.sendall.assert_not_called()
+
+    def test_systemd_wrong_triggers_rejected(self):
+        for triggers in (["other.service"], [], [helper.KEYRING_SERVICE, None],
+                         [helper.KEYRING_SERVICE, 123]):
+            with self.subTest(triggers=triggers):
+                bus_data = dict(SYSTEMD_FIXTURE)
+                bus_data[("get-property", helper.SYSTEMD_SERVICE,
+                          "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+                          helper.SYSTEMD_UNIT, "Triggers")] = triggers
+                connection = self.fake_socket(pid=235)
+                with self.assertRaises(helper.UnlockError):
+                    self.run_unlock(connection, bus_data=bus_data)
+                self.assertEqual(self.password_reads, 0)
+                connection.sendall.assert_not_called()
+
+    def test_systemd_malformed_metadata_rejected(self):
+        malformed_cases = (
+            (("call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+              "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+              "s", helper.SYSTEMD_SERVICE), [True]),
+            (("call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+              "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+              "s", helper.SYSTEMD_SERVICE), [-1]),
+            (("call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+              "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+              "s", helper.SYSTEMD_SERVICE), [0]),
+            (("call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+              "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+              "s", helper.SYSTEMD_SERVICE), ["235"]),
+            (("call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+              "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+              "s", helper.SYSTEMD_SERVICE), []),
+            (("call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+              "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+              "s", helper.SYSTEMD_SERVICE), [235, 235]),
+            (("call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+              "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+              "s", helper.SYSTEMD_SERVICE), None),
+            (("call", helper.SYSTEMD_SERVICE, helper.SYSTEMD_PATH,
+              helper.SYSTEMD_MANAGER, "GetUnit", "s", helper.KEYRING_SERVICE),
+             ["/org/freedesktop/systemd1/unit/"]),
+            (("call", helper.SYSTEMD_SERVICE, helper.SYSTEMD_PATH,
+              helper.SYSTEMD_MANAGER, "GetUnit", "s", helper.KEYRING_SERVICE),
+             ["/org/freedesktop/systemd1/unit/bad path"]),
+            (("call", helper.SYSTEMD_SERVICE, helper.SYSTEMD_PATH,
+              helper.SYSTEMD_MANAGER, "GetUnit", "s", helper.KEYRING_SERVICE),
+             ["/not/systemd/path"]),
+            (("call", helper.SYSTEMD_SERVICE, helper.SYSTEMD_PATH,
+              helper.SYSTEMD_MANAGER, "GetUnit", "s", helper.KEYRING_SERVICE), []),
+            (("call", helper.SYSTEMD_SERVICE, helper.SYSTEMD_PATH,
+              helper.SYSTEMD_MANAGER, "GetUnit", "s", helper.KEYRING_SERVICE), [123]),
+            (("call", helper.SYSTEMD_SERVICE, helper.SYSTEMD_PATH,
+              helper.SYSTEMD_MANAGER, "GetUnit", "s", helper.KEYRING_SOCKET),
+             ["/not/systemd/path"]),
+            (("call", helper.SYSTEMD_SERVICE, helper.SYSTEMD_PATH,
+              helper.SYSTEMD_MANAGER, "GetUnit", "s", helper.KEYRING_SOCKET),
+             ["/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice"]),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+              helper.SYSTEMD_SERVICE_IFACE, "MainPID"), True),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+              helper.SYSTEMD_SERVICE_IFACE, "MainPID"), 0),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+              helper.SYSTEMD_SERVICE_IFACE, "MainPID"), -1),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+              helper.SYSTEMD_SERVICE_IFACE, "MainPID"), "1234"),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+              helper.SYSTEMD_SERVICE_IFACE, "MainPID"), None),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+              helper.SYSTEMD_UNIT, "ActiveState"), None),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+              helper.SYSTEMD_UNIT, "ActiveState"), 123),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+              helper.SYSTEMD_SOCKET_IFACE, "Listen"), "not a list"),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+              helper.SYSTEMD_SOCKET_IFACE, "Listen"), [123]),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+              helper.SYSTEMD_SOCKET_IFACE, "Listen"), [["Stream"]]),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+              helper.SYSTEMD_UNIT, "Triggers"), "not a list"),
+            (("get-property", helper.SYSTEMD_SERVICE,
+              "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2esocket",
+              helper.SYSTEMD_UNIT, "Triggers"), None),
+        )
+        for key, value in malformed_cases:
+            with self.subTest(key=key, value=value):
+                bus_data = dict(SYSTEMD_FIXTURE)
+                bus_data[key] = value
+                connection = self.fake_socket(pid=235)
+                with self.assertRaises(helper.UnlockError):
+                    self.run_unlock(connection, bus_data=bus_data)
+                self.assertEqual(self.password_reads, 0)
+                connection.sendall.assert_not_called()
+
+    def test_systemd_missing_bus_service_rejected(self):
+        for failing_key in (
+            ("call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+             "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+             "s", helper.SYSTEMD_SERVICE),
+            ("call", helper.SYSTEMD_SERVICE, helper.SYSTEMD_PATH,
+             helper.SYSTEMD_MANAGER, "GetUnit", "s", helper.KEYRING_SERVICE),
+            ("get-property", helper.SYSTEMD_SERVICE,
+             "/org/freedesktop/systemd1/unit/gnome_2dkeyring_2ddaemon_2eservice",
+             helper.SYSTEMD_UNIT, "ActiveState"),
+        ):
+            with self.subTest(failing_key=failing_key):
+                bus_data = dict(SYSTEMD_FIXTURE)
+                bus_data[failing_key] = helper.UnlockError("D-Bus service unavailable")
+                connection = self.fake_socket(pid=235)
+                with self.assertRaises(helper.UnlockError):
+                    self.run_unlock(connection, bus_data=bus_data)
+                self.assertEqual(self.password_reads, 0)
+                connection.sendall.assert_not_called()
+
+    def test_systemd_peer_uid_mismatch_rejected(self):
+        connection = self.fake_socket(pid=235, uid=os.getuid() + 1)
+        with self.assertRaises(helper.UnlockError):
+            self.run_unlock(connection, bus_data=SYSTEMD_FIXTURE)
+        self.assertEqual(self.password_reads, 0)
+        connection.sendall.assert_not_called()
+        self.bus_mock.assert_not_called()
 
 
 def isolated_case():
