@@ -25,7 +25,19 @@ guard_check_command() {
   case "$1" in
     *$'\\\n'*)
       guard_check_single "$1" || return 1
-      guard_check_single "$(guard_join_continuations "$1")"
+      guard_check_single "$(guard_join_continuations "$1")" || return 1
+      # Comments, single quotes and heredocs change whether a backslash-newline
+      # is a continuation (`# x\<newline>git …` is not one), and a text matcher
+      # cannot follow that reliably. Fail closed when such a command touches git
+      # or the hook machinery; other multi-line commands are unaffected.
+      case "$1" in
+        *'#'* | *"'"* | *'<<'*)
+          if printf '%s' "$1" | grep -Eiq '(^|[^[:alnum:]_-])git([^[:alnum:]_-]|$)|\.git-hooks|\.gitconfig|hookspath|GIT_CONFIG|\.claude/(hooks|settings)|\.codex/hooks|gitleaks|semgrep|osv-scanner'; then
+            printf 'ambiguous line continuation in a git-related command (put it on one line)'
+            return 1
+          fi
+          ;;
+      esac
       ;;
     *) guard_check_single "$1" ;;
   esac

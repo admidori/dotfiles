@@ -219,6 +219,13 @@ run_suite() {
   test_case block $'true x\\\\\ngit commit --no-\\\nverify -m x' "git hook bypass (--no-verify)"
   test_case block $'true x\\\\\ngit config --g\\\nlobal user.name x' "global git config write"
   test_case block $'echo a\\\\\\\ngit commit --no-verify' "git hook bypass (--no-verify)"
+  # A backslash in a comment is no continuation; such commands fail closed
+  # when they involve git
+  test_case block $'# c\\\ngit commit --no-\\\nverify -m x' "ambiguous line continuation in a git-related command (put it on one line)"
+  test_case block $'echo \'a\\\n\' && git commit -m x' "ambiguous line continuation in a git-related command (put it on one line)"
+  test_case allow $'curl -s \\\n  -H \'Accept: x\' https://example.com'
+  test_case allow $'git log \\\n  --oneline -3'
+  test_case block $'# c\\\nX=1 env GIT_CONFIG_x=1 \\\nnpm test' "ambiguous line continuation in a git-related command (put it on one line)"
 
   # 4. Commands that must stay allowed
   test_case allow "git commit -m x"
