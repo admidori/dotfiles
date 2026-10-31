@@ -114,44 +114,63 @@ implementation.
   a branch and a reviewed merge/PR; if a push target resolves to main, stop and ask
   instead of pushing.
 
-## Branching and worktrees
+## Task isolation, branches, and worktrees
 
-- Do every operation on a repository in a dedicated git worktree, never in the
-  main checkout: edits, reviews of a branch or PR, builds and test runs, and
-  anything that changes git state. This applies to every agent, including
-  Antigravity's direct experiments. Several agents share the main checkout, so
-  work done there can collide with, or be swept into, another agent's task.
-  - A new task gets a fresh worktree on a new branch from the integration
-    branch. Continuing an existing branch means working in the worktree that
-    holds it, re-created with `git worktree add <dir> <branch>` if it was
-    removed.
-  - A review checks the branch under review out in its own worktree (for a PR,
-    its head branch) and reads, builds, and tests it there. Remove that
-    worktree once the review is done; it holds no commits of its own.
-  - Exceptions, done from the main checkout: only reading files to answer a
-    question; managing worktrees and branches themselves (creating, removing,
-    cleaning up); and syncing the main checkout after a merge (pulling the
-    integration branch, re-linking).
+- Keep each task in its own working directory. The default sandbox workflow is
+  one task, one AI session, one Docker Sandbox, and one independent Git clone.
+  In a task's private sandbox clone, work directly on a feature branch; an
+  additional worktree is not required. A container sharing the same writable
+  host checkout does not provide this isolation.
+- If multiple tasks or AI sessions share a sandbox concurrently, give each its
+  own worktree or independent clone. Keep the same separation for reviews.
+- When working on the host, do repository operations in a dedicated worktree,
+  never in the shared main checkout: edits, branch/PR reviews, builds, tests,
+  and changes to Git state. This applies to every agent.
+  - A new host task gets a fresh worktree and branch from the integration branch.
+    Continue existing work in the worktree holding that branch, re-creating it
+    with `git worktree add <dir> <branch>` if necessary.
+  - Review a branch or PR in a dedicated worktree on its head branch. Remove a
+    temporary review worktree when finished.
+  - Main-checkout exceptions: read-only investigation; worktree and branch
+    management; syncing and re-linking after an approved merge; and using it as
+    the read-only source for `sbx --clone`, including the sandbox Git remote
+    entries needed to retrieve commits. Do not edit source files there.
 - Create new feature branches and `aiwt` worktrees from the intended
-  integration branch (normally `main`), not from whatever branch happens to
-  be checked out. Before running `aiwt <branch>` or `git checkout -b`, check
-  `git rev-parse --abbrev-ref HEAD` — if it is not the integration branch,
-  pass the base explicitly (`aiwt <branch> main`) instead of letting it
-  default to the current HEAD.
-- Don't stack a new feature branch on top of another in-flight, unmerged
-  feature branch without saying so. A branch based on unmerged work can't be
-  merged independently until the base lands — flag this tradeoff to the
-  operator instead of doing it silently.
-- A branch/worktree has a lifecycle: once its work is merged or rebased
-  elsewhere, remove the worktree (`git worktree remove`) and delete the
-  branch, or explicitly tell the operator it's staying open. Don't leave
-  parallel worktrees for the same underlying task running for days —
-  `git worktree list` / `git branch -a` should be checked before opening a
-  new one, and stale entries should be called out, not ignored.
-- Before resuming a long-lived feature branch, check whether the base branch
-  has moved and whether a sibling branch already holds overlapping unmerged
-  work (`git log <base>..<branch>`, `git log <branch>..<base>`). Unexplained
-  divergence is a signal to stop and ask, not to keep committing.
+  integration branch, not whichever branch happens to be checked out. Check
+  `git rev-parse --abbrev-ref HEAD` and specify the base explicitly when needed.
+  A sandbox clone does not waive the rule against implementing on main/master.
+- Don't stack a new feature branch on unmerged work without telling the operator.
+  Check the base and overlapping sibling branches before resuming a task:
+  `git log <base>..<branch>` and `git log <branch>..<base>`. Stop and ask about
+  unexplained divergence.
+- Check existing sandboxes, branches, and worktrees before opening another task
+  environment. Call out stale entries. Remove merged worktrees and branches
+  when safe, or explain why they remain open.
+- Before removing a sandbox, retrieve and verify all work worth preserving,
+  including uncommitted files. A commit inside a sandbox is not a backup outside
+  it. Keep the sandbox until that verification is complete; never use cleanup
+  to discard work implicitly.
+
+## Permissions inside task sandboxes
+
+- Codex and Claude may run with approval bypass/full access inside an isolated
+  Docker Sandbox. The external microVM, mount, and network policies enforce
+  the boundary. Do not make bypass mode a host-wide default.
+- Use a private clone with a read-only host source, or no host workspace mount.
+  Do not expose the host home directory, credential stores, or Docker socket.
+  Keep SSH-agent forwarding off unless the operator explicitly authorizes it.
+  Keep shared skills read-only or disabled; treat host-side MCP tools as
+  explicit host access, not as sandboxed processes.
+- Keep credentials on the host and use proxy-managed authentication, with
+  repository-scoped, least-privilege credentials where supported. Read-only
+  source mounts still expose their contents: keep secrets out of the source.
+- Full access permits local development commands, dependency installation,
+  builds, and tests. It does not waive review-before-commit requirements or
+  approval for outward-facing and irreversible actions below. A hidden token
+  can still authorize remote writes through the proxy; written instructions
+  are not a technical write barrier.
+- Review changes before integrating or running them on the host, especially
+  dotfiles, hooks, and startup/build scripts.
 
 ## Pre-implementation confirmation
 

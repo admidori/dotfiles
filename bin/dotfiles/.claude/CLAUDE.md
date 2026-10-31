@@ -39,11 +39,16 @@ for how clearly you verbalize it.
   delegate it.
 - When you do edit, keep changes focused and verify them before reporting done.
 
-## Worktree per task (multi-pane identity)
+## Task isolation (multi-pane identity)
 
-Multiple Claude sessions often run side by side in different tmux panes. To make it
-obvious which pane is doing what, each session works in its own git worktree; the status
-line shows a yellow `*|*` marker next to the branch when you are in one.
+In a Docker Sandbox dedicated to one task and AI session, use its independent
+clone directly on a feature branch. Do not call `EnterWorktree` just because a
+new task has started in that private clone. Full access is limited to the
+externally isolated sandbox, as described in the shared baseline.
+
+When sessions share a host checkout, or multiple tasks share one sandbox, use
+separate worktrees. The instructions below apply to those shared environments.
+The status line shows a yellow `*|*` marker next to the branch in a worktree.
 
 - **At the start of a new, self-contained implementation or change task, enter a task
   worktree before editing.** Use the `EnterWorktree` tool with a short, task-descriptive
