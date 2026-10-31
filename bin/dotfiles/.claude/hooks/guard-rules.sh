@@ -170,9 +170,15 @@ s#//+#/#g
 s#/\./#/#g
 s#/[^/[:space:]]+/\.\./#/#
 ta')"
+  # A glob or brace in a home-anchored path lets the shell spell a protected
+  # name the matcher cannot see (`~/.git-hoo*`, `~/.local/bin/git{leaks,x}`),
+  # so a glob in the first component under home, or anywhere below the
+  # directories that hold protected files, is blocked as well.
   # shellcheck disable=SC2016 # $HOME and $XDG_* are literal pattern characters
   if printf '%s' "$home_paths" \
-      | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home/[^/]+|/Users/[^/]+|/root)/(\.git-hooks|\.gitconfig\.local|\.gitconfig|\.config/git|\.local/bin/(gitleaks|semgrep|osv-scanner|pre-commit)|\.local/share/pipx/venvs/(semgrep|pre-commit)|\.local/share/git-hooks|\.claude/hooks|\.claude/settings\.json|\.codex/hooks|dotfiles/bin/dotfiles/(\.git-hooks|\.gitconfig|\.claude/hooks))(/|[[:space:]|;&()<>{}:,]|$)' \
+      | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home/[^/]+|/Users/[^/]+|/root)/(\.git-hooks|\.gitconfig\.local|\.gitconfig|\.config/git|\.local/bin/(gitleaks|semgrep|osv-scanner|pre-commit)|\.local/share/pipx/venvs/(semgrep|pre-commit)|\.local/share/git-hooks|\.claude/hooks|\.claude/settings\.json|\.claude/settings\.local\.json|\.codex/hooks|\.codex/config\.toml|dotfiles/bin/dotfiles/(\.git-hooks|\.gitconfig|\.claude/hooks))(/|[[:space:]|;&()<>{}:,]|$)' \
+      || printf '%s' "$home_paths" \
+      | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home/[^/]+|/Users/[^/]+|/root)/([^/[:space:]]*[]*?[{]|(\.local|\.claude|\.codex|\.config|dotfiles/bin)/[^[:space:]]*[]*?[{])' \
       || printf '%s' "$home_paths" \
       | grep -Eq '(^|[^[:alnum:]_./-])(\$XDG_DATA_HOME|\$\{XDG_DATA_HOME\})/git-hooks(/|[[:space:]|;&()<>{}:,]|$)' \
       || printf '%s' "$home_paths" \
@@ -180,6 +186,15 @@ ta')"
       || printf '%s' "$unquoted" \
       | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home|/Users|/root)/([^[:space:]]*/)?\.\./[^[:space:]]*(\.git-hooks|\.gitconfig|\.config/git|\.local/(bin|share)|\.claude/(hooks|settings)|\.codex/hooks|dotfiles/bin/dotfiles)'; then
     printf 'protected hook machinery path'; return 1
+  fi
+
+  # Agent settings (Rule C): a project's .claude/settings.json or
+  # settings.local.json takes precedence over user settings and can switch
+  # hooks off (`disableAllHooks`), so shell access to them is blocked wherever
+  # they live, including glob spellings directly under .claude/.
+  if printf '%s' "$unquoted" \
+      | grep -Eq '(^|/|[^[:alnum:]_-])\.claude/(settings[^[:space:]/]*|[^[:space:]/]*[]*?[{][^[:space:]/]*)([[:space:]|;&()<>{}:,]|$)'; then
+    printf 'agent settings file'; return 1
   fi
 
   # Global or system git config writes (Rule B): block git config commands with
@@ -196,14 +211,32 @@ ta')"
   # subcommand) must sit among the options directly after `config`, and the
   # segment must have no redirection or comment, so `… user.name x # --get`
   # or `… 2> --get` cannot pass a write off as a read.
+  # `$'…'` text has its quotes stripped above, which leaves `$git …` that the
+  # per-segment matcher does not see as a git command, while the shell runs it
+  # (e.g. via `bash -c $'…'`). Any such command touching global/system config
+  # is blocked outright.
+  case "$norm" in
+    *"\$'"*)
+      if printf '%s' "$unquoted" | grep -Eq 'config' \
+          && printf '%s' "$unquoted" | grep -Eq '(^|[[:space:]])(--gl(o(b(a(l)?)?)?)?|--sy(s(t(e(m)?)?)?)?)([[:space:]]|$)'; then
+        printf 'global git config write'; return 1
+      fi
+      ;;
+  esac
   while IFS= read -r segment; do
     [ -z "$segment" ] && continue
     if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])([[:alnum:]_./-]*\/)?git[[:space:]]([^|;&`]*[[:space:]])?config([[:space:]]|$)'; then
       if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])(--gl(o(b(a(l)?)?)?)?|--sy(s(t(e(m)?)?)?)?)([[:space:]]|$)'; then
+        # No exemption when the read could belong to a different invocation:
+        # a second `config` in the segment, or a command that re-parses text
+        # (`$'…'` escapes turn `\n` into a separator once quotes are gone,
+        # `eval`, `sh -c`).
         case "$segment" in
           *'<'* | *'>'* | *'#'*) ;;
           *)
-            if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])([[:alnum:]_./-]*\/)?git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?config([[:space:]]+-[^[:space:]]+)*[[:space:]]+(--get|--get-all|--get-regexp|--list|-l|get|list)([[:space:]]|$)'; then
+            if ! printf '%s' "$segment" | grep -Eq 'config([[:space:]].*)?[[:space:]]config([[:space:]]|$)' \
+                && ! printf '%s' "$norm" | grep -Eq "\\\$'|(^|[^[:alnum:]_-])eval([[:space:]]|\$)|(^|[^[:alnum:]_-])(ba|z|da|k)?sh[[:space:]]+(-[[:alnum:]]+[[:space:]]+)*-[[:alnum:]]*c" \
+                && printf '%s' "$segment" | grep -Eq '(^|[[:space:]])([[:alnum:]_./-]*\/)?git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?config([[:space:]]+-[^[:space:]]+)*[[:space:]]+(--get|--get-all|--get-regexp|--list|-l|get|list)([[:space:]]|$)'; then
               continue
             fi
             ;;

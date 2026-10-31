@@ -184,6 +184,24 @@ run_suite() {
   test_case block "echo x >> \$XDG_CONFIG_HOME/git/config" "protected hook machinery path"
   test_case allow "cat ~/.config/gh/config.yml"
   test_case allow "ls ~/dotfiles/.claude/worktrees/x/../y/bin/dotfiles/README.md"
+  # Globs and braces let the shell spell a protected name
+  test_case block "cp x ~/.git-hoo*/pre-commit" "protected hook machinery path"
+  test_case block "cp x ~/.git-hook?/pre-commit" "protected hook machinery path"
+  test_case block "cp x ~/.local/bin/git{leaks,x}" "protected hook machinery path"
+  test_case block "cp x \$HOME/.local/bin/gitlea[k]s" "protected hook machinery path"
+  test_case block "echo x > ~/.codex/conf*" "protected hook machinery path"
+  test_case allow "ls ~/Downloads/*.pdf"
+  test_case allow "ls ~/work/{a,b}/README.md"
+  # Codex config and Claude local settings can switch hooks off
+  test_case block "echo x >> ~/.codex/config.toml" "protected hook machinery path"
+  test_case block "echo x > ~/.claude/settings.local.json" "protected hook machinery path"
+  # Rule C: project-level Claude settings, wherever they live
+  test_case block "echo '{\"disableAllHooks\": true}' > .claude/settings.local.json" "agent settings file"
+  test_case block "cp x repo/.claude/settings.json" "agent settings file"
+  test_case block "cp x .claude/settings*" "agent settings file"
+  test_case block "cp x .claude/sett?ngs.local.json" "agent settings file"
+  test_case allow "ls .claude/skills/x/SKILL.md"
+  test_case allow "cat .claude/CLAUDE.md"
 
   # 3d. Global or system git config writes (Rule B)
   test_case block "git config --global user.name x" "global git config write"
@@ -198,6 +216,11 @@ run_suite() {
   test_case block "git config --sys core.editor vi" "global git config write"
   test_case block "git config --global --li" "global git config write"
   test_case allow "git config --get-regexp alias"
+  # A read exemption must not cover a second invocation or re-parsed text
+  test_case block "bash -c \$'git config --global --get a\\ngit config --global b c'" "global git config write"
+  test_case block "eval git config --global --get a git config --global b c" "global git config write"
+  test_case block "sh -c 'git config --global --get a; git config --global b c'" "global git config write"
+  test_case block "git config --global --get a git config --global b c" "global git config write"
   # A read flag outside the option block, in a comment or as a redirect
   # target does not make a write a read
   test_case block "git config --global user.name x # --get" "global git config write"
@@ -270,7 +293,7 @@ run_suite() {
   test_case allow "cat ~/.local/bin/gitleaks-foo"
   test_case allow "cat ~/.claude/skills/x/SKILL.md"
   test_case allow "cat ~/.claude/projects/x"
-  test_case allow "cat ~/.codex/config.toml"
+  test_case allow "cat ~/.codex/AGENTS.md"
   test_case allow "cat ~/.gitconfig-work"
   test_case allow "cat ~/.gitconfig.bak"
   test_case allow "cat \$XDG_DATA_HOME/git-hooks-foo"

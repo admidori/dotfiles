@@ -11,6 +11,10 @@
       "Edit(*)",
       "Write(*)"
     ],
+    "ask": [
+      "Edit(**/.claude/settings.json)",
+      "Edit(**/.claude/settings.local.json)"
+    ],
     "deny": [
       "Bash(git reset --hard:*)",
       "Bash(git clean:*)",
@@ -34,6 +38,8 @@
       "Edit(~/.local/share/pipx/venvs/pre-commit/**)",
       "Edit(~/.local/share/git-hooks/**)",
       "Edit(~/.claude/settings.json)",
+      "Edit(~/.claude/settings.local.json)",
+      "Edit(~/.codex/config.toml)",
       "Edit(~/.claude/hooks/**)",
       "Edit(~/dotfiles/bin/dotfiles/.claude/hooks/**)",
       "Edit(~/.codex/hooks/**)",
