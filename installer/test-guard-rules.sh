@@ -214,6 +214,11 @@ run_suite() {
   test_case block $'true x\\\\\ngit commit --no-verify' "git hook bypass (--no-verify)"
   test_case block $'echo a\\\\\ngit config --global user.name x' "global git config write"
   test_case allow $'echo a \\\nb'
+  # Escaped backslash on one line, real continuation on the next: bash runs
+  # `git commit --no-verify` as its own command
+  test_case block $'true x\\\\\ngit commit --no-\\\nverify -m x' "git hook bypass (--no-verify)"
+  test_case block $'true x\\\\\ngit config --g\\\nlobal user.name x' "global git config write"
+  test_case block $'echo a\\\\\\\ngit commit --no-verify' "git hook bypass (--no-verify)"
 
   # 4. Commands that must stay allowed
   test_case allow "git commit -m x"

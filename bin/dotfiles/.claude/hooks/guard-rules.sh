@@ -19,15 +19,41 @@
 guard_check_command() {
   # The shell joins a backslash-newline before parsing, so `--g\<newline>lobal`
   # is `--global` to git; every line-based match below would otherwise see two
-  # harmless halves. But an escaped backslash before the newline
-  # (`x\\<newline>git …`) is no continuation, and joining it would glue the
-  # next command onto the previous word. Checking both the joined and the raw
-  # form blocks the command if either reading is dangerous.
-  local joined="${1//$'\\\n'/}"
-  if [ "$joined" != "$1" ]; then
-    guard_check_single "$1" || return 1
-  fi
-  guard_check_single "$joined"
+  # harmless halves. Join continuations the way bash does (see
+  # guard_join_continuations), and also check the raw form, blocking if either
+  # reading is dangerous.
+  case "$1" in
+    *$'\\\n'*)
+      guard_check_single "$1" || return 1
+      guard_check_single "$(guard_join_continuations "$1")"
+      ;;
+    *) guard_check_single "$1" ;;
+  esac
+}
+
+# guard_join_continuations <command>
+# Removes a backslash-newline only when the backslash is itself unescaped,
+# i.e. preceded by an even number of backslashes. In `x\\<newline>git …` the
+# backslash pair is a literal backslash and the newline ends the command, so a
+# blanket replace would glue `git` onto `x` and hide it; with this rule a
+# later real continuation (`--no-\<newline>verify`) is still joined.
+guard_join_continuations() {
+  local s="$1" out="" c i run=0
+  for ((i = 0; i < ${#s}; i++)); do
+    c="${s:i:1}"
+    if [ "$c" = $'\n' ] && [ $((run % 2)) -eq 1 ]; then
+      out="${out%\\}"
+      run=0
+      continue
+    fi
+    out+="$c"
+    if [ "$c" = "\\" ]; then
+      run=$((run + 1))
+    else
+      run=0
+    fi
+  done
+  printf '%s' "$out"
 }
 
 # guard_check_single <command>
