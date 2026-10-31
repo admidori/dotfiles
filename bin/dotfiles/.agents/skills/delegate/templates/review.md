@@ -11,6 +11,7 @@ commit: <sha or deferred>
 
 - **Commit authorization:** <standing local authorization after review/fixes/reverification (default), or explicit exception/deferral reason>
 - **Commit readiness / blocking checks:** <readiness evidence (review complete, fixes done, reverification passed) or blocking checks/findings>
+- **Execution mode:** <host | docker-sandbox>
 - **Mode:** <fresh | resume (source attempt <n>)>
 - **Conversation ID:** <conversation ID from metrics>
 - **Status:** <execution finished | verified | accepted | awaiting commit | committed | deferred>

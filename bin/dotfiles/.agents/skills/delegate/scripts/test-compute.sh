@@ -8,6 +8,9 @@
 #
 set -euo pipefail
 
+# Clear inherited Codex env for deterministic tests
+unset CODEX_THREAD_ID CODEX_HOME
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VALIDATE_BIN="$SCRIPT_DIR/validate-compute.sh"

@@ -9,6 +9,9 @@
 #
 set -euo pipefail
 
+# Clear inherited Codex env for deterministic tests
+unset CODEX_THREAD_ID CODEX_HOME
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 RUN_TASK_BIN="$SCRIPT_DIR/run-task.sh"
 

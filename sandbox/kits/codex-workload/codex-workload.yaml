@@ -1,0 +1,43 @@
+# syntax=docker/sandbox-kit:3
+{
+  "schemaVersion": "3",
+  "kind": "workload",
+  "displayName": "Codex OAuth workload",
+  "capabilities": [
+    {
+      "type": "com.docker.sandbox/sbx@1"
+    },
+    {
+      "type": "com.docker.sandbox/network-policy@1",
+      "config": {
+        "runtime": {
+          "allow": [
+            "auth.openai.com",
+            "chatgpt.com"
+          ]
+        }
+      }
+    },
+    {
+      "type": "com.docker.sandbox/credential@1",
+      "config": {
+        "service": "openai",
+        "phase": "runtime",
+        "oauth": {
+          "tokenEndpoint": {
+            "host": "auth.openai.com",
+            "path": "/oauth/token"
+          },
+          "resourceHosts": [
+            "chatgpt.com"
+          ],
+          "sentinels": {
+            "accessToken": "oai-oat01-proxy-managed",
+            "refreshToken": "oai-ort01-proxy-managed"
+          },
+          "passthrough": false
+        }
+      }
+    }
+  ]
+}
