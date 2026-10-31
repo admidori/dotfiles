@@ -273,8 +273,8 @@ container's `agent` user without opening network exposure.
 - **Preflight & Ownership Safety:** Preflight port checks prevent overwriting configurations if an unmanaged listener already occupies port 2222.
 - **Safe Runtime Environment Propagation:** Propagates only an approved allowlist of non-secret runtime variables
   (`PATH`, upper/lowercase proxy variables, CA bundle paths, `NODE_USE_ENV_PROXY`, sandbox identifiers,
-  agent/credential mode sentinels) via a single combined `SetEnv` directive. Credential-bearing proxy URLs,
-  newlines, and full environment dumps are strictly rejected with errors.
+  agent/credential mode sentinels, and verified GitHub proxy sentinel `GH_TOKEN`) via a single combined `SetEnv` directive.
+  Credential-bearing proxy URLs, unverified `GH_TOKEN` values, newlines, and full environment dumps are strictly rejected with errors.
 - **Host Key Generation at Runtime:** Host keys are generated on first runtime use inside the container
   (`ssh-keygen -A`) and preserved across runs. No private keys are baked into image layers or copied from host.
 - **Transient Foreground Process & Dual Verification:** Held in foreground by a transient WSL systemd user unit
@@ -348,6 +348,32 @@ sbx stop dotfiles-agy-dev
 - `project-ssh.py stop` leaves container data, branches, and worktrees intact.
 - Stopping an already-stopped sandbox is idempotent and **never invokes `sbx exec`**, ensuring
   a stopped container is not unintentionally re-awakened.
+
+### GitHub Proxy Access via SSH (Dynamic Host Secret)
+
+To use the GitHub CLI (`gh`) over project SSH sessions without passing real personal access tokens (PATs) into the guest container:
+
+1. **Project-Scoped Dynamic Host Secret:**
+   Register a dynamic command secret on the host scoped to the project sandbox:
+   ```bash
+   sbx secret set --sandbox my-project github \
+     --command '"/mnt/c/Users/<username>/AppData/Local/Microsoft/WinGet/Links/op.exe" read "op://<vault>/<item>/<field>" --no-newline' \
+     --refresh 55m
+   ```
+   - **Absolute Windows `op.exe` path:** Replace the sandbox name, username, and reference placeholders with your local values. The WSL shell alias `op` is unavailable to the daemon, so use the actual absolute Windows executable path. Keep both path and reference quoted; never put the PAT itself in the command. See [Docker's dynamic secret documentation](https://docs.docker.com/ai/sandboxes/configuration/credentials/#use-a-dynamic-secret-source).
+   - **Host Cache Duration:** The host stores the command instead of the PAT value, resolves it on the host, and caches the result for 55 minutes by default (`--refresh 55m`). Source changes apply to existing local sandboxes without restarting them.
+   - **1Password Approval Dependency:** Resolution requires an authenticated Windows 1Password CLI and may prompt for desktop app approval. Cache expiry can therefore require user interaction; this is not a guarantee of unattended access.
+   - **Host Isolation:** Keep the executable, its dependencies and configuration, and host temporary directories outside writable guest mounts. Check the project's mounts before registering the command. This flow does not pass the real PAT into the guest or write it to guest files.
+
+2. **In-Guest Proxy Sentinel & `gh` CLI:**
+   - **Proxy Interception:** Docker Sandbox's host proxy intercepts outbound requests to GitHub APIs and attaches the host-managed credential transparently.
+   - **Public Proxy Sentinel:** In container sessions, the environment variable `GH_TOKEN` is set to Docker's fixed public sentinel value:
+     `gho_sbxproxymanaged000000000000000000000`
+   - **Dummy Auth Token:** Inside the container, running `gh auth token` returns this dummy sentinel string, not the real PAT.
+   - **API Permissions:** The proxy enables operations allowed by the underlying PAT. Keeping the PAT outside the guest does not make those operations read-only; scope the PAT to the intended repositories and permissions.
+   - **No In-Guest Login or Token Import:** Do not run `gh auth login` or import a real token inside the guest. Authentication uses the host proxy and the sentinel.
+   - **Safe SSH Propagation:** When SSH sessions are started via `project-ssh.py`, `guest-bootstrap.py` inspects `GH_TOKEN`. If present, it must match the exact literal sentinel `gho_sbxproxymanaged000000000000000000000` to be propagated into the OpenSSH daemon's `SetEnv` directive. Any other present value (empty string, real token, prefix lookalike) is rejected immediately with a static secret-free `ValueError` before config generation. `GITHUB_TOKEN` and unrelated credential environment variables remain strictly excluded.
+   - **Existing SSH Sessions:** After updating the bootstrap, stop and start managed SSH with `project-ssh.py`, then reconnect clients. Existing processes may retain their previous environment.
 
 ### Project-Private Clone, Worktrees, and App Workflow
 
@@ -455,6 +481,37 @@ all_sentinels_valid: True
 > [!WARNING]
 > Never inspect credential files with `cat`, `head`, `echo`, or substring searches.
 > Use `validate_credentials.py` to confirm sentinels safely.
+
+### GitHub Proxy Sentinel Verification
+
+Verify that GitHub credentials inside the sandbox and SSH sessions match only the documented proxy sentinel without printing token strings to logs or the terminal.
+
+#### Secret-Free Sentinel Check
+
+Run an exact literal comparison that prints booleans only:
+
+```bash
+# Check GH_TOKEN environment variable in the current session
+python3 -c 'import os; print("gh_token_sentinel_valid:", os.environ.get("GH_TOKEN") == "gho_sbxproxymanaged000000000000000000000")'
+
+# Check gh CLI active token output
+python3 -c 'import subprocess; tok = subprocess.check_output(["gh", "auth", "token"], text=True).strip(); print("gh_auth_token_sentinel_valid:", tok == "gho_sbxproxymanaged000000000000000000000")'
+```
+
+Both checks output strictly boolean status (`True` when proxy authentication is active).
+
+#### Read-Only GitHub API Verification
+
+Test read-only API access through the proxy (for example, inside an SSH session):
+
+```bash
+gh api user
+gh api repos/<owner>/<repo>
+```
+
+> [!NOTE]
+> **Live Verification is Designer-Owned:**
+> Live credential verification—including registering the host command secret, testing SSH connections from Windows/WSL, executing live GitHub API calls, and verifying that the public sentinel returns HTTP 401 when sent directly to GitHub without the proxy—is owned and performed by the designer. Implementer verification is restricted to mocked unit tests and static syntax/diff checks.
 
 ---
 

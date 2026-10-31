@@ -73,7 +73,10 @@ ALLOWED_ENV_VARS = {
     "SBX_AGENT",
     "SBX_CRED_OPENAI_MODE",
     "SBX_CRED_ANTIGRAVITY_MODE",
+    "GH_TOKEN",
 }
+
+GITHUB_SENTINEL_TOKEN = "gho_sbxproxymanaged000000000000000000000"
 
 
 def verify_marker(marker_path: Path = MARKER_PATH) -> None:
@@ -97,13 +100,17 @@ def verify_guard_env(env: dict[str, str]) -> None:
 def extract_safe_environment(env: dict[str, str]) -> dict[str, str]:
     """Extract and strictly validate allowed runtime environment variables.
 
-    Rejects credential-bearing proxy URLs, newlines, and unsafe quoting by raising ValueError.
+    Validates that GH_TOKEN, if present, matches exactly the proxy sentinel value.
+    Rejects credential-bearing proxy URLs, unverified GH_TOKEN, newlines, and unsafe quoting by raising ValueError.
     Does NOT silently omit invalid values.
     """
     safe = {}
     for key in ALLOWED_ENV_VARS:
         if key in env:
             val = env[key]
+            if key == "GH_TOKEN":
+                if val != GITHUB_SENTINEL_TOKEN:
+                    raise ValueError("Invalid GH_TOKEN: only the Docker Sandbox proxy sentinel is permitted")
             if any(c in val for c in ("\n", "\r", "\0", '"', "\\")):
                 raise ValueError(f"Unsafe character in environment variable '{key}'")
             if "proxy" in key.lower() and "no_proxy" not in key.lower():

@@ -274,6 +274,7 @@ class TestGuestBootstrapSecurity(unittest.TestCase):
             "NAME": "bad-name",
             "VM_ID": "bad-vm",
             "OPENAI_API_KEY": "secret-key",
+            "GITHUB_TOKEN": "ghp_dummyfixture0000000000000000000000",
         }
         safe = guest_bootstrap.extract_safe_environment(test_env)
         self.assertIn("PATH", safe)
@@ -283,6 +284,7 @@ class TestGuestBootstrapSecurity(unittest.TestCase):
         self.assertNotIn("NAME", safe)
         self.assertNotIn("VM_ID", safe)
         self.assertNotIn("OPENAI_API_KEY", safe)
+        self.assertNotIn("GITHUB_TOKEN", safe)
 
     def test_sshd_config_hardening_directives(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -561,6 +563,131 @@ class TestHostLifecycleStateSafety(unittest.TestCase):
             kwargs = mock_run.call_args[1]
             self.assertIn("timeout", kwargs)
             self.assertGreater(kwargs["timeout"], 0)
+
+
+class TestGitHubProxySentinelPropagation(unittest.TestCase):
+    """Test strict GitHub proxy sentinel validation and propagation for SSH sessions."""
+
+    def test_valid_sentinel_propagates_and_rendered_in_setenv(self):
+        env = {
+            "PATH": "/usr/bin",
+            "GH_TOKEN": guest_bootstrap.GITHUB_SENTINEL_TOKEN,
+        }
+        safe = guest_bootstrap.extract_safe_environment(env)
+        self.assertEqual(safe.get("GH_TOKEN"), guest_bootstrap.GITHUB_SENTINEL_TOKEN)
+
+        directive = guest_bootstrap.format_setenv_directive(safe)
+        self.assertIn(f"GH_TOKEN={guest_bootstrap.GITHUB_SENTINEL_TOKEN}", directive)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg_path = Path(tmpdir) / "sshd_config.project"
+            run_dir = Path(tmpdir) / "run_sshd"
+            with patch("guest_bootstrap.CONFIG_PATH", cfg_path), \
+                 patch("guest_bootstrap.RUN_SSHD_DIR", run_dir), \
+                 patch("os.chown"):
+                content = guest_bootstrap.generate_sshd_config(safe)
+                self.assertIn(f"GH_TOKEN={guest_bootstrap.GITHUB_SENTINEL_TOKEN}", content)
+
+    def test_missing_gh_token_is_safely_omitted(self):
+        env = {"PATH": "/usr/bin"}
+        safe = guest_bootstrap.extract_safe_environment(env)
+        self.assertNotIn("GH_TOKEN", safe)
+        directive = guest_bootstrap.format_setenv_directive(safe)
+        self.assertNotIn("GH_TOKEN", directive)
+
+    def test_invalid_gh_token_rejected_without_leaking_values(self):
+        invalid_fixtures = [
+            "",  # empty
+            "ghp_dummyfixture0000000000000000000000",  # plausible PAT
+            "gho_dummyfixture0000000000000000000000",  # plausible OAuth token
+            "github_pat_11AAAAAAA0123456789_dummyfixture0000000000000",  # fine-grained PAT
+            "gho_sbxproxymanaged",  # prefix lookalike
+            "gho_sbxproxymanaged00000000000000000000",  # 20 zeros (short)
+            "gho_sbxproxymanaged0000000000000000000000",  # 22 zeros (long)
+            "gho_sbxproxymanaged000000000000000000000suffix",  # suffix lookalike
+            " gho_sbxproxymanaged000000000000000000000",  # leading space
+            "gho_sbxproxymanaged000000000000000000000 ",  # trailing space
+            "gho_sbxproxymanaged000000000000000000000\n",  # trailing newline
+            "\ngho_sbxproxymanaged000000000000000000000",  # leading newline
+            "gho_sbxproxymanaged000000000000000000000\r",  # carriage return
+            "random_token_12345",
+        ]
+        for fixture in invalid_fixtures:
+            with self.subTest(fixture=fixture):
+                with self.assertRaises(ValueError) as cm:
+                    guest_bootstrap.extract_safe_environment({"PATH": "/usr/bin", "GH_TOKEN": fixture})
+                err_msg = str(cm.exception)
+                self.assertIn("Invalid GH_TOKEN: only the Docker Sandbox proxy sentinel is permitted", err_msg)
+                if fixture:
+                    self.assertNotIn(fixture, err_msg)
+
+    def test_root_revalidation_rejects_unsafe_gh_token_from_env_json(self):
+        unsafe_fixture = "ghp_dummyfixture0000000000000000000000"
+        env_json_payload = json.dumps({
+            "PATH": "/usr/bin",
+            "SANDBOX_ID": "sbx-1",
+            "SANDBOX_VM_ID": "vm-1",
+            "SBX_AGENT": "1",
+            "GH_TOKEN": unsafe_fixture,
+        })
+        with patch("os.geteuid", return_value=0), \
+             patch.object(guest_bootstrap, "verify_marker"), \
+             patch.object(guest_bootstrap, "prepare_guest") as mock_prep, \
+             patch("sys.stderr") as mock_stderr, \
+             patch("sys.argv", [
+                 "guest-bootstrap.py",
+                 "prepare",
+                 "--key-file", "/nonexistent/test.pub",
+                 "--env-json", env_json_payload,
+             ]):
+            code = guest_bootstrap.main()
+            self.assertEqual(code, 1)
+            mock_prep.assert_not_called()
+            # Verify stderr does not leak the unsafe fixture
+            all_err = "".join(call_args[0][0] for call_args in mock_stderr.write.call_args_list)
+            self.assertIn("Invalid GH_TOKEN: only the Docker Sandbox proxy sentinel is permitted", all_err)
+            self.assertNotIn(unsafe_fixture, all_err)
+
+    def test_caller_side_rejects_unsafe_gh_token_before_elevation(self):
+        unsafe_fixture = "ghp_dummyfixture0000000000000000000000"
+        with patch("os.geteuid", return_value=1000), \
+             patch.object(guest_bootstrap, "verify_marker"), \
+             patch.object(guest_bootstrap, "verify_guard_env"), \
+             patch("os.environ", {
+                 "PATH": "/usr/bin",
+                 "SANDBOX_ID": "sbx-1",
+                 "SANDBOX_VM_ID": "vm-1",
+                 "SBX_AGENT": "1",
+                 "GH_TOKEN": unsafe_fixture,
+             }), \
+             patch("os.execvp") as mock_execvp, \
+             patch("sys.argv", [
+                 "guest-bootstrap.py",
+                 "prepare",
+                 "--key-file", "/nonexistent/test.pub",
+             ]):
+            with self.assertRaises(ValueError) as cm:
+                guest_bootstrap.main()
+            mock_execvp.assert_not_called()
+            err_msg = str(cm.exception)
+            self.assertIn("Invalid GH_TOKEN: only the Docker Sandbox proxy sentinel is permitted", err_msg)
+            self.assertNotIn(unsafe_fixture, err_msg)
+
+    def test_github_token_and_unrelated_credentials_remain_excluded(self):
+        env = {
+            "PATH": "/usr/bin",
+            "GH_TOKEN": guest_bootstrap.GITHUB_SENTINEL_TOKEN,
+            "GITHUB_TOKEN": "ghp_dummyfixture0000000000000000000000",
+            "GH_ENTERPRISE_TOKEN": "dummy_ent_token",
+            "OPENAI_API_KEY": "dummy_openai_key",
+            "AWS_SECRET_ACCESS_KEY": "dummy_aws_secret",
+        }
+        safe = guest_bootstrap.extract_safe_environment(env)
+        self.assertIn("GH_TOKEN", safe)
+        self.assertNotIn("GITHUB_TOKEN", safe)
+        self.assertNotIn("GH_ENTERPRISE_TOKEN", safe)
+        self.assertNotIn("OPENAI_API_KEY", safe)
+        self.assertNotIn("AWS_SECRET_ACCESS_KEY", safe)
 
 
 if __name__ == "__main__":
