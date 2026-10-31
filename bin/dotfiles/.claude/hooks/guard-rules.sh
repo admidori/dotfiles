@@ -54,6 +54,45 @@ guard_check_command() {
     printf 'git author identity override via environment'; return 1
   fi
 
+  # The shell drops quotes and backslashes before git sees its arguments, so
+  # `"--no-verify"`, `--no-verif\y` and `core.hooks"Path"` must match too.
+  # Message values are deliberately not stripped: a regex cannot follow shell
+  # quoting, and crafted quotes (`"-m '" --no-verify "'"`) would hide a real
+  # flag. So an inline -m message that mentions these flags is blocked as
+  # well; write such messages to a file and use `git commit -F <file>`.
+  unquoted="$(printf '%s' "$norm" | tr -d "\"'\\\\")"
+
+  # Git hook bypass: --no-verify in a git command.
+  # The most common reaction of an agent to a failing hook is to retry with
+  # --no-verify (supported by commit, push, merge, rebase, am, cherry-pick,
+  # or placed anywhere after git). git also accepts any unambiguous prefix of
+  # a long option, so `--no-veri` counts too. git may also start right after
+  # `(`, a backtick or `{` (subshells, command substitution, groups).
+  # shellcheck disable=SC2016 # the backticks are literal pattern characters
+  if printf '%s' "$unquoted" \
+      | grep -Eq '(^|[|;&(`{[:space:]])([[:alnum:]_./-]*\/)?git[[:space:]](.*[[:space:]])?--no-v(e(r(i(f(y)?)?)?)?)?([[:space:]|;&)`}]|$)'; then
+    printf 'git hook bypass (--no-verify)'; return 1
+  fi
+
+  # Git hook bypass: git commit -n (short flag alone or in a cluster where n
+  # precedes any argument-taking flag: m, F, c, C, t, u).
+  if printf '%s' "$unquoted" \
+      | grep -Eq '(^|[|;&(`{[:space:]])([[:alnum:]_./-]*\/)?git[[:space:]]([^|;&]*[[:space:]])?commit[[:space:]]([^|;&]*[[:space:]])?-[a-ln-sv-zA-BDEG-Z]*n'; then
+    printf 'git hook bypass (commit -n)'; return 1
+  fi
+
+  # Git hook redirection: blocking core.hooksPath override (case-insensitive)
+  # or environment variables that bypass/override global git configuration.
+  # Note: GIT_CONFIG_NOSYSTEM is deliberately allowed because hooksPath is global.
+  # Not covered (best effort): HOME=... git commit, editing ~/.git-hooks with
+  # file tools, git -c alias.x=...
+  if printf '%s' "$unquoted" | grep -iEq 'core\.hookspath\b'; then
+    printf 'git hooks redirection'; return 1
+  fi
+  if printf '%s' "$unquoted" | grep -Eq '\bGIT_CONFIG_(GLOBAL|COUNT|KEY_|PARAMETERS)'; then
+    printf 'git hooks redirection'; return 1
+  fi
+
   # Remote script execution: curl/wget piped (optionally via sudo) into a shell.
   if printf '%s' "$norm" \
       | grep -Eq '(curl|wget)[^|;&]*(\||;|&&)[[:space:]]*(sudo[[:space:]]+)?(sh|bash|zsh)\b'; then

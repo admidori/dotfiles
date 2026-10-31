@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#
+# Generic pass-through dispatcher for client-side git hooks.
+# When core.hooksPath is configured globally, this forwards invocation to the
+# repo-local hook ($(git rev-parse --git-common-dir)/hooks/<hook>), or falls
+# back to git-lfs for LFS-managed hooks.
+#
+set -euo pipefail
+
+hook_name="$(basename "$0")"
+
+# Find repo-local hooks directory.
+# Use --git-common-dir so linked worktrees find the main repository's hooks,
+# and avoid --git-path hooks which would return core.hooksPath itself.
+common_dir="$(git rev-parse --git-common-dir 2>/dev/null)" || exit 0
+if [ -d "$common_dir" ]; then
+  common_dir="$(cd "$common_dir" && pwd -P)"
+fi
+
+local_hook="$common_dir/hooks/$hook_name"
+
+if [ -x "$local_hook" ]; then
+  self="$(readlink -f "$0" 2>/dev/null || realpath "$0")"
+  target="$(readlink -f "$local_hook" 2>/dev/null || realpath "$local_hook")"
+  # Guard against self-recursion if repo-local hook points back to this script
+  if [ "$self" != "$target" ]; then
+    exec "$local_hook" "$@"
+  fi
+fi
+
+# Fallback for git-lfs hooks when no repo-local hook exists
+case "$hook_name" in
+  pre-push|post-checkout|post-commit|post-merge)
+    if command -v git-lfs >/dev/null 2>&1; then
+      exec git lfs "$hook_name" "$@"
+    fi
+    ;;
+esac
+
+exit 0

@@ -73,6 +73,53 @@ if ! command -v uv >/dev/null 2>&1; then
   fi
 fi
 
+# --- security scanners for the global git hooks -----------------------------
+# shellcheck source=installer/pinned-tools.sh
+. "$SCRIPT_DIR/pinned-tools.sh"
+
+install_gitleaks "$HOME/.local/bin/gitleaks"
+install_osv_scanner "$HOME/.local/bin/osv-scanner"
+
+if ! command -v semgrep >/dev/null 2>&1; then
+  if command -v pipx >/dev/null 2>&1; then
+    echo "Installing semgrep via pipx ..."
+    pipx install semgrep
+  else
+    echo "WARN: pipx not found; skipping semgrep install." >&2
+  fi
+fi
+
+if ! command -v pre-commit >/dev/null 2>&1; then
+  if command -v pipx >/dev/null 2>&1; then
+    echo "Installing pre-commit via pipx ..."
+    pipx install pre-commit
+  else
+    echo "WARN: pipx not found; skipping pre-commit install." >&2
+  fi
+fi
+
+echo "Updating semgrep registry pack ..."
+SEMGREP_PACK_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/git-hooks/semgrep"
+SEMGREP_PACK_FILE="$SEMGREP_PACK_DIR/default.yml"
+tmp_pack="$(mktemp "${TMPDIR:-/tmp}/semgrep-pack.XXXXXX")"
+if curl -fsSL --retry 3 "https://semgrep.dev/c/p/security-audit" -o "$tmp_pack"; then
+  first_line="$(head -n 1 "$tmp_pack" 2>/dev/null || true)"
+  case "$first_line" in
+    rules:*)
+      mkdir -p "$SEMGREP_PACK_DIR"
+      mv -f "$tmp_pack" "$SEMGREP_PACK_FILE"
+      echo "Installed semgrep registry pack to $SEMGREP_PACK_FILE."
+      ;;
+    *)
+      echo "WARN: semgrep registry pack first line did not start with 'rules:'; keeping existing pack." >&2
+      rm -f "$tmp_pack"
+      ;;
+  esac
+else
+  echo "WARN: failed to download semgrep registry pack; keeping existing pack." >&2
+  rm -f "$tmp_pack"
+fi
+
 # --- symlink the dotfiles -----------------------------------------------------
 "$SCRIPT_DIR/link.sh"
 
