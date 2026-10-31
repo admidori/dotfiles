@@ -2,8 +2,9 @@
 
 This directory contains reusable Docker Sandbox Kit (specification schema v3)
 descriptors and companion Dockerfiles to run Codex (as designer) and
-Antigravity (as implementer) sequentially inside a single, task-private
-sandbox environment.
+Antigravity (as implementer) inside a persistent Sandbox per project.
+Each task uses a dedicated Git worktree in the private clone; the designer
+and implementer work sequentially in that task worktree.
 
 ## Table of Contents
 
@@ -16,6 +17,7 @@ sandbox environment.
 - [Kit Composition & Building](#kit-composition--building)
 - [Creating a Task Sandbox](#creating-a-task-sandbox)
 - [Entering the Sandbox](#entering-the-sandbox)
+- [Project Sandbox SSH Lifecycle](#project-sandbox-ssh-lifecycle)
 - [Sentinel Verification (Secret-Free)](#sentinel-verification-secret-free)
 - [Running Antigravity Inside the Sandbox](#running-antigravity-inside-the-sandbox)
 - [Accidental-Host Guard & Environment Marker](#accidental-host-guard--environment-marker)
@@ -36,8 +38,9 @@ inside one externally isolated container:
 3. **Codex** inspects modified files, verifies changes, runs tests, and commits
    accepted work under standing authorization.
 
-Both tools share the same workspace clone sequentially without requiring nested
-virtual machines or multi-worktree synchronization overhead.
+Both tools share the task worktree sequentially. Other tasks use separate
+worktrees in the same project Sandbox; they are not security-isolated from
+each other. No nested Sandbox is required.
 
 ---
 
@@ -252,6 +255,120 @@ sbx exec -it dotfiles-agy-task-01 bash
 
 ---
 
+## Project Sandbox SSH Lifecycle
+
+Direct localhost SSH access to the project sandbox is managed via `sandbox/project-ssh.py`.
+This enables external tools, IDEs, and the Windows host to connect securely to the
+container's `agent` user without opening network exposure.
+
+### Security Architecture
+
+- **Host Loopback Exposure Only:** Binds strictly to `[::1]:PORT:2222/tcp6` on the WSL host.
+  Wildcard (`0.0.0.0`) or external LAN listeners on the host are prohibited.
+- **Guest Listener:** OpenSSH server listens on guest port `2222` inside the microVM.
+- **Hardened Agent-Only Authentication:** Only public-key authentication for user `agent` is permitted
+  (`UsePAM yes`, `AuthenticationMethods publickey`, `PermitRootLogin no`, `PasswordAuthentication no`, `KbdInteractiveAuthentication no`, `AllowUsers agent`).
+- **Forwarding Restrictions:** SSH agent forwarding (`AllowAgentForwarding no`) and X11 forwarding are disabled.
+  Local-only TCP forwarding (`AllowTcpForwarding local`) is permitted for application tunneling including dynamic SOCKS forwarding; remote forwarding is denied.
+- **Preflight & Ownership Safety:** Preflight port checks prevent overwriting configurations if an unmanaged listener already occupies port 2222.
+- **Safe Runtime Environment Propagation:** Propagates only an approved allowlist of non-secret runtime variables
+  (`PATH`, upper/lowercase proxy variables, CA bundle paths, `NODE_USE_ENV_PROXY`, sandbox identifiers,
+  agent/credential mode sentinels) via a single combined `SetEnv` directive. Credential-bearing proxy URLs,
+  newlines, and full environment dumps are strictly rejected with errors.
+- **Host Key Generation at Runtime:** Host keys are generated on first runtime use inside the container
+  (`ssh-keygen -A`) and preserved across runs. No private keys are baked into image layers or copied from host.
+- **Transient Foreground Process & Dual Verification:** Held in foreground by a transient WSL systemd user unit
+  (`systemd-run --user --unit=sbx-ssh-<name> --collect --property=Restart=no sbx exec ...`).
+  Start boundedly verifies both systemd unit activation and guest listener readiness before declaring success.
+  Explicit stop terminates the owned listener without killing arbitrary processes or restarting stopped sandboxes.
+
+### CLI Commands
+
+All commands require an existing sandbox and must be run from the host:
+
+```bash
+# 1. Start SSH listener for a sandbox (default host port: 40222)
+python3 sandbox/project-ssh.py start dotfiles-agy-dev --public-key /mnt/c/Users/admidori/.ssh/id_ed25519_sbx_dotfiles.pub --port 40222
+
+# 2. Query status (read-only; reports sbx status, unit status, and port mapping without starting stopped guests)
+python3 sandbox/project-ssh.py status dotfiles-agy-dev --json
+
+# 3. Stop SSH listener (terminates guest sshd, stops host systemd unit, and unpublishes port)
+python3 sandbox/project-ssh.py stop dotfiles-agy-dev
+```
+
+### Windows Client Configuration (`~/.ssh/config`)
+
+Under WSL with mirrored networking, direct connections from Windows to localhost IPv6 may fail
+to route across the virtual network switch. Connect using the verified WSL netcat proxy command:
+
+```ssh-config
+Host sbx-dotfiles
+    HostName 127.0.0.1
+    Port 40222
+    User agent
+    IdentityFile ~/.ssh/id_ed25519_sbx_dotfiles
+    IdentitiesOnly yes
+    IdentityAgent none
+    ForwardAgent no
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    StrictHostKeyChecking yes
+    UserKnownHostsFile ~/.ssh/known_hosts_sbx_dotfiles
+    ProxyCommand C:/Windows/System32/wsl.exe -d Debian -- /usr/bin/nc -6 ::1 40222
+```
+
+### Host Key Verification & `known_hosts`
+
+Upon running `project-ssh.py start`, the script prints the SHA256 fingerprints of the container's
+generated host keys. Preserve the existing verified Windows alias and known_hosts entry.
+For a new Sandbox, compare the public host key obtained through `sbx exec` with
+these fingerprints and register it in the dedicated known_hosts file before
+connecting with strict checking. The commands do not edit Windows SSH configuration.
+
+```text
+Host Key Fingerprints:
+  - 256 SHA256:d8Q... root@sandbox (ED25519)
+  - 256 SHA256:7uK... root@sandbox (ECDSA)
+```
+
+Never copy private host or client keys into the guest. Staging directories are ephemeral and
+cleaned up automatically after public key installation.
+
+### Explicit Stop Before Keyring Lock
+
+Before locking the host session keyring or suspending the host, explicitly stop the SSH service
+and the container:
+
+```bash
+python3 sandbox/project-ssh.py stop dotfiles-agy-dev
+sbx stop dotfiles-agy-dev
+```
+
+- `project-ssh.py stop` leaves container data, branches, and worktrees intact.
+- Stopping an already-stopped sandbox is idempotent and **never invokes `sbx exec`**, ensuring
+  a stopped container is not unintentionally re-awakened.
+
+### Project-Private Clone & Worktrees
+
+Use one persistent Sandbox per project, seeded by `sbx create --clone`. Create a
+dedicated Git worktree for every task and review inside that private clone. Keep
+the project main checkout available as the common base. Worktrees prevent
+accidental edit collisions; full-access agents can still access other worktrees.
+
+### Known Limitations
+
+1. **No Automatic Boot Enablement:** The SSH service is deliberately not configured as a persistent boot unit
+   to ensure operator pauses are respected. After a WSL restart or reboot, unlock
+   the keyring, run `project-ssh.py stop NAME` to clean up stale managed state, then
+   run `start` again. A real WSL reboot has not been tested.
+2. **Netcat Transport Dependency on Windows:** Windows SSH requires `ProxyCommand ... nc -6 ::1 <PORT>` due to
+   WSL mirrored networking routing constraints.
+3. **Session Renewal:** Long-duration OAuth token renewal during uninterrupted background execution
+   without container restart remains unverified.
+
+---
+
 ## Load the reviewed agent instructions
 
 After checking out the reviewed task branch in the private clone, link only
@@ -321,7 +438,7 @@ HARNESS_EXECUTION_MODE=docker-sandbox \
   bin/dotfiles/.agents/skills/delegate/scripts/run-task.sh <step-dir> <workdir> [brief] [--resume-attempt <N>]
 ```
 
-- **Sequential execution:** Codex (designer) and Antigravity (implementer) operate sequentially within the same task-private repository clone. No additional implementation worktree is required.
+- **Sequential execution:** Codex (designer) and Antigravity (implementer) operate sequentially within the same task worktree in the project-private clone. Pass that dedicated worktree as `$workdir`; the runner does not create it.
 - **Automated full access:** The runner passes `--dangerously-skip-permissions` and `--settings '{"enableTerminalSandbox":false}'` and runs directly from `$workdir`.
 - **Role separation & mutation detection:** Antigravity must never stage or commit changes. The runner captures HEAD, symbolic branch, and index state before the model probe and implementation run, rejecting acceptance with `status: "GIT_STATE_MUTATED"` (nonzero exit) if any Git state changed.
 - **Advisory locking:** The runner takes a nonblocking workdir flock (`git rev-parse --git-path harness.lock`) to prevent concurrent runner collisions across steps targeting the same workdir. Note that full-access container execution has permission to defeat advisory locks; locks protect against concurrent runner processes, not malicious processes.
@@ -347,7 +464,10 @@ The kits place a root-owned marker inside the container filesystem:
 
 ## Preserving Work & Cleanup
 
-Sandboxes are ephemeral; deleting a sandbox destroys its internal filesystem.
+Project Sandboxes are persistent during normal use. Deleting one destroys its
+internal filesystem, including every task worktree, so export accepted commits
+and harness records before removal. The task-Sandbox example below also applies
+when retiring a project Sandbox.
 
 ### Handling Git Remotes under WSL Mirrored Networking
 
