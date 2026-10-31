@@ -19,7 +19,7 @@
 #
 # Env: HARNESS_VARIANT (label for comparing harness changes, default
 # "baseline"), HARNESS_DESIGNER (e.g. "Claude (Opus 5.5)"),
-# AGY_MODEL (default gemini-3.1-pro-high),
+# AGY_MODEL (default gemini-3.8-flash-high),
 # AGY_EFFORT, AGY_TIMEOUT (default 30m).
 #
 set -euo pipefail
@@ -92,6 +92,57 @@ if [ "$resume_attempt_specified" = true ]; then
   fi
 fi
 
+# Validate AGY_TIMEOUT before locking or allocating artifacts
+agy_timeout_raw="${AGY_TIMEOUT:-}"
+if [ -z "$agy_timeout_raw" ]; then
+  agy_timeout_str="30m"
+  agy_timeout_seconds=1800
+elif [[ "$agy_timeout_raw" =~ ^[0-9]+$ ]]; then
+  minutes="$((10#$agy_timeout_raw))"
+  if [ "$minutes" -le 0 ]; then
+    echo "error: invalid AGY_TIMEOUT '$agy_timeout_raw' (use e.g. 40m, 1h30m, 90s, or minutes as a bare number)" >&2
+    exit 2
+  fi
+  agy_timeout_str="${agy_timeout_raw}m"
+  agy_timeout_seconds=$((minutes * 60))
+elif [[ "$agy_timeout_raw" =~ ^(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?$ ]]; then
+  h_part="${BASH_REMATCH[2]:-}"
+  m_part="${BASH_REMATCH[4]:-}"
+  s_part="${BASH_REMATCH[6]:-}"
+  if [ -z "$h_part" ] && [ -z "$m_part" ] && [ -z "$s_part" ]; then
+    echo "error: invalid AGY_TIMEOUT '$agy_timeout_raw' (use e.g. 40m, 1h30m, 90s, or minutes as a bare number)" >&2
+    exit 2
+  fi
+  h_sec=0
+  m_sec=0
+  s_sec=0
+  [ -n "$h_part" ] && h_sec=$((10#$h_part * 3600))
+  [ -n "$m_part" ] && m_sec=$((10#$m_part * 60))
+  [ -n "$s_part" ] && s_sec=$((10#$s_part))
+  agy_timeout_seconds=$((h_sec + m_sec + s_sec))
+  if [ "$agy_timeout_seconds" -le 0 ]; then
+    echo "error: invalid AGY_TIMEOUT '$agy_timeout_raw' (use e.g. 40m, 1h30m, 90s, or minutes as a bare number)" >&2
+    exit 2
+  fi
+  agy_timeout_str="$agy_timeout_raw"
+else
+  echo "error: invalid AGY_TIMEOUT '$agy_timeout_raw' (use e.g. 40m, 1h30m, 90s, or minutes as a bare number)" >&2
+  exit 2
+fi
+
+# The watch loop compares these numerically; a non-number would make the
+# grace check never fire and leave the runner waiting forever.
+grace_seconds="${AGY_RESULT_GRACE_SECONDS:-30}"
+timeout_margin_seconds="${AGY_TIMEOUT_MARGIN_SECONDS:-300}"
+for knob in AGY_RESULT_GRACE_SECONDS:"$grace_seconds" AGY_TIMEOUT_MARGIN_SECONDS:"$timeout_margin_seconds"; do
+  if ! [[ "${knob#*:}" =~ ^[0-9]{1,6}$ ]]; then
+    echo "error: invalid ${knob%%:*} '${knob#*:}' (whole seconds expected)" >&2
+    exit 2
+  fi
+done
+grace_seconds=$((10#$grace_seconds))
+timeout_margin_seconds=$((10#$timeout_margin_seconds))
+
 # Check flock prerequisite explicitly before locking.
 command -v flock >/dev/null || { echo "flock not found" >&2; exit 2; }
 
@@ -105,7 +156,7 @@ fi
 
 brief="${brief:-$step_dir/brief.md}"
 [ -f "$brief" ] || { echo "brief not found: $brief" >&2; exit 2; }
-for cmd in agy jq; do
+for cmd in agy jq setsid; do
   command -v "$cmd" >/dev/null || { echo "$cmd not found" >&2; exit 2; }
 done
 
@@ -236,6 +287,95 @@ if [ -n "$resume_attempt" ]; then
     exit 2
   fi
 fi
+
+# agy mounts every workspace folder (its cwd and any --add-dir) read-only
+# inside the terminal sandbox in headless runs, whatever settings.json
+# allows. So run it from an empty scratch dir and leave the project out of
+# the workspace: file edits then go through the write_file permissions, and
+# sandboxed commands (formatters, builds, tests) can write to the project.
+# Commands run only inside the sandbox (settings.json: proceed-in-sandbox),
+# so the run never needs a blanket permission bypass.
+agy_cwd="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
+agy_pid=""
+
+# Check whether any non-zombie process remains in process group <pid>.
+# Reads /proc directly: minimal images (e.g. debian:bookworm-slim) ship
+# without procps, and a missing `ps` would make every group look gone.
+# Zombies are skipped because they linger until reaped (by init in a
+# container) yet can no longer do anything.
+is_group_active() {
+  local pid="$1" f stat rest state pgrp
+  for f in /proc/[0-9]*/stat; do
+    { read -r stat <"$f"; } 2>/dev/null || continue
+    # Fields after the command name, which may itself contain ") ".
+    rest="${stat##*) }"
+    read -r state _ pgrp _ <<<"$rest"
+    [ "$pgrp" = "$pid" ] || continue
+    case "$state" in
+      Z | X) continue ;;
+    esac
+    return 0
+  done
+  return 1
+}
+
+terminate_agy_group() {
+  local pid="$1"
+  [ -z "$pid" ] && return 0
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  local i
+  for ((i = 0; i < 50; i++)); do
+    if ! is_group_active "$pid"; then
+      break
+    fi
+    sleep 0.1
+  done
+  if is_group_active "$pid" || kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
+    kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  fi
+  wait "$pid" 2>/dev/null
+}
+
+# Invoked indirectly via signal traps.
+# shellcheck disable=SC2317
+on_signal() {
+  local sig="$1"
+  trap - INT TERM EXIT
+  if [ -n "${agy_pid:-}" ]; then
+    terminate_agy_group "$agy_pid"
+  fi
+  rmdir "$agy_cwd" 2>/dev/null || rm -rf "$agy_cwd" 2>/dev/null || true
+  case "$sig" in
+    INT) exit 130 ;;
+    TERM) exit 143 ;;
+    *) exit 1 ;;
+  esac
+}
+
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
+trap 'rmdir "$agy_cwd" 2>/dev/null || rm -rf "$agy_cwd" 2>/dev/null || true' EXIT
+
+effective_model="${AGY_MODEL:-gemini-3.8-flash-high}"
+model_args=(--model "$effective_model")
+[ -n "${AGY_EFFORT:-}" ] && model_args+=(--effort "$AGY_EFFORT")
+
+# Ask agy which model this run will use rather than trusting AGY_MODEL or
+# guessing: the commit's co-author trailer must name the resolved model.
+# Probe with the same model/effort arguments used for implementation.
+# Print-mode /model answers without a turn or quota.
+model_json="$( (cd "$agy_cwd" && timeout 60 agy -p "/model" --output-format json \
+  "${model_args[@]}" </dev/null 2>/dev/null) | jq -c '.command.data // empty' 2>/dev/null || true)"
+[ -n "$model_json" ] || model_json='{}'
+model_id="$(jq -r 'if has("id") and (.id | type == "string") and (.id | test("\\S")) then .id else "unknown" end' <<<"$model_json" 2>/dev/null || echo "unknown")"
+if [ -z "$model_id" ] || [ "$model_id" = "unknown" ]; then
+  echo "error: could not resolve model '$effective_model' via 'agy -p /model'; check AGY_MODEL (available models: agy -p /model)" >&2
+  exit 2
+fi
+# "Gemini 3.8 Flash (High)" -> "Gemini 3.8 Flash": the effort suffix is a run
+# setting, not part of the model's name.
+model_name="$(jq -r '.label // "unknown" | sub(" \\([^)]*\\)$"; "")' <<<"$model_json")"
+trailer="Co-authored-by: Antigravity ($model_name) <noreply@google.com>"
 
 is_attempt_occupied() {
   local a="$1"
@@ -496,36 +636,12 @@ EOF
   cat "$skill_dir/templates/report.md"
 } >"$prompt"
 
-# agy mounts every workspace folder (its cwd and any --add-dir) read-only
-# inside the terminal sandbox in headless runs, whatever settings.json
-# allows. So run it from an empty scratch dir and leave the project out of
-# the workspace: file edits then go through the write_file permissions, and
-# sandboxed commands (formatters, builds, tests) can write to the project.
-# Commands run only inside the sandbox (settings.json: proceed-in-sandbox),
-# so the run never needs a blanket permission bypass.
-agy_cwd="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
-trap 'rmdir "$agy_cwd" 2>/dev/null || true' EXIT
 args=(-p "$(cat "$prompt")" --output-format stream-json --mode accept-edits
-  --disable-slash-commands --print-timeout "${AGY_TIMEOUT:-30m}")
-model_args=(--model "${AGY_MODEL:-gemini-3.1-pro-high}")
-[ -n "${AGY_EFFORT:-}" ] && model_args+=(--effort "$AGY_EFFORT")
+  --disable-slash-commands --print-timeout "$agy_timeout_str")
 args+=("${model_args[@]}")
 if [ -n "$resume_attempt" ]; then
   args+=(--conversation "$source_conv_id")
 fi
-
-# Ask agy which model this run will use rather than trusting AGY_MODEL or
-# guessing: the commit's co-author trailer must name the resolved model.
-# Probe with the same model/effort arguments used for implementation.
-# Print-mode /model answers without a turn or quota.
-model_json="$( (cd "$agy_cwd" && timeout 60 agy -p "/model" --output-format json \
-  "${model_args[@]}" </dev/null 2>/dev/null) | jq -c '.command.data // empty' 2>/dev/null || true)"
-[ -n "$model_json" ] || model_json='{}'
-model_id="$(jq -r '.id // "unknown"' <<<"$model_json")"
-# "Gemini 3.1 Pro (High)" -> "Gemini 3.1 Pro": the effort suffix is a run
-# setting, not part of the model's name.
-model_name="$(jq -r '.label // "unknown" | sub(" \\([^)]*\\)$"; "")' <<<"$model_json")"
-trailer="Co-authored-by: Antigravity ($model_name) <noreply@google.com>"
 
 if [ -n "$resume_attempt" ]; then
   echo "==> step $(basename "$step_dir"), attempt $attempt (resuming attempt $resume_attempt): running agy ($model_id) on $workdir"
@@ -536,10 +652,60 @@ if [ "$context_status" = "missing" ]; then
   echo "==> notice: no shared exploration context at $context_file; preserving legacy run"
 fi
 start_sec="$(date +%s.%N)"
-set +e
-(cd "$agy_cwd" && agy "${args[@]}" </dev/null) >"$run" 2>"$stderr"
-rc=$?
-set -e
+start_epoch="$(date +%s)"
+deadline_seconds=$((agy_timeout_seconds + timeout_margin_seconds))
+
+terminated_after_result=false
+runner_timeout=false
+result_seen_epoch=""
+rc=0
+
+orig_pwd="$PWD"
+cd "$agy_cwd"
+setsid agy "${args[@]}" </dev/null >"$run" 2>"$stderr" &
+agy_pid=$!
+cd "$orig_pwd"
+
+while true; do
+  if ! kill -0 "$agy_pid" 2>/dev/null; then
+    set +e
+    wait "$agy_pid"
+    rc=$?
+    set -e
+    break
+  fi
+
+  now_epoch="$(date +%s)"
+
+  if [ -z "$result_seen_epoch" ]; then
+    if grep -E '"event"[[:space:]]*:[[:space:]]*"result"' "$run" >/dev/null 2>&1; then
+      result_seen_epoch="$now_epoch"
+    fi
+  fi
+
+  if [ -n "$result_seen_epoch" ]; then
+    if [ $((now_epoch - result_seen_epoch)) -ge "$grace_seconds" ]; then
+      set +e
+      terminate_agy_group "$agy_pid"
+      rc=$?
+      set -e
+      terminated_after_result=true
+      break
+    fi
+  else
+    if [ $((now_epoch - start_epoch)) -ge "$deadline_seconds" ]; then
+      set +e
+      terminate_agy_group "$agy_pid"
+      set -e
+      runner_timeout=true
+      rc=124
+      break
+    fi
+  fi
+
+  sleep 1
+done
+
 end_sec="$(date +%s.%N)"
 wall_duration="$(awk -v s="$start_sec" -v e="$end_sec" 'BEGIN { printf "%.3f", (e - s) }')"
 
@@ -575,10 +741,17 @@ for previous_state in "${compute_recovery_files[@]}"; do
   fi
 done
 status="$(jq -r '.status // "NO_RESULT"' <<<"$result")"
-if [ "$conversation_mismatch" = true ]; then
+if [ "$runner_timeout" = true ]; then
+  status="TIMEOUT"
+  rc=124
+elif [ "$conversation_mismatch" = true ]; then
   status="CONVERSATION_MISMATCH"
 elif [ "$compute_recovery_pending" = true ] && [ "$status" = "SUCCESS" ]; then
   status="RECOVERY_INCOMPLETE"
+fi
+
+if [ "$terminated_after_result" = true ] && [ "$status" = "SUCCESS" ]; then
+  rc=0
 fi
 
 wall_duration_num="$(jq -n --arg w "$wall_duration" '$w | tonumber')"
@@ -612,6 +785,8 @@ jq -n -c \
   --arg status "$status" \
   --argjson compute_recovery_pending "$compute_recovery_pending" \
   --argjson exit_code "$rc" \
+  --argjson terminated_after_result "$terminated_after_result" \
+  --argjson runner_timeout "$runner_timeout" \
   --argjson denied "$denied" \
   --argjson report_empty "$report_empty" \
   --argjson r "$result" \
@@ -622,6 +797,8 @@ jq -n -c \
     compute_backend: (if $compute_backend == "" then null else $compute_backend end),
     compute_recovery_pending: $compute_recovery_pending,
     exit_code: $exit_code, status: $status,
+    terminated_after_result: $terminated_after_result,
+    runner_timeout: $runner_timeout,
     denied_tool_calls: $denied, report_empty: $report_empty,
     duration_seconds: $r.duration_seconds, num_turns: $r.num_turns,
     usage: $r.usage, conversation_id: $r.conversation_id,
@@ -645,6 +822,12 @@ fi
 if [ -n "$resume_attempt" ]; then
   echo "    resumed conversation: $source_conv_id (attempt $resume_attempt)"
 fi
+if [ "$runner_timeout" = true ]; then
+  echo "==> error: runner deadline reached (${deadline_seconds}s); agy terminated" >&2
+fi
+if [ "$terminated_after_result" = true ]; then
+  echo "==> warning: agy did not exit after its result; terminated after ${grace_seconds}s grace"
+fi
 if [ "$conversation_mismatch" = true ]; then
   echo "==> error: conversation ID mismatch (expected $source_conv_id, got ${returned_conv_id:-none})" >&2
 fi
@@ -659,4 +842,10 @@ if [ "$compute_recovery_pending" = true ]; then
 fi
 echo "==> working tree:"
 git -C "$workdir" status --short || true
-[ "$rc" -eq 0 ] && [ "$status" = "SUCCESS" ] && [ "$report_empty" = false ]
+if [ "$rc" -eq 0 ] && [ "$status" = "SUCCESS" ] && [ "$report_empty" = false ]; then
+  exit 0
+fi
+if [ "$rc" -ne 0 ]; then
+  exit "$rc"
+fi
+exit 1

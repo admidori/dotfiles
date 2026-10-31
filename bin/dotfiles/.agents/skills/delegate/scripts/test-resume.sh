@@ -520,7 +520,10 @@ assert_ok "agy was not called during lock conflict" \
 assert_ok "lock file inode is preserved on exit" \
   test -f "$STEP_DIR_LOCK/.lock"
 
-# 9b: Child agy holds lock if runner process is interrupted
+# 9b: Interrupting the runner terminates child agy before the lock is free.
+# The invariant is that no second run can take the step lock while an agy
+# from an earlier run is still alive; the runner's INT/TERM trap now stops
+# the agy process group, after which the lock must be available.
 LOCK_CHILD_DIR="$TMP_TEST_DIR/task-lock-child"
 STEP_CHILD_DIR="$LOCK_CHILD_DIR/steps/01-step"
 mkdir -p "$STEP_CHILD_DIR"
@@ -533,7 +536,7 @@ rm -f "$READY_FILE" "$RELEASE_FILE"
 
 cat <<EOF > "$SLEEP_SCRIPT"
 #!/usr/bin/env bash
-touch "$READY_FILE"
+echo \$\$ > "$READY_FILE"
 timeout=100
 while [ ! -f "$RELEASE_FILE" ] && [ \$timeout -gt 0 ]; do
   sleep 0.05
@@ -561,18 +564,17 @@ done
 assert_ok "child agy signaled it is running (handshake)" \
   test -f "$READY_FILE"
 
+CHILD_AGY_PID="$(cat "$READY_FILE" 2>/dev/null || true)"
+
 # Interrupt runner parent process while fake agy is kept alive
 kill -TERM "$RUNNER_PID" 2>/dev/null || true
 wait "$RUNNER_PID" 2>/dev/null || true
 
-# Runner is dead, but child agy is still running holding FD 9
-assert_fail "cannot acquire lock while child agy remains alive after runner interrupt" \
-  flock -n "$STEP_CHILD_DIR/.lock" true
+# The runner's trap has terminated the agy group before exiting
+assert_fail "child agy is no longer alive after runner interrupt" \
+  kill -0 "$CHILD_AGY_PID"
 
-# Release child agy
-touch "$RELEASE_FILE"
-
-# Wait for child agy to exit and release lock
+# With no agy left, nothing holds FD 9 any more
 released=false
 for _ in $(seq 1 50); do
   if flock -n "$STEP_CHILD_DIR/.lock" true 2>/dev/null; then
@@ -582,8 +584,10 @@ for _ in $(seq 1 50); do
   sleep 0.05
 done
 
-assert_ok "lock is released after child agy terminates" \
+assert_ok "lock is released once child agy is terminated" \
   test "$released" = true
+
+touch "$RELEASE_FILE"
 
 assert_ok "lock inode exists after child execution completes" \
   test -f "$STEP_CHILD_DIR/.lock"
