@@ -212,10 +212,10 @@ ta')"
       || printf '%s' "$unquoted" \
       | grep -Eq '(^|/|[^[:alnum:]_.-])\.[^[:space:]/]*[]*?[{][^[:space:]/]*/' \
       || printf '%s' "$unquoted" \
-      | grep -Eq '[^[:space:]/]*[]*?[{}$`()][^[:space:]/]*/settings[^[:space:]/]*\.json'; then
-    # The last pattern: a brace, glob, variable or substitution in the
-    # directory right before settings*.json can spell `.claude` however it is
-    # written (`{.claude,x}/`, `$d/` with d=.claude), so it fails closed.
+      | grep -Eq '[]*?[{}$`()][^[:space:]]*/settings[^[:space:]/]*\.json'; then
+    # The last pattern: a brace, glob, variable or substitution anywhere in a
+    # path before settings*.json can spell `.claude` however it is written
+    # (`{.claude,x}/`, `$d/` or `$d/./` with d=.claude), so it fails closed.
     printf 'agent settings file'; return 1
   fi
 
