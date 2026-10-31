@@ -1,0 +1,74 @@
+# syntax=docker/sandbox-kit:3
+{
+  "schemaVersion": "3",
+  "kind": "mixin",
+  "displayName": "Antigravity OAuth mixin",
+  "capabilities": [
+    {
+      "type": "com.docker.sandbox/network-policy@1",
+      "config": {
+        "runtime": {
+          "allow": [
+            "businessaicode.googleapis.com",
+            "aiplatform.googleapis.com",
+            "play.googleapis.com",
+            "aicode.googleapis.com",
+            "cloudaicompanion.googleapis.com",
+            "cloudcode-pa.googleapis.com",
+            "daily-cloudcode-pa.googleapis.com",
+            "generativelanguage.googleapis.com",
+            "www.googleapis.com",
+            "oauth2.googleapis.com",
+            "accounts.google.com",
+            "antigravity.google",
+            "antigravity-unleash.goog",
+            "antigravity-cli-auto-updater-974169037036.us-central1.run.app",
+            "storage.googleapis.com",
+            "lh3.googleusercontent.com"
+          ]
+        }
+      }
+    },
+    {
+      "type": "com.docker.sandbox/credential@1",
+      "config": {
+        "service": "antigravity",
+        "phase": "runtime",
+        "oauth": {
+          "tokenEndpoint": {
+            "host": "oauth2.googleapis.com",
+            "path": "/token"
+          },
+          "resourceHosts": [
+            "businessaicode.googleapis.com",
+            "aiplatform.googleapis.com",
+            "play.googleapis.com",
+            "aicode.googleapis.com",
+            "cloudaicompanion.googleapis.com",
+            "cloudcode-pa.googleapis.com",
+            "daily-cloudcode-pa.googleapis.com",
+            "generativelanguage.googleapis.com",
+            "www.googleapis.com"
+          ],
+          "sentinels": {
+            "accessToken": "agy-oauth-access-proxy-managed",
+            "refreshToken": "agy-oauth-refresh-proxy-managed"
+          },
+          "passthrough": false,
+          "credentialFile": {
+            "path": "~/.gemini/antigravity-cli/antigravity-oauth-token",
+            "structure": {
+              "token": {
+                "access_token": "{{.AccessToken}}",
+                "token_type": "Bearer",
+                "refresh_token": "{{.RefreshToken}}",
+                "expiry": "9999-12-31T23:59:59Z"
+              },
+              "auth_method": "consumer"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
