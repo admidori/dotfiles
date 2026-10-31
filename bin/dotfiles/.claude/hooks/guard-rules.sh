@@ -93,6 +93,53 @@ guard_check_command() {
     printf 'git hooks redirection'; return 1
   fi
 
+  # Git hook machinery file protection (Rule A): block shell commands that
+  # reference files the global git hooks depend on, scanner binaries, guard files,
+  # or global/system git configs using home-anchored or XDG paths.
+  # Best effort: relative paths after cd ~ or arbitrary interpreters (python, node)
+  # writing to these paths are not caught here; file tools are covered by
+  # permission rules (see design.md).
+  # Whole-name matching is used for .gitconfig (so .gitconfig-work and .gitconfig.bak
+  # stay allowed) and scanner binaries (so e.g. gitleaks-foo stays allowed).
+  # Worktree checkouts (e.g. under ~/dotfiles/.claude/worktrees/ or ~/dotfiles-*-impl)
+  # and relative paths remain allowed.
+  # `~user/` is the same home directory as `~/` for the shell, so the tilde
+  # prefix also accepts a user name.
+  # shellcheck disable=SC2016 # $HOME and $XDG_DATA_HOME are literal pattern characters
+  if printf '%s' "$unquoted" \
+      | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home/+[^/]+)/+(\.git-hooks|\.gitconfig\.local|\.gitconfig|\.local/bin/(gitleaks|semgrep|osv-scanner|pre-commit)|\.local/share/pipx/venvs/(semgrep|pre-commit)|\.local/share/git-hooks|\.claude/hooks|\.claude/settings\.json|\.codex/hooks|dotfiles/bin/dotfiles/(\.git-hooks|\.gitconfig|\.claude/hooks))(/|[[:space:]|;&()<>{}:,]|$)' \
+      || printf '%s' "$unquoted" \
+      | grep -Eq '(^|[^[:alnum:]_./-])(\$XDG_DATA_HOME|\$\{XDG_DATA_HOME\})/git-hooks(/|[[:space:]|;&()<>{}:,]|$)' ; then
+    printf 'protected hook machinery path'; return 1
+  fi
+
+  # Global or system git config writes (Rule B): block git config commands with
+  # --global or --system unless the invocation is a read (--get, --get-all,
+  # --get-regexp, --list, -l, or get/list subcommands).
+  # Best effort: compound commands are split on command delimiters (|;& and
+  # grouping operators) so each command segment is evaluated independently.
+  # Interpreters writing directly to git config files are not caught here.
+  # git accepts unambiguous prefixes of long options, so `--glob` and `--sys`
+  # select the global/system file too; read flags are matched only in full,
+  # so an abbreviated read is blocked rather than an abbreviated write let
+  # through.
+  while IFS= read -r segment; do
+    [ -z "$segment" ] && continue
+    if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])([[:alnum:]_./-]*\/)?git[[:space:]]([^|;&`]*[[:space:]])?config([[:space:]]|$)'; then
+      if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])(--gl(o(b(a(l)?)?)?)?|--sy(s(t(e(m)?)?)?)?)([[:space:]]|$)'; then
+        if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])(--get|--get-all|--get-regexp|--list|-l)([[:space:]]|$)'; then
+          continue
+        fi
+        if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])config([[:space:]]+-[^[:space:]]+)*[[:space:]]+(get|list)([[:space:]]|$)'; then
+          continue
+        fi
+        printf 'global git config write'; return 1
+      fi
+    fi
+  done <<EOF
+$(printf '%s\n' "$unquoted" | tr '|;&`(){}' '\n')
+EOF
+
   # Remote script execution: curl/wget piped (optionally via sudo) into a shell.
   if printf '%s' "$norm" \
       | grep -Eq '(curl|wget)[^|;&]*(\||;|&&)[[:space:]]*(sudo[[:space:]]+)?(sh|bash|zsh)\b'; then

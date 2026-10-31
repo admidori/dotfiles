@@ -115,6 +115,78 @@ run_suite() {
   test_case block "git commit -m \"\$(git commit -n -m y)\"" "git hook bypass (commit -n)"
   test_case block "git commit -m \"\`git commit -n -m y\`\"" "git hook bypass (commit -n)"
 
+  # 3c. Protected hook machinery paths (Rule A)
+  # Blocks home-anchored (~/, $HOME/, "${HOME}"/, /home/u/) and XDG paths
+  # to hooks, configs, scanner tools, venvs, and guard files.
+  # 1. .git-hooks
+  test_case block "cat ~/.git-hooks" "protected hook machinery path"
+  test_case block "cat ~/.git-hooks/pre-commit" "protected hook machinery path"
+  test_case block "ls \$HOME/.git-hooks" "protected hook machinery path"
+  test_case block "ls \"\${HOME}\"/.git-hooks/pre-commit" "protected hook machinery path"
+  test_case block "cp foo /home/u/.git-hooks/commit-msg" "protected hook machinery path"
+  # 2. .gitconfig.local
+  test_case block "cat ~/.gitconfig.local" "protected hook machinery path"
+  test_case block "echo '[core]' >> \$HOME/.gitconfig.local" "protected hook machinery path"
+  test_case block "echo '[core]' >> \"\${HOME}\"/.gitconfig.local" "protected hook machinery path"
+  test_case block "echo '[core]' >> /home/u/.gitconfig.local" "protected hook machinery path"
+  # 3. .gitconfig (whole name)
+  test_case block "cat ~/.gitconfig" "protected hook machinery path"
+  test_case block "git config --file \$HOME/.gitconfig user.name x" "protected hook machinery path"
+  test_case block "cat \"\${HOME}\"/.gitconfig" "protected hook machinery path"
+  test_case block "cat /home/u/.gitconfig" "protected hook machinery path"
+  test_case block "cp /tmp/cfg ~/.gitconfig" "protected hook machinery path"
+  test_case block "{ cat ~/.gitconfig; }" "protected hook machinery path"
+  # 4. Scanners (.local/bin/{gitleaks,semgrep,osv-scanner,pre-commit})
+  test_case block "cat ~/.local/bin/gitleaks" "protected hook machinery path"
+  test_case block "rm \$HOME/.local/bin/semgrep" "protected hook machinery path"
+  test_case block "touch \"\${HOME}\"/.local/bin/osv-scanner" "protected hook machinery path"
+  test_case block "chmod +x /home/u/.local/bin/pre-commit" "protected hook machinery path"
+  # 5. Pipx venvs (.local/share/pipx/venvs/{semgrep,pre-commit})
+  test_case block "ls ~/.local/share/pipx/venvs/semgrep" "protected hook machinery path"
+  test_case block "cat \$HOME/.local/share/pipx/venvs/pre-commit/bin/python" "protected hook machinery path"
+  test_case block "ls \"\${HOME}\"/.local/share/pipx/venvs/semgrep" "protected hook machinery path"
+  test_case block "touch /home/u/.local/share/pipx/venvs/pre-commit/bin/activate" "protected hook machinery path"
+  # 6. .local/share/git-hooks
+  test_case block "cat ~/.local/share/git-hooks/semgrep/default.yml" "protected hook machinery path"
+  test_case block "ls \$HOME/.local/share/git-hooks" "protected hook machinery path"
+  test_case block "ls \"\${HOME}\"/.local/share/git-hooks" "protected hook machinery path"
+  test_case block "cat /home/u/.local/share/git-hooks" "protected hook machinery path"
+  # 7. Guard files (.claude/hooks, .claude/settings.json, .codex/hooks)
+  test_case block "cat ~/.claude/hooks/guard-rules.sh" "protected hook machinery path"
+  test_case block "cat \$HOME/.claude/settings.json" "protected hook machinery path"
+  test_case block "cat \"\${HOME}\"/.codex/hooks/guard-rules.sh" "protected hook machinery path"
+  test_case block "cat /home/u/.claude/hooks/bash-guard.sh" "protected hook machinery path"
+  test_case block "cat /home/u/.claude/settings.json" "protected hook machinery path"
+  test_case block "cat /home/u/.codex/hooks/guard-rules.sh" "protected hook machinery path"
+  # 8. Main checkout (dotfiles/bin/dotfiles/...)
+  test_case block "cat ~/dotfiles/bin/dotfiles/.git-hooks/pre-commit" "protected hook machinery path"
+  test_case block "cat \$HOME/dotfiles/bin/dotfiles/.gitconfig" "protected hook machinery path"
+  test_case block "cat \"\${HOME}\"/dotfiles/bin/dotfiles/.claude/hooks/guard-rules.sh" "protected hook machinery path"
+  test_case block "cat /home/u/dotfiles/bin/dotfiles/.git-hooks/pre-commit" "protected hook machinery path"
+  test_case block "cat /home/u/dotfiles/bin/dotfiles/.gitconfig" "protected hook machinery path"
+  test_case block "cat /home/u/dotfiles/bin/dotfiles/.claude/hooks/guard-rules.sh" "protected hook machinery path"
+  # 9. XDG_DATA_HOME
+  test_case block "cat \$XDG_DATA_HOME/git-hooks/default.yml" "protected hook machinery path"
+  test_case block "cat \"\${XDG_DATA_HOME}\"/git-hooks" "protected hook machinery path"
+  test_case block "cat \${XDG_DATA_HOME}/git-hooks/default.yml" "protected hook machinery path"
+  # ~user/ resolves to the same home directory
+  test_case block "cp x ~admidori/.git-hooks/pre-commit" "protected hook machinery path"
+  test_case block "echo x >> ~u/.gitconfig.local" "protected hook machinery path"
+
+  # 3d. Global or system git config writes (Rule B)
+  test_case block "git config --global user.name x" "global git config write"
+  test_case block "git config --global --unset include.path" "global git config write"
+  test_case block "git config --global --remove-section core" "global git config write"
+  test_case block "git config --system core.editor vi" "global git config write"
+  test_case block "git -C repo config --global alias.x y" "global git config write"
+  test_case block "git config --global set user.name x" "global git config write"
+  # git accepts unambiguous long-option prefixes
+  test_case block "git config --glob --unset include.path" "global git config write"
+  test_case block "git config --gl user.name x" "global git config write"
+  test_case block "git config --sys core.editor vi" "global git config write"
+  test_case block "git config --global --li" "global git config write"
+  test_case allow "git config --get-regexp alias"
+
   # 4. Commands that must stay allowed
   test_case allow "git commit -m x"
   test_case allow "git commit -am x"
@@ -131,6 +203,35 @@ run_suite() {
   test_case allow "git-lfs push --no-verify"
   test_case allow "git commit -m x && git push -n"
   test_case allow "git commit --no-edit --amend"
+
+  # Rule B allow cases: reads of global/system config, and repo-local writes
+  test_case allow "git config --global --get user.name"
+  test_case allow "git config --global --list"
+  test_case allow "git config -l"
+  test_case allow "git config --global get user.email"
+  test_case allow "git config user.name x"
+  test_case allow "git config --get remote.origin.url"
+  test_case allow "git config --global --get-all user.name"
+  test_case allow "git config --global --get-regexp user"
+  test_case allow "git config --global list"
+  test_case allow "git config list"
+  test_case allow "git config get user.name"
+  test_case allow "git config --system -l"
+
+  # Rule A allow cases: relative paths, worktree copies, non-protected tools/configs
+  test_case allow "shellcheck bin/dotfiles/.git-hooks/pre-commit"
+  test_case allow "cat bin/dotfiles/.claude/hooks/guard-rules.sh"
+  test_case allow "cat ~/dotfiles/.claude/worktrees/x/bin/dotfiles/.git-hooks/pre-commit"
+  test_case allow "cat /home/u/dotfiles/.claude/worktrees/x/bin/dotfiles/.claude/hooks/guard-rules.sh"
+  test_case allow "cat ~/dotfiles-x-impl/bin/dotfiles/.git-hooks/pre-commit"
+  test_case allow "cat ~/.local/bin/uv"
+  test_case allow "cat ~/.local/bin/gitleaks-foo"
+  test_case allow "cat ~/.claude/skills/x/SKILL.md"
+  test_case allow "cat ~/.claude/projects/x"
+  test_case allow "cat ~/.codex/config.toml"
+  test_case allow "cat ~/.gitconfig-work"
+  test_case allow "cat ~/.gitconfig.bak"
+  test_case allow "cat \$XDG_DATA_HOME/git-hooks-foo"
 
   # 4b. Accepted over-block: inline messages are not parsed (a regex cannot
   # follow shell quoting), so a message that mentions a bypass flag is
