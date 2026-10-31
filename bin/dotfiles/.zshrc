@@ -135,6 +135,7 @@ if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
 	)
 	alias ssh='ssh.exe'
 	alias ssh-add='ssh-add.exe'
+	[[ -x /mnt/c/Users/admidori/AppData/Local/Microsoft/WinGet/Links/op.exe ]] && alias op='/mnt/c/Users/admidori/AppData/Local/Microsoft/WinGet/Links/op.exe'
 
 	# exp [path...]: open each path (default .) in Windows Explorer.
 	# explorer.exe needs a Windows path for anything but ".", hence wslpath;
