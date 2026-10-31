@@ -75,6 +75,15 @@ guard_check_single() {
   # (multiple spaces) cannot slip past the literal patterns below.
   norm="$(printf '%s' "$cmd" | tr '\t' ' ' | tr -s ' ')"
 
+  # ANSI-C quoting decodes escapes before the command runs: `$'\x2d-no-verify'`
+  # is `--no-verify` to git, but every rule below would see `\x2d`. Decoding
+  # every escape form faithfully is another parser to keep in sync, so any
+  # `$'…'` text with a backslash escape fails closed; write it plainly.
+  case "$norm" in
+    *"\$'"*\\*)
+      printf 'ANSI-C quoted text with escapes (write it plainly)'; return 1 ;;
+  esac
+
   case "$norm" in
     *"git reset --hard"*|*"git clean -f"*|*"git clean -d"*|*"git push --force"*|*"git push -f"*)
       printf 'destructive git command'; return 1 ;;
@@ -113,7 +122,9 @@ guard_check_single() {
   # quoting, and crafted quotes (`"-m '" --no-verify "'"`) would hide a real
   # flag. So an inline -m message that mentions these flags is blocked as
   # well; write such messages to a file and use `git commit -F <file>`.
-  unquoted="$(printf '%s' "$norm" | tr -d "\"'\\\\")"
+  # `$'…'` without escapes is plain quoting, so drop its `$` first; otherwise
+  # `$'--global'` would leave `$--global` behind and evade the word matches.
+  unquoted="$(printf '%s' "$norm" | sed "s/\\\$'/'/g" | tr -d "\"'\\\\")"
 
   # Git hook bypass: --no-verify in a git command.
   # The most common reaction of an agent to a failing hook is to retry with
@@ -192,8 +203,13 @@ ta')"
   # settings.local.json takes precedence over user settings and can switch
   # hooks off (`disableAllHooks`), so shell access to them is blocked wherever
   # they live, including glob spellings directly under .claude/.
-  if printf '%s' "$unquoted" \
-      | grep -Eq '(^|/|[^[:alnum:]_-])\.claude/(settings[^[:space:]/]*|[^[:space:]/]*[]*?[{][^[:space:]/]*)([[:space:]|;&()<>{}:,]|$)'; then
+  # Matched on the path-normalised form too (`.claude//settings.json`,
+  # `.claude/./settings.json`), and a glob or brace inside a hidden directory
+  # name (`.cla{u,}de/`, `.c*/`) is blocked because it can spell `.claude`.
+  if printf '%s\n%s' "$unquoted" "$home_paths" \
+      | grep -Eq '(^|/|[^[:alnum:]_-])\.claude/(settings[^[:space:]/]*|[^[:space:]/]*[]*?[{][^[:space:]/]*)([[:space:]|;&()<>{}:,]|$)' \
+      || printf '%s' "$unquoted" \
+      | grep -Eq '(^|/|[^[:alnum:]_.-])\.[^[:space:]/]*[]*?[{][^[:space:]/]*/'; then
     printf 'agent settings file'; return 1
   fi
 

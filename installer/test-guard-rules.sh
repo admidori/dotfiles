@@ -200,6 +200,16 @@ run_suite() {
   test_case block "cp x repo/.claude/settings.json" "agent settings file"
   test_case block "cp x .claude/settings*" "agent settings file"
   test_case block "cp x .claude/sett?ngs.local.json" "agent settings file"
+  test_case block "cp x .claude//settings.json" "agent settings file"
+  test_case block "cp x .claude/./settings.local.json" "agent settings file"
+  test_case block "cp x .cla{u,}de/settings.json" "agent settings file"
+  test_case block "cp x .c*/settings.json" "agent settings file"
+  test_case allow "ls .github/workflows"
+  # ANSI-C quoting decodes escapes the matcher cannot see
+  test_case block "git commit \$'\\x2d\\x2dno-verify' -m x" "ANSI-C quoted text with escapes (write it plainly)"
+  test_case block "cp x ~/\$'.git-ho\\x6fks'/pre-commit" "ANSI-C quoted text with escapes (write it plainly)"
+  test_case block "git config \$'\\x2d-global' user.name x" "ANSI-C quoted text with escapes (write it plainly)"
+  test_case block "git config \$'--global' user.name x" "global git config write"
   test_case allow "ls .claude/skills/x/SKILL.md"
   test_case allow "cat .claude/CLAUDE.md"
 
@@ -217,7 +227,8 @@ run_suite() {
   test_case block "git config --global --li" "global git config write"
   test_case allow "git config --get-regexp alias"
   # A read exemption must not cover a second invocation or re-parsed text
-  test_case block "bash -c \$'git config --global --get a\\ngit config --global b c'" "global git config write"
+  test_case block "bash -c \$'git config --global --get a\\ngit config --global b c'" "ANSI-C quoted text with escapes (write it plainly)"
+  test_case block "bash -c \$'git config --global --get a; git config --global b c'" "global git config write"
   test_case block "eval git config --global --get a git config --global b c" "global git config write"
   test_case block "sh -c 'git config --global --get a; git config --global b c'" "global git config write"
   test_case block "git config --global --get a git config --global b c" "global git config write"
