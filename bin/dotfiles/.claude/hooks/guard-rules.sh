@@ -122,9 +122,10 @@ guard_check_single() {
   # quoting, and crafted quotes (`"-m '" --no-verify "'"`) would hide a real
   # flag. So an inline -m message that mentions these flags is blocked as
   # well; write such messages to a file and use `git commit -F <file>`.
-  # `$'…'` without escapes is plain quoting, so drop its `$` first; otherwise
-  # `$'--global'` would leave `$--global` behind and evade the word matches.
-  unquoted="$(printf '%s' "$norm" | sed "s/\\\$'/'/g" | tr -d "\"'\\\\")"
+  # `$'…'` without escapes and `$"…"` (locale strings) are plain quoting, so
+  # drop their `$` first; otherwise `$'--global'` would leave `$--global`
+  # behind and evade the word matches.
+  unquoted="$(printf '%s' "$norm" | sed -e "s/\\\$'/'/g" -e 's/\$"/"/g' | tr -d "\"'\\\\")"
 
   # Git hook bypass: --no-verify in a git command.
   # The most common reaction of an agent to a failing hook is to retry with
@@ -209,7 +210,12 @@ ta')"
   if printf '%s\n%s' "$unquoted" "$home_paths" \
       | grep -Eq '(^|/|[^[:alnum:]_-])\.claude/(settings[^[:space:]/]*|[^[:space:]/]*[]*?[{][^[:space:]/]*)([[:space:]|;&()<>{}:,]|$)' \
       || printf '%s' "$unquoted" \
-      | grep -Eq '(^|/|[^[:alnum:]_.-])\.[^[:space:]/]*[]*?[{][^[:space:]/]*/'; then
+      | grep -Eq '(^|/|[^[:alnum:]_.-])\.[^[:space:]/]*[]*?[{][^[:space:]/]*/' \
+      || printf '%s' "$unquoted" \
+      | grep -Eq '[^[:space:]/]*[]*?[{}$`()][^[:space:]/]*/settings[^[:space:]/]*\.json'; then
+    # The last pattern: a brace, glob, variable or substitution in the
+    # directory right before settings*.json can spell `.claude` however it is
+    # written (`{.claude,x}/`, `$d/` with d=.claude), so it fails closed.
     printf 'agent settings file'; return 1
   fi
 

@@ -205,6 +205,12 @@ run_suite() {
   test_case block "cp x .cla{u,}de/settings.json" "agent settings file"
   test_case block "cp x .c*/settings.json" "agent settings file"
   test_case allow "ls .github/workflows"
+  test_case block "cp x {.claude,x}/settings.json" "agent settings file"
+  test_case block "cp x {.claude,}/settings.local.json" "agent settings file"
+  test_case block "d=.claude; cp x \$d/settings.json" "agent settings file"
+  test_case block "cp x \$(echo .claude)/settings.local.json" "agent settings file"
+  test_case allow "python \$PROJ/settings.py"
+  test_case block "git config \$\"--global\" user.name x" "global git config write"
   # ANSI-C quoting decodes escapes the matcher cannot see
   test_case block "git commit \$'\\x2d\\x2dno-verify' -m x" "ANSI-C quoted text with escapes (write it plainly)"
   test_case block "cp x ~/\$'.git-ho\\x6fks'/pre-commit" "ANSI-C quoted text with escapes (write it plainly)"
