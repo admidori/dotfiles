@@ -46,6 +46,9 @@
       "Edit(~/dotfiles/bin/dotfiles/.codex/hooks/**)"
     ]
   },
+  "enabledPlugins": {
+    "security-guidance@claude-plugins-official": true
+  },
   "model": "opus[1m]",
   "hooks": {
     "PreToolUse": [

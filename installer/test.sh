@@ -54,6 +54,8 @@ check "~/.claude/settings.json is a real file (copy-once, not synced)" test -f "
 check "~/.claude/settings.json is NOT a symlink" test ! -L "$HOME/.claude/settings.json"
 check "~/.claude/settings.json seeded from the tracked template" \
   cmp -s "$HOME/.claude/settings.json" "$REPO_ROOT/bin/dotfiles/.claude/settings.json"
+check "security-guidance plugin is enabled in Claude settings" \
+  check_json "$HOME/.claude/settings.json" '.enabledPlugins["security-guidance@claude-plugins-official"] == true'
 check "~/.claude/CLAUDE.md is a symlink" test -L "$HOME/.claude/CLAUDE.md"
 check "~/.codex/config.toml is a real file (copy-once, not synced)" test -f "$HOME/.codex/config.toml"
 check "~/.codex/config.toml is NOT a symlink" test ! -L "$HOME/.codex/config.toml"
