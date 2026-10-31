@@ -17,7 +17,10 @@
 # returns 0 with no output otherwise. All match attempts live inside `if` so a
 # non-match never trips the caller's `set -e`.
 guard_check_command() {
-  cmd="$1"
+  # The shell joins a backslash-newline before parsing, so `--g\<newline>lobal`
+  # is `--global` to git; join them first or every line-based match below
+  # would see two harmless halves.
+  cmd="${1//$'\\\n'/}"
   # Collapse tabs and runs of spaces to a single space so e.g. "rm  -rf"
   # (multiple spaces) cannot slip past the literal patterns below.
   norm="$(printf '%s' "$cmd" | tr '\t' ' ' | tr -s ' ')"
@@ -104,12 +107,28 @@ guard_check_command() {
   # Worktree checkouts (e.g. under ~/dotfiles/.claude/worktrees/ or ~/dotfiles-*-impl)
   # and relative paths remain allowed.
   # `~user/` is the same home directory as `~/` for the shell, so the tilde
-  # prefix also accepts a user name.
-  # shellcheck disable=SC2016 # $HOME and $XDG_DATA_HOME are literal pattern characters
-  if printf '%s' "$unquoted" \
-      | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home/+[^/]+)/+(\.git-hooks|\.gitconfig\.local|\.gitconfig|\.local/bin/(gitleaks|semgrep|osv-scanner|pre-commit)|\.local/share/pipx/venvs/(semgrep|pre-commit)|\.local/share/git-hooks|\.claude/hooks|\.claude/settings\.json|\.codex/hooks|dotfiles/bin/dotfiles/(\.git-hooks|\.gitconfig|\.claude/hooks))(/|[[:space:]|;&()<>{}:,]|$)' \
+  # prefix also accepts a user name; /root and /Users/<name> are homes too.
+  # `~/.config/git/config` is read as global git config, like ~/.gitconfig.
+  # Paths are matched after collapsing `//`, `/./` and `seg/../`, and any
+  # home-anchored path that still climbs with `..` towards a protected name
+  # is blocked outright.
+  # Each substitution only fires when there is something to collapse, so the
+  # `ta` loop ends once the path is normal (a bare `/+` would loop forever).
+  home_paths="$(printf '%s' "$unquoted" \
+    | sed -E ':a
+s#//+#/#g
+s#/\./#/#g
+s#/[^/[:space:]]+/\.\./#/#
+ta')"
+  # shellcheck disable=SC2016 # $HOME and $XDG_* are literal pattern characters
+  if printf '%s' "$home_paths" \
+      | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home/[^/]+|/Users/[^/]+|/root)/(\.git-hooks|\.gitconfig\.local|\.gitconfig|\.config/git|\.local/bin/(gitleaks|semgrep|osv-scanner|pre-commit)|\.local/share/pipx/venvs/(semgrep|pre-commit)|\.local/share/git-hooks|\.claude/hooks|\.claude/settings\.json|\.codex/hooks|dotfiles/bin/dotfiles/(\.git-hooks|\.gitconfig|\.claude/hooks))(/|[[:space:]|;&()<>{}:,]|$)' \
+      || printf '%s' "$home_paths" \
+      | grep -Eq '(^|[^[:alnum:]_./-])(\$XDG_DATA_HOME|\$\{XDG_DATA_HOME\})/git-hooks(/|[[:space:]|;&()<>{}:,]|$)' \
+      || printf '%s' "$home_paths" \
+      | grep -Eq '(^|[^[:alnum:]_./-])(\$XDG_CONFIG_HOME|\$\{XDG_CONFIG_HOME\})/git(/|[[:space:]|;&()<>{}:,]|$)' \
       || printf '%s' "$unquoted" \
-      | grep -Eq '(^|[^[:alnum:]_./-])(\$XDG_DATA_HOME|\$\{XDG_DATA_HOME\})/git-hooks(/|[[:space:]|;&()<>{}:,]|$)' ; then
+      | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home|/Users|/root)/([^[:space:]]*/)?\.\./[^[:space:]]*(\.git-hooks|\.gitconfig|\.config/git|\.local/(bin|share)|\.claude/(hooks|settings)|\.codex/hooks|dotfiles/bin/dotfiles)'; then
     printf 'protected hook machinery path'; return 1
   fi
 
@@ -123,16 +142,22 @@ guard_check_command() {
   # select the global/system file too; read flags are matched only in full,
   # so an abbreviated read is blocked rather than an abbreviated write let
   # through.
+  # The read exemption is fail-closed: the read flag (or get/list
+  # subcommand) must sit among the options directly after `config`, and the
+  # segment must have no redirection or comment, so `… user.name x # --get`
+  # or `… 2> --get` cannot pass a write off as a read.
   while IFS= read -r segment; do
     [ -z "$segment" ] && continue
     if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])([[:alnum:]_./-]*\/)?git[[:space:]]([^|;&`]*[[:space:]])?config([[:space:]]|$)'; then
       if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])(--gl(o(b(a(l)?)?)?)?|--sy(s(t(e(m)?)?)?)?)([[:space:]]|$)'; then
-        if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])(--get|--get-all|--get-regexp|--list|-l)([[:space:]]|$)'; then
-          continue
-        fi
-        if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])config([[:space:]]+-[^[:space:]]+)*[[:space:]]+(get|list)([[:space:]]|$)'; then
-          continue
-        fi
+        case "$segment" in
+          *'<'* | *'>'* | *'#'*) ;;
+          *)
+            if printf '%s' "$segment" | grep -Eq '(^|[[:space:]])([[:alnum:]_./-]*\/)?git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?config([[:space:]]+-[^[:space:]]+)*[[:space:]]+(--get|--get-all|--get-regexp|--list|-l|get|list)([[:space:]]|$)'; then
+              continue
+            fi
+            ;;
+        esac
         printf 'global git config write'; return 1
       fi
     fi

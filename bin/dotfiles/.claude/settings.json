@@ -24,6 +24,7 @@
       "Edit(~/dotfiles/bin/dotfiles/.git-hooks/**)",
       "Edit(~/.gitconfig)",
       "Edit(~/.gitconfig.local)",
+      "Edit(~/.config/git/**)",
       "Edit(~/dotfiles/bin/dotfiles/.gitconfig)",
       "Edit(~/.local/bin/gitleaks)",
       "Edit(~/.local/bin/semgrep)",

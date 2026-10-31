@@ -172,6 +172,18 @@ run_suite() {
   # ~user/ resolves to the same home directory
   test_case block "cp x ~admidori/.git-hooks/pre-commit" "protected hook machinery path"
   test_case block "echo x >> ~u/.gitconfig.local" "protected hook machinery path"
+  # Dot segments, duplicate slashes, other home roots, XDG git config
+  test_case block "cp x ~/./.git-hooks/pre-commit" "protected hook machinery path"
+  test_case block "cp x ~/tmp/../.git-hooks/pre-commit" "protected hook machinery path"
+  test_case block "cp x ~/../u/.git-hooks/pre-commit" "protected hook machinery path"
+  test_case block "cp x ~/../../home/u/.git-hooks/pre-commit" "protected hook machinery path"
+  test_case block "cp x ~//.gitconfig.local" "protected hook machinery path"
+  test_case block "cp x /root/.git-hooks/pre-commit" "protected hook machinery path"
+  test_case block "cp x /Users/u/.gitconfig" "protected hook machinery path"
+  test_case block "echo x >> ~/.config/git/config" "protected hook machinery path"
+  test_case block "echo x >> \$XDG_CONFIG_HOME/git/config" "protected hook machinery path"
+  test_case allow "cat ~/.config/gh/config.yml"
+  test_case allow "ls ~/dotfiles/.claude/worktrees/x/../y/bin/dotfiles/README.md"
 
   # 3d. Global or system git config writes (Rule B)
   test_case block "git config --global user.name x" "global git config write"
@@ -186,6 +198,17 @@ run_suite() {
   test_case block "git config --sys core.editor vi" "global git config write"
   test_case block "git config --global --li" "global git config write"
   test_case allow "git config --get-regexp alias"
+  # A read flag outside the option block, in a comment or as a redirect
+  # target does not make a write a read
+  test_case block "git config --global user.name x # --get" "global git config write"
+  test_case block "git config --global user.name x 2> --get" "global git config write"
+  test_case block "git config --global user.name x --get" "global git config write"
+  test_case allow "git config --global -l"
+  test_case allow "git -C repo config --global --get user.name"
+  # Backslash-newline continuations are joined before matching
+  test_case block $'git config --g\\\nlobal user.name x' "global git config write"
+  test_case block $'git -c core.hooks\\\nPath=/tmp commit -m x' "git hooks redirection"
+  test_case block $'cp x ~/.git-\\\nhooks/pre-commit' "protected hook machinery path"
 
   # 4. Commands that must stay allowed
   test_case allow "git commit -m x"
