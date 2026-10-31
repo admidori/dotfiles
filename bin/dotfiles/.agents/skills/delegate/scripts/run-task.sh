@@ -298,16 +298,24 @@ fi
 agy_cwd="$(mktemp -d "${TMPDIR:-/tmp}/agy-cwd.XXXXXX")"
 agy_pid=""
 
-# Check whether any non-zombie process remains in the group or PID.
-# shellcheck disable=SC2009
+# Check whether any non-zombie process remains in process group <pid>.
+# Reads /proc directly: minimal images (e.g. debian:bookworm-slim) ship
+# without procps, and a missing `ps` would make every group look gone.
+# Zombies are skipped because they linger until reaped (by init in a
+# container) yet can no longer do anything.
 is_group_active() {
-  local pid="$1"
-  if ps -o stat= -g "$pid" 2>/dev/null | grep -v "^[[:space:]]*[Zz]" >/dev/null; then
+  local pid="$1" f stat rest state pgrp
+  for f in /proc/[0-9]*/stat; do
+    { read -r stat <"$f"; } 2>/dev/null || continue
+    # Fields after the command name, which may itself contain ") ".
+    rest="${stat##*) }"
+    read -r state _ pgrp _ <<<"$rest"
+    [ "$pgrp" = "$pid" ] || continue
+    case "$state" in
+      Z | X) continue ;;
+    esac
     return 0
-  fi
-  if ps -o stat= -p "$pid" 2>/dev/null | grep -v "^[[:space:]]*[Zz]" >/dev/null; then
-    return 0
-  fi
+  done
   return 1
 }
 

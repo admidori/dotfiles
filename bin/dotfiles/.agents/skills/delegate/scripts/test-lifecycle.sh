@@ -142,10 +142,13 @@ is_pid_alive() {
   if ! kill -0 "$pid" 2>/dev/null; then
     return 1
   fi
-  # If process is in zombie state (Z), it is terminated
-  if ps -o stat= -p "$pid" 2>/dev/null | grep -E "^[[:space:]]*[Zz]" >/dev/null; then
-    return 1
-  fi
+  # A zombie (Z) has terminated. Read /proc rather than ps: the Docker
+  # test image has no procps.
+  local stat
+  { read -r stat <"/proc/$pid/stat"; } 2>/dev/null || return 1
+  case "${stat##*) }" in
+    Z* | X*) return 1 ;;
+  esac
   return 0
 }
 
@@ -389,7 +392,8 @@ MOCK_SCRIPT_5="$TMP_TEST_DIR/mock_script_5.sh"
 cat <<EOF > "$MOCK_SCRIPT_5"
 #!/usr/bin/env bash
 my_pid=\$\$
-my_pgid=\$(ps -o pgid= -p \$\$ 2>/dev/null | tr -d ' ')
+read -r stat < /proc/\$\$/stat
+read -r _ _ my_pgid _ <<< "\${stat##*) }"
 echo "\$my_pid \$my_pgid" > "$PID_PGID_FILE"
 cat <<JSON
 {"event":"step_update","step_update":{"step_index":1,"state":"DONE"}}
@@ -406,8 +410,11 @@ assert_ok "runner succeeds for PGID check" \
 unset MOCK_RUN_SCRIPT
 
 read -r recorded_pid recorded_pgid < "$PID_PGID_FILE"
-assert_ok "recorded PID ($recorded_pid) equals PGID ($recorded_pgid)" \
+pid_equals_pgid() {
   [ -n "$recorded_pid" ] && [ "$recorded_pid" = "$recorded_pgid" ]
+}
+assert_ok "recorded PID ($recorded_pid) equals PGID ($recorded_pgid)" \
+  pid_equals_pgid
 
 # -----------------------------------------------------------------------------
 # Case 6: AGY_TIMEOUT validation and normalization
