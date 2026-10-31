@@ -139,12 +139,17 @@ implementation.
 ## Task isolation, branches, and worktrees
 
 - Keep each task in its own working directory. The default sandbox workflow is
-  one task, one AI session, one Docker Sandbox, and one independent Git clone.
-  In a task's private sandbox clone, work directly on a feature branch; an
-  additional worktree is not required. A container sharing the same writable
-  host checkout does not provide this isolation.
-- If multiple tasks or AI sessions share a sandbox concurrently, give each its
-  own worktree or independent clone. Keep the same separation for reviews.
+  one persistent Docker Sandbox and private Git clone per project, with a
+  dedicated feature branch and worktree per task for all edits, reviews, builds,
+  and tests. Inside that private clone, do not implement directly in the base
+  checkout; keep it read-only except for worktree and branch management or
+  syncing and re-linking after an approved merge. Worktrees prevent accidental
+  edit collisions across tasks, but they do not provide security isolation from
+  each other; do not require a nested Sandbox.
+- In Docker Sandbox mode, the designer and implementer operate sequentially
+  within the same task worktree; no additional implementation worktree is created.
+  Before starting, the designer selects or creates the task worktree and verifies
+  the intended branch and base.
 - When working on the host, do repository operations in a dedicated worktree,
   never in the shared main checkout: edits, branch/PR reviews, builds, tests,
   and changes to Git state. This applies to every agent.
@@ -166,14 +171,19 @@ implementation.
   `git log <base>..<branch>` and `git log <branch>..<base>`. Stop and ask about
   unexplained divergence.
 - Check existing sandboxes, branches, and worktrees before opening another task
-  environment. Call out stale entries. Remove merged worktrees and branches
-  when safe, or explain why they remain open.
+  environment. Call out stale entries.
+- Task completion preserves work and closes only clean temporary worktrees
+  after integration or verified preservation. Before deleting a branch, confirm
+  its work is merged or intentionally preserved and applicable checks pass.
+  Keep the project Sandbox running and reusable for subsequent tasks;
+  retiring or removing a Sandbox is a separate action that requires exporting
+  preserved commits and harness records before deletion.
 - Before removing a sandbox, retrieve and verify all work worth preserving,
   including uncommitted files. A commit inside a sandbox is not a backup outside
   it. Keep the sandbox until that verification is complete; never use cleanup
   to discard work implicitly.
 
-## Permissions inside task sandboxes
+## Permissions inside project sandboxes
 
 - Codex and Claude may run with approval bypass/full access inside an isolated
   Docker Sandbox. The external microVM, mount, and network policies enforce

@@ -41,13 +41,14 @@ for how clearly you verbalize it.
 
 ## Task isolation (multi-pane identity)
 
-In a Docker Sandbox dedicated to one task and AI session, use its independent
-clone directly on a feature branch. Do not call `EnterWorktree` just because a
-new task has started in that private clone. Full access is limited to the
-externally isolated sandbox, as described in the shared baseline.
+The default sandbox workflow uses one persistent Docker Sandbox per project,
+with a dedicated feature branch and worktree per task inside its private clone.
+The base checkout in the clone remains read-only except for the management
+and approved-sync exceptions in the shared baseline. Worktrees prevent accidental edit collisions across tasks,
+but do not provide security isolation; do not require a nested Sandbox.
 
-When sessions share a host checkout, or multiple tasks share one sandbox, use
-separate worktrees. The instructions below apply to those shared environments.
+Both on the host and inside a persistent project sandbox, repository operations
+(edits, reviews, builds, tests) happen in dedicated task worktrees.
 The status line shows a yellow `*|*` marker next to the branch in a worktree.
 
 - **At the start of a new, self-contained implementation or change task, enter a task
@@ -55,11 +56,12 @@ The status line shows a yellow `*|*` marker next to the branch in a worktree.
   `name` (e.g. `statusline-marker`). It branches from the repo's default branch
   (origin/<default>) and switches this session into `.claude/worktrees/<name>`, so the
   branch and the `*|*` marker identify this pane at a glance.
-- **Reviews and continued work get a worktree too, per the baseline rule.** To review a
-  branch or PR, or to continue an existing branch, create a worktree on that branch
-  (`git worktree add .claude/worktrees/<name> <branch>`) and switch into it with
+- **Reviews and continued work get a worktree too, per the baseline rule.** Reuse
+  the worktree holding the branch; if it no longer exists, create one on that branch
+  (`git worktree add .claude/worktrees/<name> <branch>`). Enter the existing path with
   `EnterWorktree` and `path`; a fresh `name` worktree would branch from the default
-  branch and lose that context. Only reading files to answer a question stays in the
+  branch and lose that context. Before starting, verify the working directory,
+  branch, and base. Only reading files to answer a question stays in the
   current checkout.
 - When it's unclear whether a task warrants its own worktree, ask rather than guessing.
 - Once the task's work is committed and handed to the operator for review, remove the
@@ -68,12 +70,18 @@ The status line shows a yellow `*|*` marker next to the branch in a worktree.
   Removal (`ExitWorktree` with remove, or `git worktree remove`) frees the checkout while
   keeping the branch and its commits intact, and is fully reversible
   (`git worktree add <dir> <branch>` re-creates it if review needs rework). Only remove a
-  clean worktree — never pass `--force`; a refusal means something is still uncommitted.
-  Keep it open only when follow-up work is expected, and say so when you do. Removing your
-  own task worktree returns this session to the shared main tree, so if the operator is
-  reviewing there, leave that worktree open and remove only the throwaway impl worktree
-  from a delegation.
-- When delegating to Antigravity, it gets its own implementation worktree branched from
-  this task branch and makes edits only; you review and commit each step there, then
-  fast-forward it into your task branch (`git merge --ff-only`) and remove it. It is a
-  scratch sandbox and must not outlive the delegation. See the `delegate` skill.
+  clean worktree after integration or verified preservation — never pass `--force`; a
+  refusal means something is still uncommitted. Keep it open only when follow-up work is
+  expected, and say so when you do. Removing your own task worktree returns this session
+  to the shared base checkout, so if the operator is reviewing there, leave that worktree
+  open and remove only temporary implementation worktrees from Host mode delegations.
+  In Docker Sandbox mode, closing a completed task worktree leaves the project Sandbox
+  running and reusable for subsequent tasks.
+- When delegating to Antigravity:
+  - **Host mode (`HARNESS_EXECUTION_MODE=host`):** Antigravity gets its own implementation
+    worktree branched from this task branch and makes edits only; you review and commit
+    each step there, then fast-forward it into your task branch (`git merge --ff-only`)
+    and remove it. It is a scratch sandbox and must not outlive the delegation.
+  - **Docker Sandbox mode (`HARNESS_EXECUTION_MODE=docker-sandbox`):** Designer and
+    Antigravity sequentially use the SAME task worktree; no automatic second implementation
+    worktree is created. See the `delegate` skill.

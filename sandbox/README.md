@@ -15,7 +15,7 @@ and implementer work sequentially in that task worktree.
 - [Pre-Flight: Check Proxy Interception Before Any Login](#pre-flight-check-proxy-interception-before-any-login)
 - [Kit Definitions](#kit-definitions)
 - [Kit Composition & Building](#kit-composition--building)
-- [Creating a Task Sandbox](#creating-a-task-sandbox)
+- [Creating a Project Sandbox](#creating-a-project-sandbox)
 - [Entering the Sandbox](#entering-the-sandbox)
 - [Project Sandbox SSH Lifecycle](#project-sandbox-ssh-lifecycle)
 - [Sentinel Verification (Secret-Free)](#sentinel-verification-secret-free)
@@ -63,7 +63,7 @@ each other. No nested Sandbox is required.
 
 ## Security Model & Isolation Boundary
 
-The task sandbox enforces external isolation while granting agents full
+The Docker Sandbox enforces external isolation while granting agents full
 internal access within the container boundary:
 
 - **Read-Only Clone Source Mount:** When `--clone` is specified, `sbx` mounts the
@@ -212,12 +212,12 @@ layers automatically.
 
 ---
 
-## Creating a Task Sandbox
+## Creating a Project Sandbox
 
 Create a fresh sandbox using `sbx create` (v0.50.1 syntax):
 
 ```sh
-sbx create --name dotfiles-agy-task-01 --cpus 2 --memory 4g --skills off --clone \
+sbx create --name dotfiles-agy-dev --cpus 2 --memory 4g --skills off --clone \
   --kit ./sandbox/kits/antigravity-mixin ./sandbox/kits/codex-workload "$HOME/dotfiles"
 ```
 
@@ -247,10 +247,10 @@ Start and attach to the newly created sandbox:
 
 ```sh
 # Start the sandbox container
-sbx run --name dotfiles-agy-task-01
+sbx run --name dotfiles-agy-dev
 
 # Attach an interactive shell inside the running sandbox
-sbx exec -it dotfiles-agy-task-01 bash
+sbx exec -it dotfiles-agy-dev bash
 ```
 
 ---
@@ -349,12 +349,53 @@ sbx stop dotfiles-agy-dev
 - Stopping an already-stopped sandbox is idempotent and **never invokes `sbx exec`**, ensuring
   a stopped container is not unintentionally re-awakened.
 
-### Project-Private Clone & Worktrees
+### Project-Private Clone, Worktrees, and App Workflow
 
 Use one persistent Sandbox per project, seeded by `sbx create --clone`. Create a
 dedicated Git worktree for every task and review inside that private clone. Keep
-the project main checkout available as the common base. Worktrees prevent
-accidental edit collisions; full-access agents can still access other worktrees.
+the project base checkout available as the common read-only base, with the
+management and approved-sync exceptions described in the shared baseline.
+Worktrees prevent accidental edit collisions across tasks; full-access agents can still access other worktrees, so
+worktrees do not provide security isolation from each other, and no nested
+Sandbox is required.
+
+#### App Project Configuration & Task Selection
+
+- **Fixed App Project Root:** Keep the IDE or app project opened at the main
+  project checkout (deployment example: `/home/admidori/dotfiles`). Do not
+  prescribe changing or re-opening the app project root for every task.
+- **Explicit Task Worktree Targeting:** While work on a task is active,
+  explicitly select and target that task's dedicated worktree directory for terminal
+  commands, editor focus, and runner `$workdir`.
+- **Branch and Base Preflight:** Both manual worktree creation (`git worktree add`)
+  and native app worktree creation require preflight verification before work
+  starts. Run checks against the task path, using `git -C <task-worktree>`:
+  inspect `rev-parse --show-toplevel`, `rev-parse --abbrev-ref HEAD`, and
+  `rev-parse HEAD`. Choose the intended integration base explicitly when creating
+  a worktree and compare a new worktree's HEAD with that starting commit.
+  If native app creation leaves a detached HEAD, create a task feature branch
+  there before editing. For continued work, reuse its existing worktree and
+  check divergence from the integration branch; do not reset it to the base.
+- **Git CLI as Source of Truth:** Run `git status --short`, `git diff`, and
+  `git diff --cached` in that task worktree (or with `git -C <task-worktree>`)
+  to establish the actual working tree and index state. Do not trust UI filter
+  labels or staged/unstaged view indicators,
+  which may report misleading status (such as displaying staged additions when
+  `git diff --cached` is empty).
+
+#### Task Completion vs. Project Sandbox Lifecycle
+
+- **Task Completion:** When a task's work is finished, verified, and integrated
+  or preserved, close only clean temporary worktrees. Never force-remove
+  worktrees (`--force`). Before deleting a branch, confirm its commits are merged
+  or intentionally preserved and applicable repository checks pass.
+- **Persistent Sandbox Reuse:** Keep the project Sandbox running and reusable
+  for subsequent tasks; do not destroy or recreate the container between tasks.
+- **Sandbox Retirement:** Retiring or deleting a project Sandbox (`sbx rm`) is a
+  separate, deliberate operation. Because container deletion destroys its internal
+  filesystem including all task worktrees, export and verify all useful commits,
+  uncommitted/untracked files, and harness records outside the container before
+  removal.
 
 ### Known Limitations
 
@@ -465,15 +506,19 @@ The kits place a root-owned marker inside the container filesystem:
 ## Preserving Work & Cleanup
 
 Project Sandboxes are persistent during normal use. Deleting one destroys its
-internal filesystem, including every task worktree, so export accepted commits
-and harness records before removal. The task-Sandbox example below also applies
-when retiring a project Sandbox.
+internal filesystem, including every task worktree, so export and verify all
+useful commits, uncommitted/untracked files, and harness records before removal.
+Retiring a project Sandbox is a separate action from completing individual tasks:
 
 ### Handling Git Remotes under WSL Mirrored Networking
 
 Under WSL with mirrored networking, fetching via git-daemon or localhost IPv4 from
 the host may fail due to interface routing. Preserve commits using a Git bundle
-created inside the container and copied to the host via `sbx cp`:
+created inside the container and copied to the host via `sbx cp`.
+The example below exports one task's HEAD: repeat for every branch or commit
+worth preserving and verify the imported commits on the host before deletion.
+Bundles do not include uncommitted or untracked files; preserve those separately.
+Run the Git commands inside the relevant task worktree.
 
 1. **Inside the sandbox:** Create a bundle of your commits:
    ```bash
@@ -482,7 +527,7 @@ created inside the container and copied to the host via `sbx cp`:
    ```
 2. **On the host:** Copy the bundle out and import it into a review branch:
    ```bash
-   sbx cp dotfiles-agy-task-01:/tmp/dotfiles-task.bundle /tmp/dotfiles-task.bundle
+   sbx cp dotfiles-agy-dev:/tmp/dotfiles-task.bundle /tmp/dotfiles-task.bundle
    # In the dedicated host review worktree:
    git fetch /tmp/dotfiles-task.bundle HEAD:codex/task-review
    ```
@@ -492,10 +537,10 @@ created inside the container and copied to the host via `sbx cp`:
 3. **Export harness state:**
    Export the harness transcripts and execution state outside the repository:
    ```bash
-   sbx cp dotfiles-agy-task-01:/home/agent/.local/state/agent-harness /host/destination/
+   sbx cp dotfiles-agy-dev:/home/agent/.local/state/agent-harness /host/destination/
    ```
 
-4. **Delete the sandbox:**
+4. **Delete the sandbox (retirement only):**
    ```bash
-   sbx rm dotfiles-agy-task-01
+   sbx rm dotfiles-agy-dev
    ```

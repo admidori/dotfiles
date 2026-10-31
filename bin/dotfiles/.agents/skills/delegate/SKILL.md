@@ -69,13 +69,13 @@ The harness supports two execution modes via `HARNESS_EXECUTION_MODE=host|docker
 
    Show the operator the step list and get a go-ahead on the decomposition itself before the first run.
 
-3. **Create an implementation worktree (Host mode) or use the private clone (Docker Sandbox mode):**
+3. **Create an implementation worktree (Host mode) or use the dedicated task worktree (Docker Sandbox mode):**
    - **Host mode (`HARNESS_EXECUTION_MODE=host`):** Create an implementation worktree branched from your task branch, reused for every step:
      ```
      git worktree add ../<repo>-<task>-impl -b <task>-impl HEAD
      ```
      `<task>-impl` stacks on the unmerged task branch only for the loop's duration; close-out fast-forwards it back and deletes it. If you're not in a task worktree, branch from the integration branch instead, passing the base explicitly when HEAD isn't it. Never target a directory with unrelated uncommitted changes.
-   - **Docker Sandbox mode (`HARNESS_EXECUTION_MODE=docker-sandbox`):** Run sequential designer->agy->designer execution directly in the same task-private clone without creating an additional implementation worktree. The container itself provides isolation from the host. Target the clone directory directly. Keep all harness artifacts in Sandbox-local state outside the repository (`$AGENT_HARNESS_DIR`, default `~/.local/state/agent-harness`), and export them before deleting the container.
+   - **Docker Sandbox mode (`HARNESS_EXECUTION_MODE=docker-sandbox`):** Run sequential designer->agy->designer execution directly in the same dedicated task worktree within the project-private clone, without creating an additional implementation worktree. The runner does not create the task worktree: the designer selects or creates the dedicated task worktree and checks the intended branch and base before starting. The base checkout of the project clone remains read-only except for the management and approved-sync exceptions in the shared baseline. Target the task worktree directory directly (`$workdir`). Keep all harness artifacts in Sandbox-local state outside the repository (`$AGENT_HARNESS_DIR`, default `~/.local/state/agent-harness`), and export them before deleting the container.
 
 ## Per-step loop
 
@@ -136,7 +136,7 @@ Repeat for each step in order, one step per run. Never batch steps.
      - **Incomplete runs and lock contention:** Resuming is blocked if newer incomplete attempts exist for the same conversation. A nonblocking file lock (`.lock` in `<step-dir>`, held on file descriptor 9; missing `flock` utility fails immediately) prevents concurrent executions within the same step. Do not remove live lock files or alter sandbox permissions to bypass lock contention. If a run was interrupted, wait for the background process to exit or inspect its state.
      - **Metrics and counter scopes:** In `metrics.jsonl`, provider counters (`duration_seconds`, `num_turns`, `usage`) reported by `agy` in stream-json are cumulative over the whole conversation and are explicitly labeled with `counter_scope: "conversation"`. The runner independently measures per-process wall-clock duration in `wall_duration_seconds` (excluding model probe time). Traceability fields recorded include `step_dir`, `workdir`, `execution_mode`, `mode` (`fresh` or `resume`), `source_attempt`, `requested_conversation_id`, `git_state_changed`, and `report_empty`.
 
-6. **Check against the diff, not the report.** Run `git -C <impl-worktree> status` / `diff`. If earlier steps are committed, the working-tree diff is exactly this step. If commits are deferred, compare the current tree against the preceding accepted checkpoint; the cumulative diff from HEAD is not this step's diff. Then re-run the brief's verification commands yourself and compare the results with the report's "Verification" section. Antigravity running them first saves rework rounds, but its report is a claim, not proof. Runner exit `SUCCESS` means only that execution finished; it is not verification or review acceptance. Distinguish four lifecycle states: execution finished, verified, accepted, and awaiting commit. Check claims against evidence, inspected paths/symbols, and actual assertions/triggers, distinguishing independent designer reruns from implementer-only reports. Mock success is not live verification; after relevant code changes, rerun affected checks. Checks the report lists as blocked or not verified (anything needing the network or assigned to the designer, for example) are yours to run. Changes outside the step's scope are dropped or preserved for a separate focused commit; say which.
+6. **Check against the diff, not the report.** Run `git -C <workdir> status` / `diff` (the implementation worktree in Host mode, or the dedicated task worktree in Docker Sandbox mode). If earlier steps are committed, the working-tree diff is exactly this step. If commits are deferred, compare the current tree against the preceding accepted checkpoint; the cumulative diff from HEAD is not this step's diff. Then re-run the brief's verification commands yourself and compare the results with the report's "Verification" section. Antigravity running them first saves rework rounds, but its report is a claim, not proof. Runner exit `SUCCESS` means only that execution finished; it is not verification or review acceptance. Distinguish four lifecycle states: execution finished, verified, accepted, and awaiting commit. Check claims against evidence, inspected paths/symbols, and actual assertions/triggers, distinguishing independent designer reruns from implementer-only reports. Mock success is not live verification; after relevant code changes, rerun affected checks. Checks the report lists as blocked or not verified (anything needing the network or assigned to the designer, for example) are yours to run. Changes outside the step's scope are dropped or preserved for a separate focused commit; say which.
 
 7. **Review and write `review-<n>.md`** from `templates/review.md`. Correctness first, then reuse and simplification. Compare the report with the diff and check claims against inspected paths/symbols, actual assertions/triggers, and test evidence; note anything changed but unreported, reported but not done, or ungrounded claims (invented outputs, log paths, or APIs). Note corrected or retracted claims and identify remaining gaps. Apply evidence discipline to designer reporting as well (distinguish observed facts, inferences, and unknowns). Check the report's "Context discoveries / corrections" against diff evidence and record in the review what was promoted to `context.md` or rejected (with reasons). When compute was used, complete the "Compute audit" section: confirm remote resources were released cleanly (or preserved with reason), verify that no remote edits bypassed the local diff review, confirm neither state.json nor events.jsonl contains credentials, tokens, dataset contents, or other secrets, verify that collected artifacts are in the attempt-specific harness directory (confirming truthful Colab artifact handling with no base64 inlining), and check that job ID, input/data hashes, runtime facts, and collected artifacts match expectations. Fill in "Harness notes": what in the brief, templates, or instructions caused a problem or helped.
 
@@ -158,12 +158,12 @@ Repeat for each step in order, one step per run. Never batch steps.
        echo "Failed to resolve Codex model from session" >&2
        exit 1
      fi
-     HARNESS_DESIGNER="Codex ($CODEX_MODEL)" <skill-dir>/scripts/run-task.sh <step-dir> <impl-worktree> <rework-brief> [--resume-attempt <N>]
+     HARNESS_DESIGNER="Codex ($CODEX_MODEL)" <skill-dir>/scripts/run-task.sh <step-dir> <workdir> <rework-brief> [--resume-attempt <N>]
      ```
      (When running locally with `CODEX_THREAD_ID` set, `run-task.sh` also resolves and overrides stale Codex labels automatically).
    - The attempt counter advances, keeping earlier artifacts intact. Bound rework at two rounds, then bring it to the operator. If the review shows the step's premise was wrong, stop (step 10).
 
-9. **Commit or checkpoint this reviewed step.** Under standing authorization, once this step's review is complete, required fixes are done, and relevant re-verification passes, commit in the implementation worktree (Host mode) or the task-private clone (Docker Sandbox mode) before proceeding, without asking for commit approval. The commit covers only this step, with a Conventional Commits message whose body draws on the design's reasoning, and both trailers:
+9. **Commit or checkpoint this reviewed step.** Under standing authorization, once this step's review is complete, required fixes are done, and relevant re-verification passes, commit in the implementation worktree (Host mode) or the dedicated task worktree (Docker Sandbox mode) before proceeding, without asking for commit approval. The commit covers only this step, with a Conventional Commits message whose body draws on the design's reasoning, and both trailers:
    ```
    Co-authored-by: <you> (<model>) <noreply@...>
    Co-authored-by: Antigravity (<model>) <noreply@google.com>
@@ -194,15 +194,16 @@ Repeat for each step in order, one step per run. Never batch steps.
       git branch -d <task>-impl
       ```
       Always `--ff-only`; if it refuses, something moved the task branch — stop and report. Remove only a clean worktree, never with `--force`. Delete the branch after the removal, with `-d`.
-    - **Docker Sandbox mode:** No separate implementation worktree is created, so there is no worktree merge or removal step. Commits exist directly on the task branch in the private clone. Export commits and harness artifacts before destroying the container:
+    - **Docker Sandbox mode:** Commits already belong to the task branch in the dedicated task worktree, so there is no separate implementation branch to fast-forward. Preserve the task branch and remove its clean worktree only after integration or verified preservation; explain when it remains open for follow-up work.
+      Keep the project Sandbox running and reusable for subsequent tasks; retiring or removing a Sandbox is a separate action that requires exporting preserved commits and harness records before deletion:
       ```
       git bundle create /tmp/<repo>-<task>.bundle HEAD
       # From host:
       sbx cp <sandbox-id>:/tmp/<repo>-<task>.bundle ./
       sbx cp <sandbox-id>:/home/agent/.local/state/agent-harness/<repo>/<task> ./harness-export/
       ```
-      Never leave unexported commits or harness artifacts in a transient container.
+      This bundle exports one task HEAD only. Before project retirement, retrieve and verify every useful branch/commit and all harness records on the host, and separately preserve uncommitted and untracked files, which bundles do not contain. Never delete the project Sandbox as routine task cleanup.
 
-   If commits remain deferred, retain the implementation worktree and checkpoints, and report why they remain open. Once constraints are resolved or explicit commit permission arrives, materialize and verify the separate commits using the deferred workflow before closing out.
+   If commits remain deferred, retain the implementation worktree (Host mode) or task worktree (Docker Sandbox mode) and checkpoints, and report why they remain open. Once constraints are resolved or explicit commit permission arrives, materialize and verify the separate commits using the deferred workflow before closing out.
 
 12. **Close out.** Don't push or merge to the integration branch without the operator's explicit instruction. Tell the operator where the task's artifacts are, and summarize anything from the harness notes worth changing in the templates or instructions.
