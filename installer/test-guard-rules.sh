@@ -209,6 +209,11 @@ run_suite() {
   test_case block $'git config --g\\\nlobal user.name x' "global git config write"
   test_case block $'git -c core.hooks\\\nPath=/tmp commit -m x' "git hooks redirection"
   test_case block $'cp x ~/.git-\\\nhooks/pre-commit' "protected hook machinery path"
+  # An escaped backslash before the newline is no continuation: the next line
+  # is a separate command and must still be checked on its own
+  test_case block $'true x\\\\\ngit commit --no-verify' "git hook bypass (--no-verify)"
+  test_case block $'echo a\\\\\ngit config --global user.name x' "global git config write"
+  test_case allow $'echo a \\\nb'
 
   # 4. Commands that must stay allowed
   test_case allow "git commit -m x"

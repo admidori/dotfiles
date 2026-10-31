@@ -18,9 +18,22 @@
 # non-match never trips the caller's `set -e`.
 guard_check_command() {
   # The shell joins a backslash-newline before parsing, so `--g\<newline>lobal`
-  # is `--global` to git; join them first or every line-based match below
-  # would see two harmless halves.
-  cmd="${1//$'\\\n'/}"
+  # is `--global` to git; every line-based match below would otherwise see two
+  # harmless halves. But an escaped backslash before the newline
+  # (`x\\<newline>git …`) is no continuation, and joining it would glue the
+  # next command onto the previous word. Checking both the joined and the raw
+  # form blocks the command if either reading is dangerous.
+  local joined="${1//$'\\\n'/}"
+  if [ "$joined" != "$1" ]; then
+    guard_check_single "$1" || return 1
+  fi
+  guard_check_single "$joined"
+}
+
+# guard_check_single <command>
+# The rules themselves, applied to one textual form of the command.
+guard_check_single() {
+  cmd="$1"
   # Collapse tabs and runs of spaces to a single space so e.g. "rm  -rf"
   # (multiple spaces) cannot slip past the literal patterns below.
   norm="$(printf '%s' "$cmd" | tr '\t' ' ' | tr -s ' ')"
