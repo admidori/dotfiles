@@ -1,25 +1,33 @@
 #!/usr/bin/env python3
 """Preflight TLS proxy interception check.
 
-Connects to the OAuth endpoints (auth.openai.com and oauth2.googleapis.com)
+Connects to the OAuth endpoints (auth.openai.com and/or oauth2.googleapis.com)
 through HTTPS_PROXY using standard HTTP CONNECT and ssl to verify that outbound connections are actively
 intercepted by the Docker Sandbox proxy CA (Docker Sandboxes Proxy CA).
 
+Supports explicit service selection via --service ('openai', 'antigravity', or 'both', default 'both').
+Selecting 'antigravity' tests only Google OAuth endpoints and never contacts OpenAI.
+Exits 0 if selected endpoints are intercepted by Docker Sandboxes Proxy CA; exits 1 otherwise.
+
 Outputs strictly certificate issuer information and boolean interception status.
 Never reads or accesses secrets, tokens, or credentials.
-Exits 0 if both endpoints are intercepted by Docker Sandboxes Proxy CA; exits 1 otherwise.
 """
 
+import argparse
 import http.client
 import os
-import urllib.parse
 import ssl
 import sys
+import urllib.parse
 
-TARGET_ENDPOINTS = [
-    ("auth.openai.com", 443),
-    ("oauth2.googleapis.com", 443),
-]
+OPENAI_ENDPOINT = ("auth.openai.com", 443)
+ANTIGRAVITY_ENDPOINT = ("oauth2.googleapis.com", 443)
+
+SERVICES = {
+    "openai": [OPENAI_ENDPOINT],
+    "antigravity": [ANTIGRAVITY_ENDPOINT],
+    "both": [OPENAI_ENDPOINT, ANTIGRAVITY_ENDPOINT],
+}
 
 EXPECTED_PROXY_CA_CN = "Docker Sandboxes Proxy CA"
 
@@ -46,10 +54,26 @@ def check_endpoint_issuer(host: str, port: int = 443, timeout: float = 5.0) -> t
         return False, f"connection failed ({exc.__class__.__name__})"
 
 
-def main() -> int:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Preflight TLS proxy interception check."
+    )
+    parser.add_argument(
+        "--service",
+        choices=["openai", "antigravity", "both"],
+        default="both",
+        help="Service to check: 'openai', 'antigravity', or 'both' (default: 'both')",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    endpoints = SERVICES[args.service]
+
     all_intercepted = True
 
-    for host, port in TARGET_ENDPOINTS:
+    for host, port in endpoints:
         is_intercepted, issuer_str = check_endpoint_issuer(host, port)
         print(f"{host} issuer: {issuer_str}")
         if not is_intercepted:

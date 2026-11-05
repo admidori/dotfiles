@@ -171,6 +171,23 @@ case "$execution_mode" in
     ;;
 esac
 
+# Validate git policy before locking or allocating artifacts
+git_policy="${HARNESS_GIT_POLICY:-strict}"
+case "$git_policy" in
+  strict)
+    ;;
+  task-commits)
+    if [ "$execution_mode" != "docker-sandbox" ]; then
+      echo "error: HARNESS_GIT_POLICY=task-commits is only supported in docker-sandbox execution mode" >&2
+      exit 2
+    fi
+    ;;
+  *)
+    echo "error: invalid HARNESS_GIT_POLICY '$git_policy' (expected 'strict' or 'task-commits')" >&2
+    exit 2
+    ;;
+esac
+
 # Check flock prerequisite explicitly before locking.
 command -v flock >/dev/null || { echo "flock not found" >&2; exit 2; }
 
@@ -364,13 +381,27 @@ else
   # docker-sandbox mode runs directly in the actual workdir with full access bypass flags.
   owned_scratch_dir=""
   run_cwd="$workdir"
-  mode_flags=(--dangerously-skip-permissions --settings '{"enableTerminalSandbox":false}')
+  if [ "$git_policy" = "task-commits" ]; then
+    settings_json="$(jq -n -c '{
+      enableTerminalSandbox: false,
+      permissions: {
+        deny: ["command(git push)", "command(git merge)"]
+      }
+    }')"
+    mode_flags=(--dangerously-skip-permissions --settings "$settings_json")
+  else
+    mode_flags=(--dangerously-skip-permissions --settings '{"enableTerminalSandbox":false}')
+  fi
 fi
 agy_pid=""
 
 # Invoked indirectly via traps.
 # shellcheck disable=SC2317,SC2329
 cleanup_scratch() {
+  [ "$$" -eq "$BASHPID" ] || return 0
+  if [ -n "${git_snapshot_file:-}" ] && [ -f "${git_snapshot_file:-}" ]; then
+    rm -f "$git_snapshot_file" 2>/dev/null || true
+  fi
   if [ -n "$owned_scratch_dir" ] && [ -d "$owned_scratch_dir" ] && [ "$owned_scratch_dir" != "$workdir" ]; then
     rmdir "$owned_scratch_dir" 2>/dev/null || rm -rf "$owned_scratch_dir" 2>/dev/null || true
   fi
@@ -411,23 +442,32 @@ terminate_agy_group() {
   if is_group_active "$pid" || kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
     kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
   fi
-  wait "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null || true
 }
+
+interrupted_signal=""
+runner_interrupted=false
+probe_pid=""
 
 # Invoked indirectly via signal traps.
 # shellcheck disable=SC2317,SC2329
 on_signal() {
   local sig="$1"
-  trap - INT TERM EXIT
-  if [ -n "${agy_pid:-}" ]; then
-    terminate_agy_group "$agy_pid"
+  interrupted_signal="$sig"
+  if [ -n "${probe_pid:-}" ]; then
+    terminate_agy_group "$probe_pid" || true
   fi
-  cleanup_scratch
-  case "$sig" in
-    INT) exit 130 ;;
-    TERM) exit 143 ;;
-    *) exit 1 ;;
-  esac
+  if [ -n "${agy_pid:-}" ]; then
+    terminate_agy_group "$agy_pid" || true
+  elif [ -z "${attempt:-}" ] && [ -z "${probe_pid:-}" ]; then
+    trap - INT TERM EXIT
+    cleanup_scratch
+    case "$sig" in
+      INT) exit 130 ;;
+      TERM) exit 143 ;;
+      *) exit 1 ;;
+    esac
+  fi
 }
 
 trap 'on_signal INT' INT
@@ -438,32 +478,28 @@ effective_model="${AGY_MODEL:-gemini-3.8-flash-high}"
 model_args=(--model "$effective_model")
 [ -n "${AGY_EFFORT:-}" ] && model_args+=(--effort "$AGY_EFFORT")
 
-capture_git_state() {
-  local dir="$1"
-  if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    local head branch index_raw index_hash
-    head="$(git -C "$dir" rev-parse --verify -q HEAD 2>/dev/null || echo "NO_HEAD")"
-    branch="$(git -C "$dir" symbolic-ref -q --short HEAD 2>/dev/null || git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "DETACHED_OR_UNKNOWN")"
-    if ! index_raw="$(git -C "$dir" ls-files --stage 2>/dev/null)"; then
-      index_hash="INDEX_READ_FAILED"
-    else
-      index_hash="$(printf '%s' "$index_raw" | sha256sum | cut -d' ' -f1)"
-    fi
-    printf '%s\n%s\n%s\n' "$head" "$branch" "$index_hash"
-  else
-    printf 'no-git\nno-git\nno-git\n'
-  fi
-}
+git_policy_helper="$skill_dir/scripts/git-task-policy.py"
+git_snapshot_file=""
 
-pre_git_head=""
-pre_git_branch=""
-pre_git_index=""
 if [ "$execution_mode" = "docker-sandbox" ]; then
-  {
-    read -r pre_git_head
-    read -r pre_git_branch
-    read -r pre_git_index
-  } <<<"$(capture_git_state "$workdir")"
+  git_snapshot_file="$(mktemp "${TMPDIR:-/tmp}/harness-git-snapshot.XXXXXX")"
+  pre_check_cmd=(
+    python3 "$git_policy_helper" pre-check
+    --workdir "$workdir"
+    --policy "$git_policy"
+    --snapshot-out "$git_snapshot_file"
+  )
+  if [ "$git_policy" = "task-commits" ]; then
+    pre_check_cmd+=(
+      --branch "${HARNESS_TASK_BRANCH:-}"
+      --base "${HARNESS_TASK_BASE:-}"
+    )
+  fi
+  if ! "${pre_check_cmd[@]}"; then
+    rm -f "$git_snapshot_file"
+    git_snapshot_file=""
+    exit 2
+  fi
 fi
 
 # Derive designer label and provenance before agy model probe and attempt allocation.
@@ -520,12 +556,141 @@ fi
 # guessing: the commit's co-author trailer must name the resolved model.
 # Probe with the same model/effort arguments used for implementation.
 # Print-mode /model answers without a turn or quota.
-model_json="$( (cd "$run_cwd" && timeout 60 agy -p "/model" --output-format json \
-  "${model_args[@]}" "${mode_flags[@]}" </dev/null 2>/dev/null) | jq -c '.command.data // empty' 2>/dev/null || true)"
+probe_out="$(mktemp "${TMPDIR:-/tmp}/harness-model-probe.XXXXXX")"
+orig_pwd="$PWD"
+cd "$run_cwd"
+setsid agy -p "/model" --output-format json "${model_args[@]}" "${mode_flags[@]}" </dev/null >"$probe_out" 2>/dev/null &
+probe_pid=$!
+cd "$orig_pwd"
+
+probe_rc=0
+probe_start="$(date +%s)"
+while kill -0 "$probe_pid" 2>/dev/null; do
+  if [ -n "$interrupted_signal" ]; then
+    terminate_agy_group "$probe_pid" || true
+    probe_rc=130
+    [ "$interrupted_signal" = "TERM" ] && probe_rc=143
+    break
+  fi
+  now="$(date +%s)"
+  if [ $((now - probe_start)) -ge 60 ]; then
+    terminate_agy_group "$probe_pid" || true
+    probe_rc=124
+    break
+  fi
+  sleep 0.1
+done
+if [ "$probe_rc" -eq 0 ]; then
+  wait "$probe_pid" 2>/dev/null || probe_rc=$?
+fi
+probe_pid=""
+
+model_json="$(jq -c '.command.data // empty' "$probe_out" 2>/dev/null || true)"
+rm -f "$probe_out"
 [ -n "$model_json" ] || model_json='{}'
 model_id="$(jq -r 'if has("id") and (.id | type == "string") and (.id | test("\\S")) then .id else "unknown" end' <<<"$model_json" 2>/dev/null || echo "unknown")"
-if [ -z "$model_id" ] || [ "$model_id" = "unknown" ]; then
+
+if [ -n "$interrupted_signal" ] || [ "$probe_rc" -ne 0 ] || [ -z "$model_id" ] || [ "$model_id" = "unknown" ]; then
+  if [ -n "$interrupted_signal" ]; then
+    probe_status="INTERRUPTED"
+    case "$interrupted_signal" in
+      INT) default_runner_rc=130 ;;
+      TERM) default_runner_rc=143 ;;
+      *) default_runner_rc=1 ;;
+    esac
+  elif [ "$probe_rc" -eq 124 ]; then
+    probe_status="TIMEOUT"
+    default_runner_rc=124
+  else
+    probe_status="MODEL_PROBE_FAILED"
+    default_runner_rc=2
+  fi
+
+  if [ "$execution_mode" = "docker-sandbox" ]; then
+    probe_post_file="$(mktemp "${TMPDIR:-/tmp}/harness-probe-post.XXXXXX")"
+    probe_post_rc=0
+    python3 "$git_policy_helper" post-check \
+      --workdir "$workdir" \
+      --policy "$git_policy" \
+      --snapshot-in "${git_snapshot_file:-/nonexistent}" \
+      --status "$probe_status" \
+      --exit-code "$probe_rc" \
+      --output-json "$probe_post_file" 2>/dev/null || probe_post_rc=$?
+
+    probe_audit_file="$task_dir/probe-audit.jsonl"
+    probe_audit_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    if [ "$probe_post_rc" -ne 0 ] || [ ! -s "$probe_post_file" ] || ! jq -e . "$probe_post_file" >/dev/null 2>&1; then
+      probe_mutated=true
+      probe_outcome="rejected"
+      probe_reason="post_check_helper_failed"
+      runner_probe_rc=1
+
+      jq -c -n \
+        --arg ts "$probe_audit_ts" \
+        --arg phase "model_probe" \
+        --argjson exit_code "$runner_probe_rc" \
+        --argjson probe_exit_code "$probe_rc" \
+        --arg status "$probe_status" \
+        --arg git_policy "$git_policy" \
+        --arg git_policy_outcome "$probe_outcome" \
+        --arg git_policy_reason "$probe_reason" \
+        --argjson git_state_changed "$probe_mutated" \
+        '{ts: $ts, phase: $phase, exit_code: $exit_code, probe_exit_code: $probe_exit_code,
+          status: $status, git_policy: $git_policy, git_policy_outcome: $git_policy_outcome,
+          git_policy_reason: $git_policy_reason, git_state_changed: $git_state_changed,
+          git_start_sha: null, git_end_sha: null, git_task_base: null, git_task_branch: null,
+          git_created_commits: [], git_dirty: null, git_dirty_state: null}' \
+        >> "$probe_audit_file"
+    else
+      probe_mutated="$(jq -r 'if .git_state_changed == null then true else .git_state_changed end' "$probe_post_file")"
+      probe_outcome="$(jq -r '.git_policy_outcome // "rejected"' "$probe_post_file")"
+      probe_reason="$(jq -r '.git_policy_reason // "unknown"' "$probe_post_file")"
+
+      if [ "$probe_mutated" = "true" ] || [ "$probe_outcome" = "rejected" ]; then
+        runner_probe_rc=1
+      else
+        runner_probe_rc="$default_runner_rc"
+      fi
+
+      jq -c \
+        --arg ts "$probe_audit_ts" \
+        --arg phase "model_probe" \
+        --argjson exit_code "$runner_probe_rc" \
+        --argjson probe_exit_code "$probe_rc" \
+        --arg status "$probe_status" \
+        '. + {ts: $ts, phase: $phase, exit_code: $exit_code, probe_exit_code: $probe_exit_code, status: $status}' \
+        "$probe_post_file" >> "$probe_audit_file"
+    fi
+    rm -f "$probe_post_file"
+    if [ -n "${git_snapshot_file:-}" ] && [ -f "$git_snapshot_file" ]; then
+      rm -f "$git_snapshot_file"
+    fi
+    git_snapshot_file=""
+
+    if [ "$probe_mutated" = "true" ] || [ "$probe_outcome" = "rejected" ]; then
+      echo "error: git state changed during model probe ($probe_reason)" >&2
+      cleanup_scratch
+      exit 1
+    fi
+  else
+    runner_probe_rc="$default_runner_rc"
+  fi
+
+  if [ -n "$interrupted_signal" ]; then
+    trap - INT TERM EXIT
+    cleanup_scratch
+    exit "$runner_probe_rc"
+  fi
+
+  if [ "$probe_rc" -eq 124 ]; then
+    echo "error: model probe timed out (60s); check AGY_MODEL" >&2
+    cleanup_scratch
+    exit 124
+  fi
+
   echo "error: could not resolve model '$effective_model' via 'agy -p /model'; check AGY_MODEL (available models: agy -p /model)" >&2
+  cleanup_scratch
   exit 2
 fi
 # "Gemini 3.8 Flash (High)" -> "Gemini 3.8 Flash": the effort suffix is a run
@@ -799,7 +964,31 @@ EOF
     done
     printf '\n'
   fi
-  cat "$skill_dir/templates/report.md"
+  if [ "$execution_mode" = "docker-sandbox" ] && [ "$git_policy" = "task-commits" ]; then
+    awk -v branch="$HARNESS_TASK_BRANCH" -v base="$HARNESS_TASK_BASE" -v trailer="$trailer" '
+      /^- Environment & boundaries:/ {
+        print "- Environment & boundaries: Running in Docker Sandbox mode with guarded container access and external network policy."
+        print "  This task run is explicitly opted into task checkpoint commits (`HARNESS_GIT_POLICY=task-commits`)"
+        print "  on branch `" branch "` from base `" base "`."
+        print "  You are authorized to make linear checkpoint commits on `" branch "` only."
+        print "  Checkpoint commits are unreviewed, not accepted submissions; full-access checks detect mistakes"
+        print "  rather than enforce confinement."
+        print "  Every checkpoint commit MUST use Conventional Commits and carry this exact trailer:"
+        print "    " trailer
+        print "  Do not branch, switch branches, create or modify other refs, merge, or push."
+        print "  All work must be committed before completion; successful completed task runs require"
+        print "  no tracked or untracked dirty files. On failure or interruption, dirty work is preserved"
+        print "  and reported. The designer reviews your work and makes the accepted submission with all"
+        print "  contributor trailers."
+        skip = 1
+        next
+      }
+      /^- Report discoveries and corrections/ { skip = 0 }
+      !skip { print }
+    ' "$skill_dir/templates/report.md"
+  else
+    cat "$skill_dir/templates/report.md"
+  fi
 } >"$prompt"
 
 args=(-p "$(cat "$prompt")" --output-format stream-json --mode accept-edits
@@ -834,6 +1023,16 @@ agy_pid=$!
 cd "$orig_pwd"
 
 while true; do
+  if [ -n "$interrupted_signal" ]; then
+    runner_interrupted=true
+    if [ "$interrupted_signal" = "INT" ]; then
+      rc=130
+    else
+      rc=143
+    fi
+    break
+  fi
+
   if ! kill -0 "$agy_pid" 2>/dev/null; then
     set +e
     wait "$agy_pid"
@@ -909,27 +1108,11 @@ for previous_state in "${compute_recovery_files[@]}"; do
     compute_recovery_pending=true
   fi
 done
-git_state_changed=false
-if [ "$execution_mode" = "docker-sandbox" ]; then
-  post_git_head=""
-  post_git_branch=""
-  post_git_index=""
-  {
-    read -r post_git_head
-    read -r post_git_branch
-    read -r post_git_index
-  } <<<"$(capture_git_state "$workdir")"
-
-  if [ "$pre_git_index" = "INDEX_READ_FAILED" ] || [ "$post_git_index" = "INDEX_READ_FAILED" ] || \
-     [ "$post_git_head" != "$pre_git_head" ] || \
-     [ "$post_git_branch" != "$pre_git_branch" ] || \
-     [ "$post_git_index" != "$pre_git_index" ]; then
-    git_state_changed=true
-  fi
-fi
 
 status="$(jq -r '.status // "NO_RESULT"' <<<"$result")"
-if [ "$runner_timeout" = true ]; then
+if [ "$runner_interrupted" = true ]; then
+  status="INTERRUPTED"
+elif [ "$runner_timeout" = true ]; then
   status="TIMEOUT"
   rc=124
 elif [ "$conversation_mismatch" = true ]; then
@@ -942,10 +1125,71 @@ if [ "$terminated_after_result" = true ] && [ "$status" = "SUCCESS" ]; then
   rc=0
 fi
 
-if [ "$git_state_changed" = true ]; then
-  status="GIT_STATE_MUTATED"
-  if [ "$rc" -eq 0 ]; then
-    rc=1
+git_state_changed=false
+git_policy_outcome="passed"
+git_policy_reason="unmodified"
+git_start_sha=""
+git_end_sha=""
+git_task_base=""
+git_task_branch=""
+git_created_commits='[]'
+git_dirty=false
+git_dirty_state='{"dirty":false,"tracked":false,"untracked":false,"staged":false}'
+
+if [ "$execution_mode" = "docker-sandbox" ]; then
+  post_check_file="$(mktemp "${TMPDIR:-/tmp}/harness-post-check.XXXXXX")"
+  post_check_rc=0
+  python3 "$git_policy_helper" post-check \
+    --workdir "$workdir" \
+    --policy "$git_policy" \
+    --snapshot-in "${git_snapshot_file:-/nonexistent}" \
+    --status "$status" \
+    --exit-code "$rc" \
+    --output-json "$post_check_file" 2>/dev/null || post_check_rc=$?
+
+  if [ "$post_check_rc" -ne 0 ] || [ ! -s "$post_check_file" ] || ! jq -e . "$post_check_file" >/dev/null 2>&1; then
+    git_state_changed=true
+    git_policy_outcome="rejected"
+    git_policy_reason="post_check_helper_failed"
+    git_start_sha=""
+    git_end_sha=""
+    git_task_base=""
+    git_task_branch=""
+    git_created_commits='[]'
+    git_dirty="null"
+    git_dirty_state="null"
+  else
+    git_state_changed="$(jq -r 'if .git_state_changed == null then true else .git_state_changed end' "$post_check_file")"
+    git_policy_outcome="$(jq -r '.git_policy_outcome // "rejected"' "$post_check_file")"
+    git_policy_reason="$(jq -r '.git_policy_reason // "post_check_failed"' "$post_check_file")"
+    git_start_sha="$(jq -r '.git_start_sha // empty' "$post_check_file")"
+    git_end_sha="$(jq -r '.git_end_sha // empty' "$post_check_file")"
+    git_task_base="$(jq -r '.git_task_base // empty' "$post_check_file")"
+    git_task_branch="$(jq -r '.git_task_branch // empty' "$post_check_file")"
+    git_created_commits="$(jq -c '.git_created_commits // []' "$post_check_file")"
+    git_dirty="$(jq -c 'if .git_dirty == null then null else .git_dirty end' "$post_check_file")"
+    git_dirty_state="$(jq -c 'if .git_dirty_state == null then null else .git_dirty_state end' "$post_check_file")"
+  fi
+  rm -f "$post_check_file"
+  if [ -n "${git_snapshot_file:-}" ] && [ -f "$git_snapshot_file" ]; then
+    rm -f "$git_snapshot_file"
+  fi
+  git_snapshot_file=""
+
+  if [ "$git_policy" = "strict" ]; then
+    if [ "$git_state_changed" = "true" ] || [ "$git_policy_outcome" = "rejected" ]; then
+      status="GIT_STATE_MUTATED"
+      if [ "$rc" -eq 0 ]; then
+        rc=1
+      fi
+    fi
+  elif [ "$git_policy" = "task-commits" ]; then
+    if [ "$git_policy_outcome" = "rejected" ]; then
+      status="GIT_STATE_MUTATED"
+      if [ "$rc" -eq 0 ]; then
+        rc=1
+      fi
+    fi
   fi
 fi
 
@@ -967,6 +1211,16 @@ jq -n -c \
   --arg step_dir "$step_dir" \
   --arg workdir "$workdir" \
   --arg execution_mode "$execution_mode" \
+  --arg git_policy "$git_policy" \
+  --arg git_policy_outcome "$git_policy_outcome" \
+  --arg git_policy_reason "$git_policy_reason" \
+  --arg git_start_sha "$git_start_sha" \
+  --arg git_end_sha "$git_end_sha" \
+  --arg git_task_base "$git_task_base" \
+  --arg git_task_branch "$git_task_branch" \
+  --argjson git_created_commits "$git_created_commits" \
+  --argjson git_dirty "$git_dirty" \
+  --argjson git_dirty_state "$git_dirty_state" \
   --argjson git_state_changed "$git_state_changed" \
   --arg mode "$mode" \
   --argjson source_attempt "$source_attempt_json" \
@@ -1000,6 +1254,16 @@ jq -n -c \
     compute_recovery_pending: $compute_recovery_pending,
     exit_code: $exit_code, status: $status,
     execution_mode: $execution_mode,
+    git_policy: $git_policy,
+    git_policy_outcome: $git_policy_outcome,
+    git_policy_reason: $git_policy_reason,
+    git_start_sha: (if $git_start_sha == "" then null else $git_start_sha end),
+    git_end_sha: (if $git_end_sha == "" then null else $git_end_sha end),
+    git_task_base: (if $git_task_base == "" then null else $git_task_base end),
+    git_task_branch: (if $git_task_branch == "" then null else $git_task_branch end),
+    git_created_commits: $git_created_commits,
+    git_dirty: $git_dirty,
+    git_dirty_state: $git_dirty_state,
     git_state_changed: $git_state_changed,
     terminated_after_result: $terminated_after_result,
     runner_timeout: $runner_timeout,
@@ -1038,8 +1302,14 @@ fi
 if [ "$denied" -gt 0 ]; then
   echo "==> warning: $denied tool call(s) denied; the report's verification may be incomplete"
 fi
-if [ "$git_state_changed" = true ]; then
-  echo "==> error: git state changed during docker-sandbox execution (HEAD, branch, or index modified)" >&2
+if [ "$git_policy" = "strict" ]; then
+  if [ "$git_state_changed" = true ]; then
+    echo "==> error: git state changed during docker-sandbox execution (HEAD, branch, or index modified)" >&2
+  fi
+elif [ "$git_policy" = "task-commits" ]; then
+  if [ "$git_policy_outcome" = "rejected" ]; then
+    echo "==> error: git policy violation during task-commits execution ($git_policy_reason)" >&2
+  fi
 fi
 if [ "$report_empty" = true ]; then
   echo "==> warning: no report was returned; see $stderr"

@@ -24,15 +24,32 @@ operator when a task clearly belongs to the other one.
 - **Claude and Codex — designers.** Own a task end to end except the implementation
   itself: design, decomposition into steps, re-checking the implementer's
   verification, review, and commits. They are peers: whichever one the operator gives
-  a task keeps it, and they do not hand tasks to each other. Small, obvious edits (a
-  one-line fix, a rename, polishing a delegated diff) they make directly.
+  a task keeps it, and they do not hand tasks to each other. Designers operate on
+  the host. Small, obvious edits (a one-line fix, a rename, polishing a delegated diff)
+  they make directly.
 - **Antigravity — implementer.** Implements the steps a designer delegates to it,
-  headlessly and one step at a time, and verifies each one itself inside its sandbox.
-  Also owns parallel experiments and larger, UI- or browser-inclusive prototypes when
-  the operator asks for them directly.
+  headlessly and one step at a time, inside an isolated Docker Sandbox. Also owns
+  parallel experiments and larger, UI- or browser-inclusive prototypes when the
+  operator asks for them directly.
 
 Typical flow: the designer agrees the design with the operator → delegates each step
-to Antigravity with the `delegate` skill → verifies, reviews, and commits each step.
+to Antigravity with the `delegate` skill → verifies each step, reviews the delta,
+and prepares the accepted task submission commit upon task completion (or commits
+each accepted step in legacy host/strict mode).
+Separate PR, task, and per-run step/attempt concepts:
+- **PR (Pull Request)**: The unit of integration to the main branch; may contain
+  one or multiple accepted task commits.
+- **Task**: The unit of isolation and delegation (`one task = one Docker Sandbox =
+  one private clone/checkout = one accepted submission commit`).
+- **Step / Attempt**: The unit of delegation within a task (`brief.md` -> `agy -p`
+  run -> `report-<n>.md` -> `review-<n>.md`). Multiple implementation steps and
+  checkpoint commits belong to one final task submission commit.
+In Docker Sandbox mode with task checkpoint commits (`HARNESS_GIT_POLICY=task-commits`),
+Antigravity creates linear checkpoint commits on the assigned task branch. The
+designer reviews each step, verifies all work, squashes the reviewed checkpoint to a
+clean submission branch at base (`sandbox/submit.py prepare`), and creates the single
+accepted task submission commit (`sandbox/submit.py accept`) with all contributor
+trailers. In strict mode (default) or host mode, the designer commits each accepted step.
 
 ### Every hand-off is written down
 
@@ -125,7 +142,12 @@ implementation.
 - AI may decide to make focused local commits without asking, ONLY when that
   step's review is complete, required fixes are done, and relevant
   re-verification passes. Never make WIP or pre-review commits, or commit with
-  unresolved blocking findings or required checks. Never push without approval
+  unresolved blocking findings or required checks. When explicitly opted into
+  task checkpoint commits (`HARNESS_GIT_POLICY=task-commits`) in Docker Sandbox mode,
+  the implementer is authorized to create linear checkpoint commits on the assigned
+  task branch; checkpoint commits are unreviewed implementation artifacts, and the
+  designer reviews all work, squashes to a submission branch, and creates the single
+  accepted task submission commit. Never push without approval
   (see "Outward-facing and irreversible actions"). If on the default branch,
   create a branch first.
 - Before deleting a branch, confirm its work is merged or intentionally preserved.
@@ -138,57 +160,76 @@ implementation.
 
 ## Task isolation, branches, and worktrees
 
-- Keep each task in its own working directory. The default sandbox workflow is
-  one persistent Docker Sandbox and private Git clone per project, with a
-  dedicated feature branch and worktree per task for all edits, reviews, builds,
-  and tests. Inside that private clone, do not implement directly in the base
-  checkout; keep it read-only except for worktree and branch management or
-  syncing and re-linking after an approved merge. Worktrees prevent accidental
-  edit collisions across tasks, but they do not provide security isolation from
-  each other; do not require a nested Sandbox.
-- In Docker Sandbox mode, the designer and implementer operate sequentially
-  within the same task worktree; no additional implementation worktree is created.
-  Before starting, the designer selects or creates the task worktree and verifies
-  the intended branch and base.
+- Keep each task in its own working environment. The approved sandbox architecture is:
+  **one task = one Docker Sandbox = one private clone/checkout = one accepted submission commit;
+  a PR may contain multiple task commits.**
+- In Docker Sandbox mode:
+  - Each task runs in its own dedicated Sandbox container, provisioned and tracked via
+    `sandbox/task.py create`.
+  - The host task source checkout seeds the container's private Git clone read-only via
+    `sbx create --clone`. Native `sbx` requires a normal `.git` directory and rejects
+    linked-worktree sources; the read-only main checkout is an allowed seed source, and a
+    separate host task worktree is not required for guest-only tasks. No writable host workspace,
+    home directory, or Docker socket is mounted.
+  - Inside the sandbox, the private repository clone is directly writable on the assigned
+    implementation branch (`task/...`); no nested worktree is required in the guest. The
+    designer (on the host) and implementer (in the guest) operate sequentially in the task
+    clone checkout.
+  - Native `sbx` transport (`sbx cp`, `sbx exec`, `sbx ls --json`) manages communication.
+    Stopped sandboxes are never started by status queries (`task.py status` checks
+    `sbx ls --json` read-only). Interrupted tasks remain recorded and can be safely resumed
+    detached via `task.py start`, which boots if stopped and validates identity, clone
+    top-level, base ancestry, and branch while preserving uncommitted dirty work.
+  - Task completion: after all steps for a task are verified and accepted, the reviewed
+    checkpoint SHA is frozen and squashed to a submission branch at base using
+    `sandbox/submit.py prepare`. The designer reviews the staged tree, writes the single
+    accepted task commit with all agent contributor trailers, and records the accepted
+    submission manifest with `sandbox/submit.py accept`.
+  - Point-in-time preservation: run `sandbox/task.py preserve --record RECORD --dest DEST --quiesced`.
+    This captures a full Git bundle (`--all HEAD`), staged binary patch, worktree archive,
+    and guest harness archive, strictly verified on the host (bare repo fetch, strict fsck,
+    index reconstruction, member SHA256 checks) before returning a verified receipt.
+  - Explicit retirement: preservation and submission acceptance are NOT deletion authorization.
+    Removing a sandbox (`sbx rm`) requires separate explicit operator approval, a fresh state
+    check confirming a quiesced container, and verified host export before deletion. There is
+    no routine retention as a project-wide persistent environment. Interrupted tasks may
+    remain until safely resumed or explicitly retired; existing legacy project environments
+    are not automatically deleted.
 - When working on the host, do repository operations in a dedicated worktree,
   never in the shared main checkout: edits, branch/PR reviews, builds, tests,
   and changes to Git state. This applies to every agent.
-  - A new host task gets a fresh worktree and branch from the integration branch.
-    Continue existing work in the worktree holding that branch, re-creating it
-    with `git worktree add <dir> <branch>` if necessary.
-  - Review a branch or PR in a dedicated worktree on its head branch. Remove a
-    temporary review worktree when finished.
+  - Review a branch or PR in a dedicated host worktree on its head branch only when
+    host-specific verification is required; remove it when finished.
   - Main-checkout exceptions: read-only investigation; worktree and branch
     management; syncing and re-linking after an approved merge; and using it as
-    the read-only source for `sbx --clone`, including the sandbox Git remote
-    entries needed to retrieve commits. Do not edit source files there.
-- Create new feature branches and `aiwt` worktrees from the intended
-  integration branch, not whichever branch happens to be checked out. Check
-  `git rev-parse --abbrev-ref HEAD` and specify the base explicitly when needed.
-  A sandbox clone does not waive the rule against implementing on main/master.
-- Don't stack a new feature branch on unmerged work without telling the operator.
-  Check the base and overlapping sibling branches before resuming a task:
-  `git log <base>..<branch>` and `git log <branch>..<base>`. Stop and ask about
-  unexplained divergence.
-- Check existing sandboxes, branches, and worktrees before opening another task
-  environment. Call out stale entries.
-- Task completion preserves work and closes only clean temporary worktrees
-  after integration or verified preservation. Before deleting a branch, confirm
-  its work is merged or intentionally preserved and applicable checks pass.
-  Keep the project Sandbox running and reusable for subsequent tasks;
-  retiring or removing a Sandbox is a separate action that requires exporting
-  preserved commits and harness records before deletion.
-- Before removing a sandbox, retrieve and verify all work worth preserving,
-  including uncommitted files. A commit inside a sandbox is not a backup outside
-  it. Keep the sandbox until that verification is complete; never use cleanup
-  to discard work implicitly.
+    the read-only source for seeding task clones. Do not edit source files there.
+- Task baseline safety:
+  - Check existing sandboxes, branches, and worktrees before opening another task
+    environment. Call out stale entries.
+  - When continuing work on an existing task, resume its recorded environment and branch;
+    check divergence from the integration branch (`git log <base>..<branch>` and
+    `git log <branch>..<base>`). Stop and ask about unexplained divergence.
+  - Create new feature branches from the intended integration branch, specifying the base
+    explicitly when needed. A sandbox clone does not waive the rule against implementing on
+    main/master.
+  - Don't stack a new feature branch on unmerged work without telling the operator.
+- Multi-task PR assembly:
+  - A PR may consist of multiple task commits. Tasks can be independent (starting from the
+    integration base commit) or dependent (starting from the exact accepted submission commit
+    of a prerequisite task).
+  - Multiple accepted task submissions are assembled in dependency order onto a clean PR branch
+    using `sandbox/submit.py assemble`. It fast-forwards matching parent commits, cherry-picks
+    independent commits, and stops immediately on conflicts, preserving inspectable state.
+  - Final combined tests are run across the assembled PR branch before any push. PR review
+    feedback is addressed by adding a new task commit to the PR branch.
+  - Direct `git push` to the main/default branch is prohibited.
 
-## Permissions inside project sandboxes
+## Permissions inside task sandboxes
 
-- Codex and Claude may run with approval bypass/full access inside an isolated
-  Docker Sandbox. The external microVM, mount, and network policies enforce
-  the boundary. Do not make bypass mode a host-wide default.
-- Use a private clone with a read-only host source, or no host workspace mount.
+- Antigravity operates inside the container with guarded workspace access and external
+  network policy; designers operate on the host. Do not make full access or approval bypass
+  a host-wide default. The architecture does not authorize that.
+- Use a private clone with a read-only host source, or no writable host workspace mount.
   Do not expose the host home directory, credential stores, or Docker socket.
   Keep SSH-agent forwarding off unless the operator explicitly authorizes it.
   Keep shared skills read-only or disabled; treat host-side MCP tools as
@@ -198,9 +239,19 @@ implementation.
   source mounts still expose their contents: keep secrets out of the source.
 - Full access permits local development commands, dependency installation,
   builds, and tests. It does not waive review-before-commit requirements or
-  approval for outward-facing and irreversible actions below. A hidden token
-  can still authorize remote writes through the proxy; written instructions
-  are not a technical write barrier.
+  approval for outward-facing and irreversible actions below.
+- Clarification on permissions and explicit deny:
+  - Explicit `permissions.deny` rules have documented precedence over allow/proceed and
+    skip-permissions.
+  - However, command prefix matching is supplemental safety and NOT an unbypassable
+    barrier against external writes.
+  - Container network policy allows egress to GitHub, cloud, and package hosts; deny
+    strings and local refs are not an external-write barrier. (See `sandbox/README.md` for
+    detailed security architecture and live probe findings).
+  - Role separation is enforced by runner observation: strict mode by default rejects any
+    detected Git state mutation (`status: GIT_STATE_MUTATED`). `HARNESS_GIT_POLICY=task-commits`
+    is an explicit Docker-only opt-in authorizing linear checkpoint commits on the assigned
+    task branch with exact runner trailer.
 - Review changes before integrating or running them on the host, especially
   dotfiles, hooks, and startup/build scripts.
 

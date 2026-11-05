@@ -9,17 +9,19 @@ commit: <sha or deferred>
 
 ## Step boundary and commit status
 
-- **Commit authorization:** <standing local authorization after review/fixes/reverification (default), or explicit exception/deferral reason>
+- **Commit authorization:** <standing local authorization after review/fixes/reverification (default), task checkpoint commits (HARNESS_GIT_POLICY=task-commits), or explicit deferral>
 - **Commit readiness / blocking checks:** <readiness evidence (review complete, fixes done, reverification passed) or blocking checks/findings>
 - **Execution mode:** <host | docker-sandbox>
 - **Mode:** <fresh | resume (source attempt <n>)>
 - **Conversation ID:** <conversation ID from metrics>
-- **Status:** <execution finished | verified | accepted | awaiting commit | committed | deferred>
+- **Status:** <execution finished | verified | accepted | awaiting commit | committed | checkpoint-recorded | deferred>
 - **Reviewed against:** <preceding commit SHA or accepted checkpoint>
+- **Reviewed implementation checkpoint:** <checkpoint SHA under task-commits, or working tree diff under strict mode>
 - **Accepted checkpoint (if deferred):** <path, base/predecessor, content manifest, recorded deferral reason>
 - **Planned commit scope:** <this step's behavior; separately recorded corrections>
 - **Implementer attribution:** <actual trailer from this step's metrics>
-- **Commit:** <SHA corresponding to this step, or deferred>
+- **Commit / Checkpoint:** <step commit SHA (Host/strict mode), checkpoint SHA (task-commits mode), or deferred>
+- **Task submission status:** <in-progress (step <NN>) | task complete (ready for submit.py prepare/accept)>
 
 ## Acceptance criteria review
 
