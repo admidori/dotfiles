@@ -1,10 +1,16 @@
-# Docker Sandbox Kits: Sequential Codex & Antigravity Delegation
+# Docker Sandbox Kits: Task-Scoped Delegation & Multi-Task Assembly
 
 This directory contains reusable Docker Sandbox Kit (specification schema v3)
-descriptors and companion Dockerfiles to run Codex (as designer) and
-Antigravity (as implementer) inside a persistent Sandbox per project.
-Each task uses a dedicated Git worktree in the private clone; the designer
-and implementer work sequentially in that task worktree.
+descriptors, companion Dockerfiles, and lifecycle/submission CLI tools to run
+designers (Codex / Claude) on the host and Antigravity (as implementer) inside
+an isolated, task-scoped Docker Sandbox.
+
+The approved architecture is:
+**one task = one Docker Sandbox = one private clone/checkout = one accepted submission commit;
+a PR may contain multiple task commits.**
+
+Sequential delegation operates directly within the same task clone checkout;
+no extra guest worktrees are required.
 
 ## Table of Contents
 
@@ -15,36 +21,56 @@ and implementer work sequentially in that task worktree.
 - [Pre-Flight: Check Proxy Interception Before Any Login](#pre-flight-check-proxy-interception-before-any-login)
 - [Kit Definitions](#kit-definitions)
 - [Kit Composition & Building](#kit-composition--building)
-- [Creating a Project Sandbox](#creating-a-project-sandbox)
-- [Entering the Sandbox](#entering-the-sandbox)
-- [Project Sandbox SSH Lifecycle](#project-sandbox-ssh-lifecycle)
+- [Task Sandbox Lifecycle Management (`sandbox/task.py`)](#task-sandbox-lifecycle-management-sandboxtaskpy)
+- [Task Submission & Multi-Task Assembly (`sandbox/submit.py`)](#task-submission--multi-task-assembly-sandboxsubmitpy)
+- [Task Sandbox Clone & Implementation Workflow](#task-sandbox-clone--implementation-workflow)
 - [Sentinel Verification (Secret-Free)](#sentinel-verification-secret-free)
 - [Running Antigravity Inside the Sandbox](#running-antigravity-inside-the-sandbox)
 - [Accidental-Host Guard & Environment Marker](#accidental-host-guard--environment-marker)
-- [Preserving Work & Cleanup](#preserving-work--cleanup)
+- [Preserving Task Work & Retirement](#preserving-task-work--retirement)
+- [Legacy Project Sandbox SSH Lifecycle (Deprecated)](#legacy-project-sandbox-ssh-lifecycle-deprecated)
 
 ---
 
 ## Overview & Architecture
 
-The delegation model pairs Codex and Antigravity (`agy`) in a serial workflow
-inside one externally isolated container:
+The task-scoped delegation model pairs a host designer (Codex or Claude) and
+a guest implementer (Antigravity, `agy`) in an isolated container environment:
 
-1. **Codex (Designer)** runs in the sandbox using an image-contained sentinel
-   configuration and full access permissions. It explores the private clone,
-   writes briefs, and orchestrates tasks.
-2. **Antigravity (Implementer)** executes headlessly inside the same container
-   to implement changes, without interactive permission prompts.
-3. **Codex** inspects modified files, verifies changes, runs tests, and commits
-   accepted work under standing authorization.
+1. **Host Designer (Codex / Claude)** designs the task, decomposes it into
+   discrete steps, writes briefs, orchestrates the sandbox lifecycle, and
+   reviews implementer results.
+2. **Task Sandbox Provisioning:** The designer provisions a dedicated sandbox
+   and private clone for the task using `sandbox/task.py create`. The host task
+   checkout seeds the guest clone read-only.
+3. **Antigravity (Implementer)** executes headlessly inside the task sandbox
+   via `run-task.sh`, operating directly within the task clone checkout. Under
+   `HARNESS_GIT_POLICY=task-commits`, it creates linear checkpoint commits on
+   the assigned task branch.
+4. **Designer Verification & Review:** The designer verifies changes, runs tests,
+   and reviews each step.
+5. **Submission Preparation & Acceptance:** Once the task is complete and verified,
+   the designer freezes the reviewed checkpoint SHA, squashes the changes to a
+   submission branch at base (`sandbox/submit.py prepare`), commits the accepted
+   task submission commit with all contributor trailers, and records the accepted
+   manifest (`sandbox/submit.py accept`).
+6. **Preservation & Retirement:** Task state is verified and preserved using
+   `sandbox/task.py preserve`. Retirement (`sbx rm`) additionally requires separate
+   explicit operator approval and a fresh preservation check.
+7. **PR Assembly:** Multiple accepted task submissions are assembled into an
+   integration PR branch using `sandbox/submit.py assemble`.
 
-Both tools share the task worktree sequentially. Other tasks use separate
-worktrees in the same project Sandbox; they are not security-isolated from
-each other. No nested Sandbox is required.
+Both designer and implementer share the same task clone checkout sequentially.
+No nested guest worktrees are required. Detailed helper references:
+- Lifecycle management CLI: [`sandbox/task.md`](task.md)
+- Submission & assembly CLI: [`sandbox/submit.md`](submit.md)
 
 ---
 
 ## Evidence Status: Prototype vs. Source Kits
+
+The historical checks below concern the older combined Codex/Antigravity kits.
+The current task workflow uses the neutral Antigravity workload described below.
 
 > [!IMPORTANT]
 > **Prototype Verification vs. Final Source Checks**
@@ -53,7 +79,7 @@ each other. No nested Sandbox is required.
 >   in sandbox `codex-agy-v3-auth`. The minimal v3 descriptor composition passed
 >   token-endpoint TLS handshakes and achieved sequential `AUTH_OK` inference calls
 >   for both clients using sentinel-only credentials without browser logins.
-> - **Final-source verification (2026-10-31, sbx 0.50.1):** Both persisted kits
+> - **Historical combined-kit verification (2026-10-31, sbx 0.50.1):** Both persisted kits
 >   built successfully. A fresh `dotfiles-agy-dev` sandbox with `--clone` passed
 >   proxy TLS checks and sequential Codex / Antigravity `AUTH_OK` calls without
 >   browser login. All three credential/config checks passed after inference.
@@ -77,14 +103,15 @@ internal access within the container boundary:
 - **Skills Flag Boundary:** `--skills off` disables the shared skills store.
   It does not itself prevent credential helper bindings; credential safety relies
   on proxy sentinels, absence of host credential mounts, and disabled forwarding.
-- **Sentinel-Only In-Container Credentials:** Neither OpenAI API keys nor Google OAuth
-  tokens exist inside the container. Tokens are fixed sentinel strings
-  (`oai-oat01-proxy-managed`, `agy-oauth-access-proxy-managed`).
+- **Proxy-Managed Credentials:** The task kit supplies Antigravity sentinel tokens
+  (`agy-oauth-access-proxy-managed`), not host credentials. OpenAI sentinel
+  configuration belongs to the legacy Codex workload only.
 - **Host-Side Proxy Interception:** Outbound calls to OAuth endpoints and model APIs
   are intercepted by the host sbx proxy daemon (`passthrough: false`), which attaches
   host-managed credentials.
-- **Scoped Network Policies:** Network access rules in the kit descriptors are strictly
-  scoped to the known model providers and OAuth endpoints.
+- **Network Policies:** Kit and host policies include model providers, OAuth
+  endpoints, and development services such as GitHub and package hosts. Allowed
+  egress is not restricted to read-only operations.
   *(Note: Network filtering depends on host Docker daemon capabilities; if host policy
   is allow-all, sandbox policy cannot guarantee deny-all behavior).*
 
@@ -117,7 +144,7 @@ Before creating or managing sandboxes, ensure the host environment is ready:
 > authentication requests could route directly to upstream services, bypassing
 > the proxy and leaking actual credentials.
 >
-> Always verify the HTTPS_PROXY connection to both token endpoints before
+> Verify the HTTPS_PROXY connection for the selected agent service before
 > executing any authentication flow.
 
 ### Running the Preflight TLS Issuer Check
@@ -126,15 +153,14 @@ Inside the sandbox, run the provided executable preflight script before any agen
 execution:
 
 ```bash
-python3 sandbox/kits/check_proxy_tls.py
+python3 sandbox/kits/check_proxy_tls.py --service antigravity
 ```
 
-The script connects to `auth.openai.com:443` and `oauth2.googleapis.com:443` using
+For the task kit, the script connects to `oauth2.googleapis.com:443` using
 HTTP CONNECT through `HTTPS_PROXY` and Python's standard TLS verification, inspects the certificate issuers, and
 prints only the issuer strings:
 
 ```text
-auth.openai.com issuer: commonName=Docker Sandboxes Proxy CA, ...
 oauth2.googleapis.com issuer: commonName=Docker Sandboxes Proxy CA, ...
 proxy_tls_intercepted: True
 ```
@@ -154,7 +180,17 @@ proxy_tls_intercepted: True
 
 The kit sources are located under `sandbox/kits/`:
 
-### 1. Codex Workload (`sandbox/kits/codex-workload`)
+### 1. Antigravity Workload (`sandbox/kits/antigravity-workload`)
+
+Use the [neutral workload](kits/antigravity-workload/README.md) with the
+Antigravity mixin for new tasks. Its base is
+`docker.io/sbx/shell-docker-image:latest`; it provides Python, jq, process tools,
+and the root-owned harness marker without installing Codex or Claude.
+The mixin supplies `agy` and its proxy configuration.
+
+### Legacy Codex Workload (`sandbox/kits/codex-workload`)
+
+Retained for existing environments; this is not the workload for new task sandboxes.
 - **Descriptor:** `codex-workload.yaml` (schema v3, `kind: workload`)
 - **Dockerfile:** `codex-workload.dockerfile` (based on `docker/sandbox-templates:codex-docker`)
 - **Configuration:** Static sentinel `config.toml` and `auth.json`
@@ -212,216 +248,128 @@ layers automatically.
 
 ---
 
-## Creating a Project Sandbox
+## Task Sandbox Lifecycle Management (`sandbox/task.py`)
 
-Create a fresh sandbox using `sbx create` (v0.50.1 syntax):
+Per-task Sandboxes and their persistence records are managed using standard
+library Python and native `sbx` commands via `sandbox/task.py`. State is
+stored in caller-provided JSON task records outside the repository.
 
-```sh
-sbx create --name dotfiles-agy-dev --cpus 2 --memory 4g --skills off --clone \
-  --kit ./sandbox/kits/antigravity-mixin ./sandbox/kits/codex-workload "$HOME/dotfiles"
-```
+### Key Lifecycle Operations
 
-### Options & Requirements:
-- `--kit <path>`: The mixin directory; the workload is the first positional argument. The host kit
-  paths must exist on the reviewed branch or worktree.
-- `--clone`: Boolean flag indicating repository cloning. The clone source positional
-  argument `"$HOME/dotfiles"` must be a normal checkout (host Git worktrees are
-  unsupported as clone sources). The source checkout is mounted read-only by `sbx`
-  to seed the container repository.
-- `--skills off`: Disables the shared skills store.
-- **First-Time Binding Prompts & OAuth Reuse:** When creating the sandbox, `sbx` detects
-  the declared `openai` and `antigravity` credential requirements. If the host has
-  existing active OAuth sessions, `sbx` prompts to bind the sandbox to those sessions,
-  allowing seamless reuse without copying credentials into container layers.
+- **Create a Task Sandbox (`task.py create`):**
+  Provisions a task Sandbox using `sbx create --clone --skills off` and initializes
+  the implementation branch at the exact resolved base commit:
+  ```bash
+  python3 sandbox/task.py create \
+    --record /path/to/task-record.json \
+    --task-id task-01 \
+    --name task-01-sbx \
+    --repo /path/to/host/repo \
+    --base <BASE_REF_OR_SHA> \
+    --branch task/feature-01 \
+    --workload sandbox/kits/antigravity-workload \
+    --mixin sandbox/kits/antigravity-mixin \
+    [--bundle /path/to/dependency.bundle] \
+    [--depends-on dep-task-id]
+  ```
+  Resolves base commit SHA in bare Git context, verifies branch name format,
+  records guest paths, and reserves record file.
+
+- **Query Status (`task.py status`):**
+  ```bash
+  python3 sandbox/task.py status --record /path/to/task-record.json [--json]
+  ```
+  Uses read-only `sbx ls --json` for stopped, missing, or mismatched sandboxes;
+  **never** executes commands against stopped VMs, ensuring stopped sandboxes are
+  not unintentionally awakened.
+
+- **Resume Interrupted Sandbox (`task.py start`):**
+  ```bash
+  python3 sandbox/task.py start --record /path/to/task-record.json
+  ```
+  Resumes detached via `sbx run -d --name <name>`, verifies clone top-level path,
+  base ancestry (`merge-base --is-ancestor`), and expected branch, preserving
+  uncommitted dirty work without checkout or reset.
+
+- **Preserve Task Work & State (`task.py preserve`):**
+  ```bash
+  python3 sandbox/task.py preserve \
+    --record /path/to/task-record.json \
+    --dest /path/to/host/destination \
+    --quiesced
+  ```
+  Captures a complete verified snapshot of all Git refs, staged index changes,
+  worktree files, and guest harness state. Strictly verified on the host with
+  bare repo bundle fetch (`+refs/*:refs/*`), `git fsck --full --strict`, cached
+  index reconstruction, and member SHA256 checksums without extracting untrusted files.
+
+For complete CLI documentation, options, and JSON schemas, see [`sandbox/task.md`](task.md).
 
 ---
 
-The source checkout must contain the reviewed kit/helper/runner changes before ordinary
-task use. Until merged, explicitly import the task branch into the private clone.
-Do not run `make link` indiscriminately inside the sandbox: host-oriented Codex
-configuration can overwrite the image-provided proxy configuration.
+## Task Submission & Multi-Task Assembly (`sandbox/submit.py`)
 
-## Entering the Sandbox
+The `sandbox/submit.py` script manages the preparation, designer acceptance, and
+linear assembly of task submissions, ensuring that implementation checkpoints remain
+outside the PR history while supporting multiple accepted task commits in one PR branch.
 
-Start and attach to the newly created sandbox:
+### Overview
 
-```sh
-# Start the sandbox container
-sbx run --name dotfiles-agy-dev
+1. **Prepare Submission Branch (`submit.py prepare`):** Validates clean tree, preflights
+   ignored files via `git ls-files -z` and `git ls-tree -z`, creates the submission branch
+   at base, and squashes reviewed checkpoints into staged changes matching the reviewed tree.
+2. **Designer Commit in Same Checkout:** The designer inspects staged diffs, verifies all
+   checks, and commits the single accepted task commit with Conventional Commits, body
+   reasoning, and all contributor trailers (`Co-authored-by: <designer>`, `Co-authored-by: Antigravity (...)`).
+3. **Accept Submission (`submit.py accept`):** Validates exactly one non-merge commit ahead
+   of base whose tree equals the reviewed tree, binds evidence and dependencies, and writes
+   an immutable accepted submission manifest.
+4. **Multi-Task PR Assembly (`submit.py assemble`):** Validates that all declared dependency
+   manifests precede in manifest order, fast-forwards matching parent commits, cherry-picks
+   independent commits (preserving original author and message while generating a new committer
+   and assembled SHA), stops on conflicts, and writes an assembly record mapping submitted SHAs
+   to assembled SHAs.
 
-# Attach an interactive shell inside the running sandbox
-sbx exec -it dotfiles-agy-dev bash
-```
+For the canonical CLI syntax, invariants, schemas, and dependency ref-retention rules,
+see [`sandbox/submit.md`](submit.md).
 
 ---
 
-## Project Sandbox SSH Lifecycle
+## Task Sandbox Clone & Implementation Workflow
 
-Direct localhost SSH access to the project sandbox is managed via `sandbox/project-ssh.py`.
-This enables external tools, IDEs, and the Windows host to connect securely to the
-container's `agent` user without opening network exposure.
+The task sandbox workflow enforces:
+**one task = one Docker Sandbox = one private clone/checkout = one accepted submission commit.**
 
-### Security Architecture
+### In-Guest Task Clone
 
-- **Host Loopback Exposure Only:** Binds strictly to `[::1]:PORT:2222/tcp6` on the WSL host.
-  Wildcard (`0.0.0.0`) or external LAN listeners on the host are prohibited.
-- **Guest Listener:** OpenSSH server listens on guest port `2222` inside the microVM.
-- **Hardened Agent-Only Authentication:** Only public-key authentication for user `agent` is permitted
-  (`UsePAM yes`, `AuthenticationMethods publickey`, `PermitRootLogin no`, `PasswordAuthentication no`, `KbdInteractiveAuthentication no`, `AllowUsers agent`).
-- **Forwarding Restrictions:** SSH agent forwarding (`AllowAgentForwarding no`) and X11 forwarding are disabled.
-  Local-only TCP forwarding (`AllowTcpForwarding local`) is permitted for application tunneling including dynamic SOCKS forwarding; remote forwarding is denied.
-- **Preflight & Ownership Safety:** Preflight port checks prevent overwriting configurations if an unmanaged listener already occupies port 2222.
-- **Safe Runtime Environment Propagation:** Propagates only an approved allowlist of non-secret runtime variables
-  (`PATH`, upper/lowercase proxy variables, CA bundle paths, `NODE_USE_ENV_PROXY`, sandbox identifiers,
-  agent/credential mode sentinels, and verified GitHub proxy sentinel `GH_TOKEN`) via a single combined `SetEnv` directive.
-  Credential-bearing proxy URLs, unverified `GH_TOKEN` values, newlines, and full environment dumps are strictly rejected with errors.
-- **Host Key Generation at Runtime:** Host keys are generated on first runtime use inside the container
-  (`ssh-keygen -A`) and preserved across runs. No private keys are baked into image layers or copied from host.
-- **Transient Foreground Process & Dual Verification:** Held in foreground by a transient WSL systemd user unit
-  (`systemd-run --user --unit=sbx-ssh-<name> --collect --property=Restart=no sbx exec ...`).
-  Start boundedly verifies both systemd unit activation and guest listener readiness before declaring success.
-  Explicit stop terminates the owned listener without killing arbitrary processes or restarting stopped sandboxes.
-
-### CLI Commands
-
-All commands require an existing sandbox and must be run from the host:
-
-```bash
-# 1. Start SSH listener for a sandbox (default host port: 40222)
-python3 sandbox/project-ssh.py start dotfiles-agy-dev --public-key /mnt/c/Users/admidori/.ssh/id_ed25519_sbx_dotfiles.pub --port 40222
-
-# 2. Query status (read-only; reports sbx status, unit status, and port mapping without starting stopped guests)
-python3 sandbox/project-ssh.py status dotfiles-agy-dev --json
-
-# 3. Stop SSH listener (terminates guest sshd, stops host systemd unit, and unpublishes port)
-python3 sandbox/project-ssh.py stop dotfiles-agy-dev
-```
-
-### Windows Client Configuration (`~/.ssh/config`)
-
-Under WSL with mirrored networking, direct connections from Windows to localhost IPv6 may fail
-to route across the virtual network switch. Connect using the verified WSL netcat proxy command:
-
-```ssh-config
-Host sbx-dotfiles
-    HostName 127.0.0.1
-    Port 40222
-    User agent
-    IdentityFile ~/.ssh/id_ed25519_sbx_dotfiles
-    IdentitiesOnly yes
-    IdentityAgent none
-    ForwardAgent no
-    PasswordAuthentication no
-    KbdInteractiveAuthentication no
-    StrictHostKeyChecking yes
-    UserKnownHostsFile ~/.ssh/known_hosts_sbx_dotfiles
-    ProxyCommand C:/Windows/System32/wsl.exe -d Debian -- /usr/bin/nc -6 ::1 40222
-```
-
-### Host Key Verification & `known_hosts`
-
-Upon running `project-ssh.py start`, the script prints the SHA256 fingerprints of the container's
-generated host keys. Preserve the existing verified Windows alias and known_hosts entry.
-For a new Sandbox, compare the public host key obtained through `sbx exec` with
-these fingerprints and register it in the dedicated known_hosts file before
-connecting with strict checking. The commands do not edit Windows SSH configuration.
-
-```text
-Host Key Fingerprints:
-  - 256 SHA256:d8Q... root@sandbox (ED25519)
-  - 256 SHA256:7uK... root@sandbox (ECDSA)
-```
-
-Never copy private host or client keys into the guest. Staging directories are ephemeral and
-cleaned up automatically after public key installation.
-
-### Explicit Stop Before Keyring Lock
-
-Before locking the host session keyring or suspending the host, explicitly stop the SSH service
-and the container:
-
-```bash
-python3 sandbox/project-ssh.py stop dotfiles-agy-dev
-sbx stop dotfiles-agy-dev
-```
-
-- `project-ssh.py stop` leaves container data, branches, and worktrees intact.
-- Stopping an already-stopped sandbox is idempotent and **never invokes `sbx exec`**, ensuring
-  a stopped container is not unintentionally re-awakened.
-
-### GitHub Proxy Access via SSH (Dynamic Host Secret)
-
-To use the GitHub CLI (`gh`) over project SSH sessions without passing real personal access tokens (PATs) into the guest container:
-
-1. **Project-Scoped Dynamic Host Secret:**
-   Register a dynamic command secret on the host scoped to the project sandbox:
-   ```bash
-   sbx secret set --sandbox my-project github \
-     --command '"/mnt/c/Users/<username>/AppData/Local/Microsoft/WinGet/Links/op.exe" read "op://<vault>/<item>/<field>" --no-newline' \
-     --refresh 55m
-   ```
-   - **Absolute Windows `op.exe` path:** Replace the sandbox name, username, and reference placeholders with your local values. The WSL shell alias `op` is unavailable to the daemon, so use the actual absolute Windows executable path. Keep both path and reference quoted; never put the PAT itself in the command. See [Docker's dynamic secret documentation](https://docs.docker.com/ai/sandboxes/configuration/credentials/#use-a-dynamic-secret-source).
-   - **Host Cache Duration:** The host stores the command instead of the PAT value, resolves it on the host, and caches the result for 55 minutes by default (`--refresh 55m`). Source changes apply to existing local sandboxes without restarting them.
-   - **1Password Approval Dependency:** Resolution requires an authenticated Windows 1Password CLI and may prompt for desktop app approval. Cache expiry can therefore require user interaction; this is not a guarantee of unattended access.
-   - **Host Isolation:** Keep the executable, its dependencies and configuration, and host temporary directories outside writable guest mounts. Check the project's mounts before registering the command. This flow does not pass the real PAT into the guest or write it to guest files.
-
-2. **In-Guest Proxy Sentinel & `gh` CLI:**
-   - **Proxy Interception:** Docker Sandbox's host proxy intercepts outbound requests to GitHub APIs and attaches the host-managed credential transparently.
-   - **Public Proxy Sentinel:** In container sessions, the environment variable `GH_TOKEN` is set to Docker's fixed public sentinel value:
-     `gho_sbxproxymanaged000000000000000000000`
-   - **Dummy Auth Token:** Inside the container, running `gh auth token` returns this dummy sentinel string, not the real PAT.
-   - **API Permissions:** The proxy enables operations allowed by the underlying PAT. Keeping the PAT outside the guest does not make those operations read-only; scope the PAT to the intended repositories and permissions.
-   - **No In-Guest Login or Token Import:** Do not run `gh auth login` or import a real token inside the guest. Authentication uses the host proxy and the sentinel.
-   - **Safe SSH Propagation:** When SSH sessions are started via `project-ssh.py`, `guest-bootstrap.py` inspects `GH_TOKEN`. If present, it must match the exact literal sentinel `gho_sbxproxymanaged000000000000000000000` to be propagated into the OpenSSH daemon's `SetEnv` directive. Any other present value (empty string, real token, prefix lookalike) is rejected immediately with a static secret-free `ValueError` before config generation. `GITHUB_TOKEN` and unrelated credential environment variables remain strictly excluded.
-   - **Existing SSH Sessions:** After updating the bootstrap, stop and start managed SSH with `project-ssh.py`, then reconnect clients. Existing processes may retain their previous environment.
-
-### Project-Private Clone, Worktrees, and App Workflow
-
-Use one persistent Sandbox per project, seeded by `sbx create --clone`. Create a
-dedicated Git worktree for every task and review inside that private clone. Keep
-the project base checkout available as the common read-only base, with the
-management and approved-sync exceptions described in the shared baseline.
-Worktrees prevent accidental edit collisions across tasks; full-access agents can still access other worktrees, so
-worktrees do not provide security isolation from each other, and no nested
-Sandbox is required.
-
-#### App Project Configuration & Task Selection
-
-- **Fixed App Project Root:** Keep the IDE or app project opened at the main
-  project checkout (deployment example: `/home/admidori/dotfiles`). Do not
-  prescribe changing or re-opening the app project root for every task.
-- **Explicit Task Worktree Targeting:** While work on a task is active,
-  explicitly select and target that task's dedicated worktree directory for terminal
-  commands, editor focus, and runner `$workdir`.
-- **Branch and Base Preflight:** Both manual worktree creation (`git worktree add`)
-  and native app worktree creation require preflight verification before work
-  starts. Run checks against the task path, using `git -C <task-worktree>`:
-  inspect `rev-parse --show-toplevel`, `rev-parse --abbrev-ref HEAD`, and
-  `rev-parse HEAD`. Choose the intended integration base explicitly when creating
-  a worktree and compare a new worktree's HEAD with that starting commit.
-  If native app creation leaves a detached HEAD, create a task feature branch
-  there before editing. For continued work, reuse its existing worktree and
-  check divergence from the integration branch; do not reset it to the base.
-- **Git CLI as Source of Truth:** Run `git status --short`, `git diff`, and
-  `git diff --cached` in that task worktree (or with `git -C <task-worktree>`)
-  to establish the actual working tree and index state. Do not trust UI filter
-  labels or staged/unstaged view indicators,
-  which may report misleading status (such as displaying staged additions when
-  `git diff --cached` is empty).
-
-#### Task Completion vs. Project Sandbox Lifecycle
-
-- **Task Completion:** When a task's work is finished, verified, and integrated
-  or preserved, close only clean temporary worktrees. Never force-remove
-  worktrees (`--force`). Before deleting a branch, confirm its commits are merged
-  or intentionally preserved and applicable repository checks pass.
-- **Persistent Sandbox Reuse:** Keep the project Sandbox running and reusable
-  for subsequent tasks; do not destroy or recreate the container between tasks.
-- **Sandbox Retirement:** Retiring or deleting a project Sandbox (`sbx rm`) is a
-  separate, deliberate operation. Because container deletion destroys its internal
-  filesystem including all task worktrees, export and verify all useful commits,
-  uncommitted/untracked files, and harness records outside the container before
-  removal.
+- **Seeded Read-Only:** When `--clone` is specified, `sbx create` mounts the host
+  source checkout read-only to seed the container clone. Native `sbx` requires a normal
+  `.git` directory and rejects linked-worktree sources; the read-only main checkout is
+  an allowed seed source, and a separate host task checkout is not required for guest-only
+  tasks. No writable host workspace or host home directory is mounted.
+- **Directly Writable on Task Branch:** Inside the sandbox, the private repository
+  clone is directly writable on the assigned implementation branch (`task/...`).
+  No nested guest worktrees are required.
+- **Sequential Shared Checkout:** Host designer and guest implementer operate sequentially
+  within the task clone checkout.
+- **Stopped Status Safety:** Status queries (`task.py status`) strictly use
+  read-only `sbx ls --json`; stopped sandboxes are never awakened by status checks.
+- **Interruption and Resumption:** Interrupted runs leave dirty work preserved in
+  the task sandbox. The sandbox can be resumed safely with `task.py start`, which
+  boots the container if stopped and validates branch, clone path, and base ancestry.
+  If setup fails before `guest_repo_path` is recorded (e.g. an initial exec timeout during
+  provisioning), `start` cannot automatically resume; the record and VM are retained
+  for manual inspection and initialization completion (no automatic retry).
+- **Task Safety & Baseline Invariants:**
+  - Check existing sandboxes, branches, and worktrees before opening another task environment.
+  - Resume recorded task environments when continuing work rather than creating fresh branches from default.
+  - Verify base ancestry and divergence (`git log <base>..<branch>`); explain unexpected divergence.
+  - Don't stack a new feature branch on unmerged work without telling the operator.
+- **Lifecycle Separation:** A task sandbox lives for the duration of that task.
+  Preservation and submission acceptance do NOT authorize deletion; explicit retirement
+  requires separate operator approval, a fresh state check confirming a quiesced container,
+  and verified host export before `sbx rm`. Existing legacy project environments are not
+  automatically deleted.
 
 ### Known Limitations
 
@@ -533,12 +481,20 @@ For automated delegation loops inside the container, use the harness runner in `
 
 ```bash
 HARNESS_EXECUTION_MODE=docker-sandbox \
+  [HARNESS_GIT_POLICY=strict|task-commits] \
   bin/dotfiles/.agents/skills/delegate/scripts/run-task.sh <step-dir> <workdir> [brief] [--resume-attempt <N>]
 ```
 
-- **Sequential execution:** Codex (designer) and Antigravity (implementer) operate sequentially within the same task worktree in the project-private clone. Pass that dedicated worktree as `$workdir`; the runner does not create it.
+- **Sequential execution:** The designer and Antigravity (implementer) operate sequentially within the same task clone checkout (`$workdir`).
 - **Automated full access:** The runner passes `--dangerously-skip-permissions` and `--settings '{"enableTerminalSandbox":false}'` and runs directly from `$workdir`.
-- **Role separation & mutation detection:** Antigravity must never stage or commit changes. The runner captures HEAD, symbolic branch, and index state before the model probe and implementation run, rejecting acceptance with `status: "GIT_STATE_MUTATED"` (nonzero exit) if any Git state changed.
+- **Git policy and checkpoint commits:**
+  - `HARNESS_GIT_POLICY=strict` (default): Antigravity must never stage or commit changes. The runner captures HEAD, symbolic branch, and index state before the model probe and implementation run, rejecting acceptance with `status: "GIT_STATE_MUTATED"` (nonzero exit) if any Git state changed.
+  - `HARNESS_GIT_POLICY=task-commits` (explicit Docker opt-in): Antigravity is authorized to create linear checkpoint commits on the assigned task branch (`HARNESS_TASK_BRANCH`) from accepted base (`HARNESS_TASK_BASE`), using Conventional Commits and the runner's exact `Co-authored-by: Antigravity (...)` trailer. Checkpoint commits are unreviewed artifacts; successful completion requires clean tracked and untracked files.
+- **Explicit deny precedence and verified live scope:**
+  - Upstream documentation states that explicit `permissions.deny` rules take precedence over allow/proceed and skip-permissions.
+  - Live non-mutating probes verified this: direct requests like `git commit --dry-run`, `git push --dry-run`, and `git merge -h` were denied before Git execution under full access (conversation `2fc0915a-ce16-450d-9bd9-58da6ae37872`).
+  - However, command prefix matching is supplemental and NOT a hostile-agent boundary: a second live probe (`476beb63-0994-4fb4-84f6-269910815ef7`) showed `/usr/bin/git push --dry-run` and `git -C /tmp push --dry-run` executed outside any repo (exiting 128), while `timeout 5 git push --dry-run` was denied.
+  - Container network policy allows egress to GitHub, cloud, and package hosts; deny strings are not an unbypassable external-write barrier.
 - **Advisory locking:** The runner takes a nonblocking workdir flock (`git rev-parse --git-path harness.lock`) to prevent concurrent runner collisions across steps targeting the same workdir. Note that full-access container execution has permission to defeat advisory locks; locks protect against concurrent runner processes, not malicious processes.
 - **External network policy:** Commands executed during verification follow the container's external network policy.
 
@@ -560,44 +516,170 @@ The kits place a root-owned marker inside the container filesystem:
 
 ---
 
-## Preserving Work & Cleanup
+## Preserving Task Work & Retirement
 
-Project Sandboxes are persistent during normal use. Deleting one destroys its
-internal filesystem, including every task worktree, so export and verify all
-useful commits, uncommitted/untracked files, and harness records before removal.
-Retiring a project Sandbox is a separate action from completing individual tasks:
+Task Sandboxes live for the duration of the task. Upon task acceptance, state is
+verified and preserved before explicit sandbox retirement:
 
-### Handling Git Remotes under WSL Mirrored Networking
+### Point-in-Time Preservation via `sandbox/task.py preserve`
 
-Under WSL with mirrored networking, fetching via git-daemon or localhost IPv4 from
-the host may fail due to interface routing. Preserve commits using a Git bundle
-created inside the container and copied to the host via `sbx cp`.
-The example below exports one task's HEAD: repeat for every branch or commit
-worth preserving and verify the imported commits on the host before deletion.
-Bundles do not include uncommitted or untracked files; preserve those separately.
-Run the Git commands inside the relevant task worktree.
+Run preservation from the host when all processes in the sandbox are stopped:
 
-1. **Inside the sandbox:** Create a bundle of your commits:
+```bash
+python3 sandbox/task.py preserve \
+  --record /path/to/task-record.json \
+  --dest /path/to/host/preserved-task-01 \
+  --quiesced
+```
+
+- **Complete Verified Snapshot:** Captures a full Git bundle (`--all HEAD`), staged binary patch, worktree archive (excluding `.git`), and guest harness state.
+- **Host-Side Verification:**
+  - Fetches the bundle into a temporary bare repository (`+refs/*:refs/*` and `HEAD`), verifying ref equality and running `git fsck --full --strict`.
+  - Losslessly reconstructs and verifies the staged index cache using `GIT_INDEX_FILE` and `git apply --cached`.
+  - Streams archive members into SHA256 checksums matching guest manifests without extracting untrusted files.
+- **Failure Safety:** If verification fails or concurrent modification is detected, failure diagnostics and transferred files are retained with `verified: false`.
+- **Receipt:** Writes an immutable `receipt.json` with `"verification_scope": "Verification covers this point in time; retirement always requires a fresh check and explicit authorization."`
+
+### Explicit Retirement
+
+Preservation and submission acceptance do NOT constitute deletion authorization.
+Removing a sandbox (`sbx rm <sandbox-name>`) requires separate explicit operator
+approval, a fresh state check confirming a quiesced container, and verified host
+export before deletion:
+
+```bash
+sbx rm <sandbox-name>
+```
+
+- Interrupted tasks remain recorded and can be safely resumed with `python3 sandbox/task.py start --record ...`.
+- Never delete a sandbox as routine cleanup without verified preservation and explicit operator instruction.
+- Existing legacy project environments are not automatically deleted.
+
+---
+
+## Legacy Project Sandbox SSH Lifecycle (Deprecated)
+
+> [!WARNING]
+> **Deprecated Workflow:** The persistent project-wide sandbox and guest OpenSSH daemon workflow
+> (`project-ssh.py`, `guest-bootstrap.py`) is deprecated in favor of task-scoped sandboxes
+> (`sandbox/task.py`) and native `sbx` transport. It is preserved below as a reference for
+> existing environments and migration only. Do not use this as the active default for new tasks.
+> Existing legacy sandboxes are not automatically deleted.
+
+Direct localhost SSH access to a persistent sandbox is managed via `sandbox/project-ssh.py`.
+This enables external tools, IDEs, and the Windows host to connect to the container's
+`agent` user.
+
+### Security Architecture
+
+- **Host Loopback Exposure Only:** Binds strictly to `[::1]:PORT:2222/tcp6` on the WSL host.
+  Wildcard (`0.0.0.0`) or external LAN listeners on the host are prohibited.
+- **Guest Listener:** OpenSSH server listens on guest port `2222` inside the microVM.
+- **Hardened Agent-Only Authentication:** Only public-key authentication for user `agent` is permitted
+  (`UsePAM yes`, `AuthenticationMethods publickey`, `PermitRootLogin no`, `PasswordAuthentication no`, `KbdInteractiveAuthentication no`, `AllowUsers agent`).
+- **Forwarding Restrictions:** SSH agent forwarding (`AllowAgentForwarding no`) and X11 forwarding are disabled.
+  Local-only TCP forwarding (`AllowTcpForwarding local`) is permitted for application tunneling including dynamic SOCKS forwarding; remote forwarding is denied.
+- **Preflight & Ownership Safety:** Preflight port checks prevent overwriting configurations if an unmanaged listener already occupies port 2222.
+- **Safe Runtime Environment Propagation:** Propagates only an approved allowlist of non-secret runtime variables
+  (`PATH`, upper/lowercase proxy variables, CA bundle paths, `NODE_USE_ENV_PROXY`, sandbox identifiers,
+  agent/credential mode sentinels, and verified GitHub proxy sentinel `GH_TOKEN`) via a single combined `SetEnv` directive.
+  Credential-bearing proxy URLs, unverified `GH_TOKEN` values, newlines, and full environment dumps are strictly rejected with errors.
+- **Host Key Generation at Runtime:** Host keys are generated on first runtime use inside the container
+  (`ssh-keygen -A`) and preserved across runs. No private keys are baked into image layers or copied from host.
+- **Transient Foreground Process & Dual Verification:** Held in foreground by a transient WSL systemd user unit
+  (`systemd-run --user --unit=sbx-ssh-<name> --collect --property=Restart=no sbx exec ...`).
+  Start boundedly verifies both systemd unit activation and guest listener readiness before declaring success.
+  Explicit stop terminates the owned listener without killing arbitrary processes or restarting stopped sandboxes.
+
+### CLI Commands
+
+All commands require an existing sandbox and must be run from the host:
+
+```bash
+# 1. Start SSH listener for a sandbox (default host port: 40222)
+python3 sandbox/project-ssh.py start dotfiles-agy-dev --public-key /mnt/c/Users/admidori/.ssh/id_ed25519_sbx_dotfiles.pub --port 40222
+
+# 2. Query status (read-only; reports sbx status, unit status, and port mapping without starting stopped guests)
+python3 sandbox/project-ssh.py status dotfiles-agy-dev --json
+
+# 3. Stop SSH listener (terminates guest sshd, stops host systemd unit, and unpublishes port)
+python3 sandbox/project-ssh.py stop dotfiles-agy-dev
+```
+
+### Windows Client Configuration (`~/.ssh/config`)
+
+Under WSL with mirrored networking, direct connections from Windows to localhost IPv6 may fail
+to route across the virtual network switch. Connect using the verified WSL netcat proxy command:
+
+```ssh-config
+Host sbx-dotfiles
+    HostName 127.0.0.1
+    Port 40222
+    User agent
+    IdentityFile ~/.ssh/id_ed25519_sbx_dotfiles
+    IdentitiesOnly yes
+    IdentityAgent none
+    ForwardAgent no
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    StrictHostKeyChecking yes
+    UserKnownHostsFile ~/.ssh/known_hosts_sbx_dotfiles
+    ProxyCommand C:/Windows/System32/wsl.exe -d Debian -- /usr/bin/nc -6 ::1 40222
+```
+
+### Host Key Verification & `known_hosts`
+
+Upon running `project-ssh.py start`, the script prints the SHA256 fingerprints of the container's
+generated host keys. Preserve the existing verified Windows alias and known_hosts entry.
+For a new Sandbox, compare the public host key obtained through `sbx exec` with
+these fingerprints and register it in the dedicated known_hosts file before
+connecting with strict checking. The commands do not edit Windows SSH configuration.
+
+```text
+Host Key Fingerprints:
+  - 256 SHA256:d8Q... root@sandbox (ED25519)
+  - 256 SHA256:7uK... root@sandbox (ECDSA)
+```
+
+Never copy private host or client keys into the guest. Staging directories are ephemeral and
+cleaned up automatically after public key installation.
+
+### Explicit Stop Before Keyring Lock
+
+Before locking the host session keyring or suspending the host, explicitly stop the SSH service
+and the container:
+
+```bash
+python3 sandbox/project-ssh.py stop dotfiles-agy-dev
+sbx stop dotfiles-agy-dev
+```
+
+- `project-ssh.py stop` leaves container data, branches, and worktrees intact.
+- Stopping an already-stopped sandbox is idempotent and **never invokes `sbx exec`**, ensuring
+  a stopped container is not unintentionally re-awakened.
+
+### GitHub Proxy Access via SSH (Dynamic Host Secret)
+
+To use the GitHub CLI (`gh`) over legacy project SSH sessions without passing real personal access tokens (PATs) into the guest container:
+
+1. **Project-Scoped Dynamic Host Secret:**
+   Register a dynamic command secret on the host scoped to the project sandbox:
    ```bash
-   # Bundle commits on the current branch
-   git bundle create /tmp/dotfiles-task.bundle HEAD
+   sbx secret set --sandbox my-project github \
+     --command '"/mnt/c/Users/<username>/AppData/Local/Microsoft/WinGet/Links/op.exe" read "op://<vault>/<item>/<field>" --no-newline' \
+     --refresh 55m
    ```
-2. **On the host:** Copy the bundle out and import it into a review branch:
-   ```bash
-   sbx cp dotfiles-agy-dev:/tmp/dotfiles-task.bundle /tmp/dotfiles-task.bundle
-   # In the dedicated host review worktree:
-   git fetch /tmp/dotfiles-task.bundle HEAD:codex/task-review
-   ```
-   This safely imports the changes on the host without forcing a working tree reset
-   or pushing directly to default branches.
+   - **Absolute Windows `op.exe` path:** Replace the sandbox name, username, and reference placeholders with your local values. The WSL shell alias `op` is unavailable to the daemon, so use the actual absolute Windows executable path. Keep both path and reference quoted; never put the PAT itself in the command. See [Docker's dynamic secret documentation](https://docs.docker.com/ai/sandboxes/configuration/credentials/#use-a-dynamic-secret-source).
+   - **Host Cache Duration:** The host stores the command instead of the PAT value, resolves it on the host, and caches the result for 55 minutes by default (`--refresh 55m`). Source changes apply to existing local sandboxes without restarting them.
+   - **1Password Approval Dependency:** Resolution requires an authenticated Windows 1Password CLI and may prompt for desktop app approval. Cache expiry can therefore require user interaction; this is not a guarantee of unattended access.
+   - **Host Isolation:** Keep the executable, its dependencies and configuration, and host temporary directories outside writable guest mounts. Check the project's mounts before registering the command. This flow does not pass the real PAT into the guest or write it to guest files.
 
-3. **Export harness state:**
-   Export the harness transcripts and execution state outside the repository:
-   ```bash
-   sbx cp dotfiles-agy-dev:/home/agent/.local/state/agent-harness /host/destination/
-   ```
-
-4. **Delete the sandbox (retirement only):**
-   ```bash
-   sbx rm dotfiles-agy-dev
-   ```
+2. **In-Guest Proxy Sentinel & `gh` CLI:**
+   - **Proxy Interception:** Docker Sandbox's host proxy intercepts outbound requests to GitHub APIs and attaches the host-managed credential transparently.
+   - **Public Proxy Sentinel:** In container sessions, the environment variable `GH_TOKEN` is set to Docker's fixed public sentinel value:
+     `gho_sbxproxymanaged000000000000000000000`
+   - **Dummy Auth Token:** Inside the container, running `gh auth token` returns this dummy sentinel string, not the real PAT.
+   - **API Permissions:** The proxy enables operations allowed by the underlying PAT. Keeping the PAT outside the guest does not make those operations read-only; scope the PAT to the intended repositories and permissions.
+   - **No In-Guest Login or Token Import:** Do not run `gh auth login` or import a real token inside the guest. Authentication uses the host proxy and the sentinel.
+   - **Safe SSH Propagation:** When SSH sessions are started via `project-ssh.py`, `guest-bootstrap.py` inspects `GH_TOKEN`. If present, it must match the exact literal sentinel `gho_sbxproxymanaged000000000000000000000` to be propagated into the OpenSSH daemon's `SetEnv` directive. Any other present value (empty string, real token, prefix lookalike) is rejected immediately with a static secret-free `ValueError` before config generation. `GITHUB_TOKEN` and unrelated credential environment variables remain strictly excluded.
+   - **Existing SSH Sessions:** After updating the bootstrap, stop and start managed SSH with `project-ssh.py`, then reconnect clients. Existing processes may retain their previous environment.

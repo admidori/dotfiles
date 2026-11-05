@@ -56,6 +56,25 @@ python3 sandbox/task.py create \
   from the guest repository path.
 - In case of failure during setup, retains the record with `status: "failed"`
   and `last_error` for diagnosis; never deletes the sandbox VM.
+- **Initial provisioning failure and resumption limit:** If `create` fails before
+  `guest_repo_path` is recorded (such as an initial 60-second `sbx exec` timeout
+  during provisioning), `task.py start` cannot automatically resume because the
+  guest repository path is missing from the record. The failed record and VM are
+  preserved for diagnosis; the operator/designer must inspect the VM and complete
+  initialization explicitly before running tasks (no automatic retry is attempted).
+- **Dependency ref retention:** When `--bundle` is provided, `task.py create`
+  fetches the selected base commit into the clone to seed the branch; it does
+  not create persistent branch or tag refs for every dependency checkpoint.
+  To ensure reviewed dependency objects and prior checkpoints remain reachable
+  and survive subsequent `--all` preservation across multiple handoffs, explicitly
+  import ALL bundle refs into a fresh namespace in the guest repository:
+  ```bash
+  git fetch /path/to/dependency.bundle 'refs/*:refs/dependencies/<dep-task-id>/*'
+  ```
+  (No force flag is needed when importing into a fresh namespace). These Git commit
+  objects must be present in the repository object database for submission manifest
+  validation (`submit.py prepare` and `submit.py accept` verify actual Git objects).
+  No automatic cross-sandbox synchronization is implied.
 
 ---
 
@@ -91,9 +110,11 @@ python3 sandbox/task.py start --record /path/to/task-record.json
 - Requires a known, non-empty `sandbox_id` in the record and strictly verifies
   sandbox identity against observed `sbx ls` metadata. Refuses resumption on
   mismatch.
-- Resumes detached via `sbx run -d --name <name>`.
-- Validates the private repository clone top-level path, base commit ancestry
-  (`merge-base --is-ancestor`), and expected branch.
+- If the observed status is not `running`, boots the container detached via
+  `sbx run -d --name <name>`.
+- Once running, validates the private repository clone top-level path
+  (`guest_repo_path`), base commit ancestry (`merge-base --is-ancestor`), and
+  expected branch via `sbx exec`.
 - If the guest repository is on an unexpected branch, refuses with an error
   rather than performing a reset or checkout.
 - Preserves dirty work: validates `git status` without running checkout or reset.
@@ -213,3 +234,10 @@ python3 sandbox/task.py preserve \
 
 Task record files are created with `0600` permissions and companion `.lock` files
 for synchronization.
+
+---
+
+## Related References
+
+- [`sandbox/submit.md`](submit.md): Preparation, designer acceptance, and multi-task PR assembly CLI (`sandbox/submit.py`).
+- [`sandbox/README.md`](README.md): Architecture, kit specifications, and security model.

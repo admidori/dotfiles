@@ -22,6 +22,22 @@ Neutral Docker Sandbox workload for Antigravity (`agy`) execution based on `dock
 
 ### Creating a Sandbox
 
+For task-scoped sandboxes, `sandbox/task.py create` automates provisioning, clone seeding, base commit resolution, branch initialization, and lifecycle tracking (see [`sandbox/task.md`](../../task.md)):
+
+```bash
+python3 sandbox/task.py create \
+  --record /path/to/task.json \
+  --task-id task-01 \
+  --name dotfiles-agy-task-01 \
+  --repo "$HOME/dotfiles" \
+  --base HEAD \
+  --branch task/feature-01 \
+  --workload ./sandbox/kits/antigravity-workload \
+  --mixin ./sandbox/kits/antigravity-mixin
+```
+
+Alternatively, create a standalone sandbox manually using native `sbx`:
+
 ```bash
 sbx create --name dotfiles-agy --cpus 2 --memory 4g --skills off --clone \
   --kit ./sandbox/kits/antigravity-mixin ./sandbox/kits/antigravity-workload "$HOME/dotfiles"

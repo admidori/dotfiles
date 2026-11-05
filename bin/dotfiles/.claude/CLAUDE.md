@@ -41,14 +41,13 @@ for how clearly you verbalize it.
 
 ## Task isolation (multi-pane identity)
 
-The default sandbox workflow uses one persistent Docker Sandbox per project,
-with a dedicated feature branch and worktree per task inside its private clone.
-The base checkout in the clone remains read-only except for the management
-and approved-sync exceptions in the shared baseline. Worktrees prevent accidental edit collisions across tasks,
-but do not provide security isolation; do not require a nested Sandbox.
+The approved sandbox workflow uses one Docker Sandbox per task:
+**one task = one Docker Sandbox = one private clone/checkout = one accepted submission commit;
+a PR may contain multiple task commits.**
 
-Both on the host and inside a persistent project sandbox, repository operations
-(edits, reviews, builds, tests) happen in dedicated task worktrees.
+Inside that sandbox clone, implementation happens directly on the assigned task branch without
+nested guest worktrees. On the host, repository operations (edits, reviews, builds, tests)
+happen in dedicated task worktrees.
 The status line shows a yellow `*|*` marker next to the branch in a worktree.
 
 - **At the start of a new, self-contained implementation or change task, enter a task
@@ -75,13 +74,16 @@ The status line shows a yellow `*|*` marker next to the branch in a worktree.
   expected, and say so when you do. Removing your own task worktree returns this session
   to the shared base checkout, so if the operator is reviewing there, leave that worktree
   open and remove only temporary implementation worktrees from Host mode delegations.
-  In Docker Sandbox mode, closing a completed task worktree leaves the project Sandbox
-  running and reusable for subsequent tasks.
+  In Docker Sandbox mode, task sandboxes are managed via `sandbox/task.py`: state is
+  preserved via `task.py preserve` and submitted via `sandbox/submit.py`. Preservation and
+  submission acceptance do not authorize deletion; explicit retirement requires separate
+  operator approval, a fresh state check confirming a quiesced container, and verified
+  host export before `sbx rm`. There is no routine retention as a persistent project environment.
 - When delegating to Antigravity:
   - **Host mode (`HARNESS_EXECUTION_MODE=host`):** Antigravity gets its own implementation
     worktree branched from this task branch and makes edits only; you review and commit
     each step there, then fast-forward it into your task branch (`git merge --ff-only`)
     and remove it. It is a scratch sandbox and must not outlive the delegation.
   - **Docker Sandbox mode (`HARNESS_EXECUTION_MODE=docker-sandbox`):** Designer and
-    Antigravity sequentially use the SAME task worktree; no automatic second implementation
+    Antigravity sequentially use the SAME task clone checkout; no nested guest
     worktree is created. See the `delegate` skill.

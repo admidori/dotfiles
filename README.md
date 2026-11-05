@@ -18,7 +18,7 @@ make install
 - curl
 
 ## AI Sandbox Environments
-Reusable Docker Sandbox (v3) kits for isolated AI development and sequential delegation live under [`sandbox/kits/`](sandbox/kits/). See [`sandbox/README.md`](sandbox/README.md) for kit definitions, security architecture, and usage instructions.
+Task-scoped Docker Sandbox (v3) kits and lifecycle management for isolated AI development and sequential delegation live under [`sandbox/`](sandbox/). See [`sandbox/README.md`](sandbox/README.md) for architecture and workflows, [`sandbox/task.md`](sandbox/task.md) for sandbox lifecycle CLI, and [`sandbox/submit.md`](sandbox/submit.md) for submission and multi-task PR assembly CLI.
 
 ## Running the tests
 The installer can be exercised on a clean Debian system without touching your
