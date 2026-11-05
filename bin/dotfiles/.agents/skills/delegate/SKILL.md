@@ -73,7 +73,7 @@ The harness supports two execution modes via `HARNESS_EXECUTION_MODE=host|docker
 
 ## Setup
 
-1. **Confirm the design is final.** If it hasn't been agreed with the operator in this conversation, produce it first. Immediately before delegating, restate a short summary (approach, files, risks) and get an explicit go-ahead — an earlier open-ended discussion is not that confirmation. If a previous delegation on this branch is being substantially reworked, treat it as a sign the design wasn't final and re-confirm.
+1. **Confirm the design is final.** If it hasn't been agreed with the operator in this conversation, produce it first. Immediately before delegating, restate a short summary (approach, files, risks) and get an explicit go-ahead — an earlier open-ended discussion is not that confirmation. In Codex, request this approval through the available user-input UI and wait for the submitted answer; if the UI is unavailable, ask in chat. A preselected UI option or silence is not approval. If a previous delegation on this branch is being substantially reworked, treat it as a sign the design wasn't final and re-confirm.
 
 2. **Write `design.md` and seed `context.md`** in the task directory:
    - Write `design.md` from `templates/design.md`. Record the reason behind each non-obvious decision and the alternatives rejected: the implementer gets no chat history, and the reasons are what let it handle cases the design didn't foresee. Fill in the steps table:
@@ -83,7 +83,7 @@ The harness supports two execution modes via `HARNESS_EXECUTION_MODE=host|docker
    - Seed `context.md` from `templates/context.md` with exploration knowledge: compact navigation (key files, entry points), established facts with paths/symbols, reasons, and evidence scope (static, mock, integration, live), superseded or corrected claims (compactly, avoiding raw history dumps), rejected paths, verification constraints, and uncertainties (clearly distinguishing hypotheses from verified facts). Set freshness (base commit SHA and initial checkpoint). Designer verifies findings before promoting them. Keep secrets, raw credentials, and verbose log dumps out.
    - Legacy tasks lacking `context.md` are supported: the runner preserves legacy runs with a visible notice, but the designer should seed `context.md` whenever exploration context exists.
 
-   Show the operator the step list and get a go-ahead on the decomposition itself before the first run.
+   Show the operator the step list and get a go-ahead on the decomposition itself before the first run. In Codex, use the available user-input UI and wait for the submitted answer; fall back to chat when the UI is unavailable. If the design summary and step list are ready together, one UI confirmation may cover both when it explicitly names both decisions.
 
 3. **Create an implementation worktree (Host mode) or use the task clone checkout (Docker Sandbox mode):**
    - **Host mode (`HARNESS_EXECUTION_MODE=host`):** Create an implementation worktree branched from your task branch, reused for every step:
