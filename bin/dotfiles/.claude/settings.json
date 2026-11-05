@@ -30,6 +30,7 @@
       "Edit(~/.gitconfig.local)",
       "Edit(~/.config/git/**)",
       "Edit(~/dotfiles/bin/dotfiles/.gitconfig)",
+      "Edit(~/.local/bin/betterleaks)",
       "Edit(~/.local/bin/gitleaks)",
       "Edit(~/.local/bin/semgrep)",
       "Edit(~/.local/bin/osv-scanner)",

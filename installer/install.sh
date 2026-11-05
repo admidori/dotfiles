@@ -73,7 +73,7 @@ install_uv "$HOME/.local/bin"
 # shellcheck source=installer/pinned-tools.sh
 . "$SCRIPT_DIR/pinned-tools.sh"
 
-install_gitleaks "$HOME/.local/bin/gitleaks"
+install_betterleaks "$HOME/.local/bin/betterleaks"
 install_osv_scanner "$HOME/.local/bin/osv-scanner"
 
 install_uv_tool semgrep

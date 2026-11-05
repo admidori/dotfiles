@@ -136,10 +136,14 @@ run_suite() {
   test_case block "cat /home/u/.gitconfig" "protected hook machinery path"
   test_case block "cp /tmp/cfg ~/.gitconfig" "protected hook machinery path"
   test_case block "{ cat ~/.gitconfig; }" "protected hook machinery path"
-  # 4. Scanners (.local/bin/{gitleaks,semgrep,osv-scanner,pre-commit})
+  # 4. Scanners (.local/bin/{betterleaks,gitleaks,semgrep,osv-scanner,pre-commit})
+  test_case block "cat ~/.local/bin/betterleaks" "protected hook machinery path"
   test_case block "cat ~/.local/bin/gitleaks" "protected hook machinery path"
+  test_case block "rm \$HOME/.local/bin/betterleaks" "protected hook machinery path"
   test_case block "rm \$HOME/.local/bin/semgrep" "protected hook machinery path"
+  test_case block "touch \"\${HOME}\"/.local/bin/betterleaks" "protected hook machinery path"
   test_case block "touch \"\${HOME}\"/.local/bin/osv-scanner" "protected hook machinery path"
+  test_case block "chmod +x /home/u/.local/bin/betterleaks" "protected hook machinery path"
   test_case block "chmod +x /home/u/.local/bin/pre-commit" "protected hook machinery path"
   # 5. Pipx venvs (.local/share/pipx/venvs/{semgrep,pre-commit})
   test_case block "ls ~/.local/share/pipx/venvs/semgrep" "protected hook machinery path"
@@ -316,6 +320,7 @@ run_suite() {
   test_case allow "cat /home/u/dotfiles/.claude/worktrees/x/bin/dotfiles/.claude/hooks/guard-rules.sh"
   test_case allow "cat ~/dotfiles-x-impl/bin/dotfiles/.git-hooks/pre-commit"
   test_case allow "cat ~/.local/bin/uv"
+  test_case allow "cat ~/.local/bin/betterleaks-foo"
   test_case allow "cat ~/.local/bin/gitleaks-foo"
   test_case allow "cat ~/.claude/skills/x/SKILL.md"
   test_case allow "cat ~/.claude/projects/x"

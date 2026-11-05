@@ -2,7 +2,7 @@
 #
 # Offline, mock-based test suite for dotfiles global git hooks.
 # Verifies pass-through dispatcher, core security pre-commit checks (conflict
-# markers, file size, gitleaks fail-closed detection), and hook chaining.
+# markers, file size, betterleaks fail-closed detection), and hook chaining.
 #
 set -euo pipefail
 
@@ -48,6 +48,7 @@ MOCK_BIN="$TEST_DIR/mock_bin"
 mkdir -p "$SYSTEM_BIN" "$MOCK_BIN"
 
 declare -A is_excluded_map=(
+  [betterleaks]=1
   [gitleaks]=1
   [semgrep]=1
   [shellcheck]=1
@@ -75,29 +76,29 @@ export PATH="$MOCK_BIN:$SYSTEM_BIN"
 ln -s "$REAL_JQ" "$MOCK_BIN/jq"
 
 # Set up mock tool stubs in MOCK_BIN
-cat > "$MOCK_BIN/gitleaks" << 'EOF'
+cat > "$MOCK_BIN/betterleaks" << 'EOF'
 #!/usr/bin/env bash
-echo "$*" >> "$TEST_DIR/gitleaks.log"
+echo "$*" >> "$TEST_DIR/betterleaks.log"
 
 if [ "${1:-}" = "dir" ] && [ "${2:-}" = "--help" ]; then
-  if [ -f "$TEST_DIR/gitleaks_flavor_legacy" ]; then
+  if [ -f "$TEST_DIR/betterleaks_flavor_legacy" ]; then
     exit 1
   fi
   exit 0
 fi
 
 if [ "${1:-}" = "dir" ]; then
-  find . -name .gitleaksignore -printf '%P\n' > "$TEST_DIR/gitleaks_ignores.log"
-  find . -type f ! -name .semgrepignore -printf '%P\n' | sort > "$TEST_DIR/gitleaks_files.log"
-  echo "${GITLEAKS_CONFIG:-unset} ${GITLEAKS_CONFIG_TOML:-unset}" > "$TEST_DIR/gitleaks_env.log"
+  find . \( -name .betterleaksignore -o -name .gitleaksignore \) -printf '%P\n' > "$TEST_DIR/betterleaks_ignores.log"
+  find . -type f ! -name .semgrepignore -printf '%P\n' | sort > "$TEST_DIR/betterleaks_files.log"
+  echo "${BETTERLEAKS_CONFIG:-unset} ${BETTERLEAKS_CONFIG_TOML:-unset} ${GITLEAKS_CONFIG:-unset} ${GITLEAKS_CONFIG_TOML:-unset}" > "$TEST_DIR/betterleaks_env.log"
 fi
 
-if [ -f "$TEST_DIR/gitleaks_exit" ]; then
-  exit "$(cat "$TEST_DIR/gitleaks_exit")"
+if [ -f "$TEST_DIR/betterleaks_exit" ]; then
+  exit "$(cat "$TEST_DIR/betterleaks_exit")"
 fi
 exit 0
 EOF
-chmod +x "$MOCK_BIN/gitleaks"
+chmod +x "$MOCK_BIN/betterleaks"
 
 cat > "$MOCK_BIN/semgrep" << 'EOF'
 #!/usr/bin/env bash
@@ -297,90 +298,94 @@ check "local hook executed instead of git-lfs fallback" \
 check "git-lfs stub was not called when local hook exists" \
   not test -f "$TEST_DIR/git_lfs.log"
 
-echo "==> Testing pre-commit clean commits and gitleaks execution"
-# 2.1 Clean commit passes and calls gitleaks with staged-scan args
+echo "==> Testing pre-commit clean commits and betterleaks execution"
+# 2.1 Clean commit passes and calls betterleaks with staged-scan args
 r="$(create_repo)"
-rm -f "$TEST_DIR/gitleaks.log"
+rm -f "$TEST_DIR/betterleaks.log"
 (cd "$r" && echo "safe code" > file.txt && git add file.txt && git commit -m "feat: clean commit" >/dev/null 2>&1)
 check "clean commit succeeds" test -f "$r/file.txt"
-check "gitleaks called on clean commit" test -f "$TEST_DIR/gitleaks.log"
-check "gitleaks scans the export dir in dir mode" grep -q -- "^dir \. " "$TEST_DIR/gitleaks.log"
-check "gitleaks passed --redact flag" grep -q -- "--redact" "$TEST_DIR/gitleaks.log"
-check "gitleaks passed --config override" grep -q -- "--config [^ ]*/config.toml" "$TEST_DIR/gitleaks.log"
-check "gitleaks passed --ignore-gitleaks-allow" grep -q -- "--ignore-gitleaks-allow" "$TEST_DIR/gitleaks.log"
-check "gitleaks passed --gitleaks-ignore-path override" grep -q -- "--gitleaks-ignore-path " "$TEST_DIR/gitleaks.log"
-check "gitleaks sees the staged file" grep -qx "file.txt" "$TEST_DIR/gitleaks_files.log"
+check "betterleaks called on clean commit" test -f "$TEST_DIR/betterleaks.log"
+check "betterleaks scans the export dir in dir mode" grep -q -- "^dir \. " "$TEST_DIR/betterleaks.log"
+check "betterleaks passed --redact flag" grep -q -- "--redact" "$TEST_DIR/betterleaks.log"
+check "betterleaks passed --config override" grep -q -- "--config [^ ]*/config.toml" "$TEST_DIR/betterleaks.log"
+check "betterleaks passed --ignore-gitleaks-allow" grep -q -- "--ignore-gitleaks-allow" "$TEST_DIR/betterleaks.log"
+check "betterleaks passed --gitleaks-ignore-path override" grep -q -- "--gitleaks-ignore-path " "$TEST_DIR/betterleaks.log"
+check "betterleaks preserves disabled archive expansion" grep -q -- "--max-archive-depth 0" "$TEST_DIR/betterleaks.log"
+check "betterleaks passed --validation=false" grep -q -- "--validation=false" "$TEST_DIR/betterleaks.log"
+check "betterleaks sees the staged file" grep -qx "file.txt" "$TEST_DIR/betterleaks_files.log"
 
-echo "==> Testing gitleaks failure modes and fail-closed behavior"
-# 3.1 Blocks on gitleaks exit 1 (secrets found)
+echo "==> Testing betterleaks failure modes and fail-closed behavior"
+# 3.1 Blocks on betterleaks exit 1 (secrets found)
 r="$(create_repo)"
-echo "1" > "$TEST_DIR/gitleaks_exit"
+echo "1" > "$TEST_DIR/betterleaks_exit"
 status=0
 (cd "$r" && echo "content" > file.txt && git add file.txt && git commit -m "leak commit" 2>"$TEST_DIR/err_leak.log") || status=$?
-rm -f "$TEST_DIR/gitleaks_exit"
-check "commit blocked on gitleaks exit 1" [ "$status" -ne 0 ]
+rm -f "$TEST_DIR/betterleaks_exit"
+check "commit blocked on betterleaks exit 1" [ "$status" -ne 0 ]
 check "error message reports secrets found" \
-  grep -q "gitleaks found secrets in staged changes" "$TEST_DIR/err_leak.log"
-check "summary mentions gitleaks failed" \
-  grep -q "commit blocked: gitleaks" "$TEST_DIR/err_leak.log"
+  grep -q "betterleaks found secrets in staged changes" "$TEST_DIR/err_leak.log"
+check "summary mentions betterleaks failed" \
+  grep -q "commit blocked: betterleaks" "$TEST_DIR/err_leak.log"
 
-# 3.2 Blocks on gitleaks exit 2 (tool failure)
+# 3.2 Blocks on betterleaks exit 2 (tool failure)
 r="$(create_repo)"
-echo "2" > "$TEST_DIR/gitleaks_exit"
+echo "2" > "$TEST_DIR/betterleaks_exit"
 status=0
 (cd "$r" && echo "content" > file.txt && git add file.txt && git commit -m "error commit" 2>"$TEST_DIR/err_tool.log") || status=$?
-rm -f "$TEST_DIR/gitleaks_exit"
-check "commit blocked on gitleaks error exit 2" [ "$status" -ne 0 ]
-check "error message reports gitleaks failure code" \
-  grep -q "gitleaks failed with exit code 2" "$TEST_DIR/err_tool.log"
-check "summary mentions gitleaks failed on tool error" \
-  grep -q "commit blocked: gitleaks" "$TEST_DIR/err_tool.log"
+rm -f "$TEST_DIR/betterleaks_exit"
+check "commit blocked on betterleaks error exit 2" [ "$status" -ne 0 ]
+check "error message reports betterleaks failure code" \
+  grep -q "betterleaks failed with exit code 2" "$TEST_DIR/err_tool.log"
+check "summary mentions betterleaks failed on tool error" \
+  grep -q "commit blocked: betterleaks" "$TEST_DIR/err_tool.log"
 
-# 3.3 Blocks when gitleaks is absent from PATH
+# 3.3 Blocks when betterleaks is absent from PATH
 r="$(create_repo)"
-mv "$MOCK_BIN/gitleaks" "$MOCK_BIN/gitleaks.bak"
+mv "$MOCK_BIN/betterleaks" "$MOCK_BIN/betterleaks.bak"
 status=0
 (cd "$r" && echo "content" > file.txt && git add file.txt && git commit -m "absent commit" 2>"$TEST_DIR/err_absent.log") || status=$?
-mv "$MOCK_BIN/gitleaks.bak" "$MOCK_BIN/gitleaks"
-check "commit blocked when gitleaks absent from PATH" [ "$status" -ne 0 ]
+mv "$MOCK_BIN/betterleaks.bak" "$MOCK_BIN/betterleaks"
+check "commit blocked when betterleaks absent from PATH" [ "$status" -ne 0 ]
 check "error message directs user to make install" \
   grep -q "run 'make install' in the dotfiles repo" "$TEST_DIR/err_absent.log"
-check "summary mentions gitleaks failed when absent" \
-  grep -q "commit blocked: gitleaks" "$TEST_DIR/err_absent.log"
+check "summary mentions betterleaks failed when absent" \
+  grep -q "commit blocked: betterleaks" "$TEST_DIR/err_absent.log"
 
-echo "==> Testing gitleaks version requirement and ignore overrides"
-# 4.1 gitleaks without the 'dir' command (older than 8.19) fails closed
+echo "==> Testing betterleaks version requirement and ignore overrides"
+# 4.1 betterleaks without the 'dir' command fails closed
 r="$(create_repo)"
-touch "$TEST_DIR/gitleaks_flavor_legacy"
-rm -f "$TEST_DIR/gitleaks.log"
+touch "$TEST_DIR/betterleaks_flavor_legacy"
+rm -f "$TEST_DIR/betterleaks.log"
 status=0
 (cd "$r" && echo "content legacy" > file.txt && git add file.txt && git commit -m "test legacy" >/dev/null 2>"$TEST_DIR/err_legacy.log") || status=$?
-rm -f "$TEST_DIR/gitleaks_flavor_legacy"
-check "commit blocked when gitleaks lacks 'dir'" [ "$status" -ne 0 ]
-check "old gitleaks message directs user to make install" \
-  grep -q "gitleaks is too old" "$TEST_DIR/err_legacy.log"
-check "old gitleaks is never asked to scan" \
-  not grep -q -- "^dir \. " "$TEST_DIR/gitleaks.log"
+rm -f "$TEST_DIR/betterleaks_flavor_legacy"
+check "commit blocked when betterleaks lacks 'dir'" [ "$status" -ne 0 ]
+check "old betterleaks message directs user to make install" \
+  grep -q "betterleaks is too old" "$TEST_DIR/err_legacy.log"
+check "old betterleaks is never asked to scan" \
+  not grep -q -- "^dir \. " "$TEST_DIR/betterleaks.log"
 
-# 4.2 A staged .gitleaksignore never reaches the scan, at the root or nested
+# 4.2 Staged .betterleaksignore and .gitleaksignore never reach the scan, at the root or nested
 r="$(create_repo)"
 mkdir -p "$r/sub"
+echo "file.txt:generic-api-key:1" > "$r/.betterleaksignore"
 echo "file.txt:generic-api-key:1" > "$r/.gitleaksignore"
+echo "file.txt:generic-api-key:1" > "$r/sub/.betterleaksignore"
 echo "file.txt:generic-api-key:1" > "$r/sub/.gitleaksignore"
 echo "content" > "$r/file.txt"
-(cd "$r" && git add .gitleaksignore sub file.txt && git commit -m "gitleaksignore" >/dev/null 2>&1) || true
-check "no .gitleaksignore reaches gitleaks" [ ! -s "$TEST_DIR/gitleaks_ignores.log" ]
+(cd "$r" && git add .betterleaksignore .gitleaksignore sub file.txt && git commit -m "ignore files" >/dev/null 2>&1) || true
+check "neither .betterleaksignore nor .gitleaksignore reaches betterleaks" [ ! -s "$TEST_DIR/betterleaks_ignores.log" ]
 
-# 4.3 GITLEAKS_CONFIG from the environment is dropped
+# 4.3 BETTERLEAKS_CONFIG and GITLEAKS_CONFIG from the environment are dropped
 r="$(create_repo)"
 echo "content" > "$r/file.txt"
-(cd "$r" && git add file.txt && GITLEAKS_CONFIG=/x GITLEAKS_CONFIG_TOML=y git commit -m "env config" >/dev/null 2>&1) || true
-check "GITLEAKS_CONFIG and GITLEAKS_CONFIG_TOML are unset for gitleaks" \
-  [ "$(cat "$TEST_DIR/gitleaks_env.log")" = "unset unset" ]
+(cd "$r" && git add file.txt && BETTERLEAKS_CONFIG=/x BETTERLEAKS_CONFIG_TOML=y GITLEAKS_CONFIG=/z GITLEAKS_CONFIG_TOML=w git commit -m "env config" >/dev/null 2>&1) || true
+check "BETTERLEAKS_CONFIG, BETTERLEAKS_CONFIG_TOML, GITLEAKS_CONFIG, GITLEAKS_CONFIG_TOML are unset for betterleaks" \
+  [ "$(cat "$TEST_DIR/betterleaks_env.log")" = "unset unset unset unset" ]
 
 # 4.4 Scanner temp dirs are cleaned up
-check "gitleaks work dir removed" \
-  not compgen -G "${TMPDIR:-/tmp}/git-hooks-gitleaks.*"
+check "betterleaks work dir removed" \
+  not compgen -G "${TMPDIR:-/tmp}/git-hooks-betterleaks.*"
 
 echo "==> Testing conflict markers check"
 m_left="<"
@@ -478,13 +483,13 @@ echo "should-not-run" > "$TEST_DIR/should_not_run.log"
 exit 0
 EOF
 chmod +x "$r/.git/hooks/pre-commit"
-echo "1" > "$TEST_DIR/gitleaks_exit"
+echo "1" > "$TEST_DIR/betterleaks_exit"
 rm -f "$TEST_DIR/should_not_run.log"
 echo "clean" > "$r/clean.txt"
 (cd "$r" && git add clean.txt)
 status=0
 (cd "$r" && git commit -m "failing security check" 2>/dev/null) || status=$?
-rm -f "$TEST_DIR/gitleaks_exit"
+rm -f "$TEST_DIR/betterleaks_exit"
 check "security check failure blocks commit before chaining" [ "$status" -ne 0 ]
 check "local hook does not run when security check fails" \
   not test -f "$TEST_DIR/should_not_run.log"

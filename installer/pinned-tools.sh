@@ -6,6 +6,10 @@
 #
 set -euo pipefail
 
+BETTERLEAKS_VERSION="1.10.0"
+BETTERLEAKS_SHA256_X64="9d9ad503cd5d80d18a939352266c3fcca52f10da9b83cd5cfe646989b13940fe"
+BETTERLEAKS_SHA256_ARM64="3d7585cbe4f947aef6e31662f65beb5b43b104381a691b6b81b157ebfbb0c02d"
+
 GITLEAKS_VERSION="8.30.1"
 GITLEAKS_SHA256_X64="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
 GITLEAKS_SHA256_ARM64="e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
@@ -23,13 +27,13 @@ get_pinned_arch() {
   case "$m" in
     x86_64)
       case "$tool" in
-        gitleaks) echo "x64"; return 0 ;;
+        betterleaks|gitleaks) echo "x64"; return 0 ;;
         osv-scanner|osv) echo "amd64"; return 0 ;;
       esac
       ;;
     aarch64|arm64)
       case "$tool" in
-        gitleaks|osv-scanner|osv) echo "arm64"; return 0 ;;
+        betterleaks|gitleaks|osv-scanner|osv) echo "arm64"; return 0 ;;
       esac
       ;;
   esac
@@ -103,6 +107,34 @@ install_verified_binary() {
 
   rm -rf "$tmp_dir"
   return 0
+}
+
+# install_betterleaks [dest] — installs pinned betterleaks binary if missing or different version.
+install_betterleaks() {
+  local dest="${1:-$HOME/.local/bin/betterleaks}"
+  local arch
+  if ! arch="$(get_pinned_arch betterleaks)"; then
+    return 0
+  fi
+
+  if [ -x "$dest" ]; then
+    local cur_ver
+    cur_ver="$("$dest" version 2>/dev/null || true)"
+    if [ "$cur_ver" = "$BETTERLEAKS_VERSION" ]; then
+      echo "betterleaks $BETTERLEAKS_VERSION already installed at $dest (skipping)."
+      return 0
+    fi
+  fi
+
+  local sha256=""
+  case "$arch" in
+    x64) sha256="$BETTERLEAKS_SHA256_X64" ;;
+    arm64) sha256="$BETTERLEAKS_SHA256_ARM64" ;;
+  esac
+
+  local url="https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/betterleaks_${BETTERLEAKS_VERSION}_linux_${arch}.tar.gz"
+  echo "Installing betterleaks v${BETTERLEAKS_VERSION} to $dest ..."
+  install_verified_binary "$url" "$sha256" "$dest" "betterleaks"
 }
 
 # install_gitleaks [dest] — installs pinned gitleaks binary if missing or different version.
