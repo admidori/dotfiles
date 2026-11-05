@@ -137,13 +137,16 @@ check "zsh-autosuggestions installed"  test -d "$HOME/.oh-my-zsh/custom/plugins/
 
 echo "==> Verifying AI-native CLI tools"
 export PATH="$HOME/.local/bin:$PATH"
-for cmd in jq rg fd fzf gh shellcheck direnv node npm npx python3 pipx uv; do
+for cmd in jq rg fd fzf gh shellcheck direnv node npm npx python3 uv; do
   check "$cmd is available" command -v "$cmd"
 done
+check "pipx is not installed" not command -v pipx
 
 echo "==> Verifying global git hooks"
 check "pinned binary helper test suite passes" \
   bash "$REPO_ROOT/installer/test-pinned-tools.sh"
+check "uv tools installer test suite passes" \
+  bash "$REPO_ROOT/installer/test-uv-tools.sh"
 check "git-hooks test suite passes" \
   bash "$REPO_ROOT/installer/test-git-hooks.sh"
 check "semgrep rules test suite passes" \
@@ -151,14 +154,44 @@ check "semgrep rules test suite passes" \
 check "guard rules test suite passes" \
   bash "$REPO_ROOT/installer/test-guard-rules.sh"
 
-for cmd in gitleaks osv-scanner semgrep pre-commit; do
+for cmd in betterleaks osv-scanner semgrep pre-commit; do
   check "$cmd is available" command -v "$cmd"
 done
 
-check_gitleaks_version() {
-  test "$(gitleaks version 2>/dev/null || true)" = "8.30.1"
+check_uv_tool_link() {
+  local tool="$1"
+  local bin="$HOME/.local/bin/$tool"
+  test -L "$bin" || return 1
+  local target
+  target="$(readlink -f "$bin" 2>/dev/null || true)"
+  local uv_tools_dir="${XDG_DATA_HOME:-$HOME/.local/share}/uv/tools"
+  case "$target" in
+    "$uv_tools_dir/$tool"/*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
-check "gitleaks version is 8.30.1" check_gitleaks_version
+
+check_tool_uv_managed() {
+  local tool="$1"
+  uv tool list 2>/dev/null | grep -Eq "^${tool}( |$)"
+}
+
+check "~/.local/bin/semgrep resolves into uv tool storage" check_uv_tool_link semgrep
+check "~/.local/bin/pre-commit resolves into uv tool storage" check_uv_tool_link pre-commit
+check "semgrep is managed by uv" check_tool_uv_managed semgrep
+check "pre-commit is managed by uv" check_tool_uv_managed pre-commit
+
+echo "==> Verifying second make install succeeds and preserves uv-managed tools"
+check "re-running make install succeeds" make -C "$REPO_ROOT" install
+check "~/.local/bin/semgrep still resolves into uv tool storage after second install" check_uv_tool_link semgrep
+check "~/.local/bin/pre-commit still resolves into uv tool storage after second install" check_uv_tool_link pre-commit
+check "semgrep is still managed by uv after second install" check_tool_uv_managed semgrep
+check "pre-commit is still managed by uv after second install" check_tool_uv_managed pre-commit
+
+check_betterleaks_version() {
+  test "$(betterleaks version 2>/dev/null || true)" = "1.10.0"
+}
+check "betterleaks version is 1.10.0" check_betterleaks_version
 
 check_osv_version() {
   local ver
@@ -230,8 +263,54 @@ git init -q "$test_repo_secret"
 token="ghp_$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 36)"
 echo "token = '$token'" > "$test_repo_secret/secret.py"
 (cd "$test_repo_secret" && git add secret.py)
-check "real hooks block secret (gitleaks)" check_commit_blocked "$test_repo_secret" "gitleaks"
+check "real hooks block secret (betterleaks)" check_commit_blocked "$test_repo_secret" "betterleaks"
 rm -rf "$test_repo_secret"
+
+test_repo_bl_ignore="$(mktemp -d)"
+git init -q "$test_repo_bl_ignore"
+token="ghp_$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 36)"
+echo "token = '$token'" > "$test_repo_bl_ignore/secret.py"
+echo "secret.py:github-pat:1" > "$test_repo_bl_ignore/.betterleaksignore"
+(cd "$test_repo_bl_ignore" && git add secret.py .betterleaksignore)
+check "real hooks block secret with .betterleaksignore" check_commit_blocked "$test_repo_bl_ignore" "betterleaks"
+rm -rf "$test_repo_bl_ignore"
+
+test_repo_gl_ignore="$(mktemp -d)"
+git init -q "$test_repo_gl_ignore"
+token="ghp_$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 36)"
+echo "token = '$token'" > "$test_repo_gl_ignore/secret.py"
+echo "secret.py:github-pat:1" > "$test_repo_gl_ignore/.gitleaksignore"
+(cd "$test_repo_gl_ignore" && git add secret.py .gitleaksignore)
+check "real hooks block secret with .gitleaksignore" check_commit_blocked "$test_repo_gl_ignore" "betterleaks"
+rm -rf "$test_repo_gl_ignore"
+
+test_repo_bl_allow="$(mktemp -d)"
+git init -q "$test_repo_bl_allow"
+token="ghp_$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 36)"
+echo "token = '$token' # betterleaks:allow" > "$test_repo_bl_allow/secret.py"
+(cd "$test_repo_bl_allow" && git add secret.py)
+check "real hooks block secret with betterleaks:allow comment" check_commit_blocked "$test_repo_bl_allow" "betterleaks"
+rm -rf "$test_repo_bl_allow"
+
+test_repo_gl_allow="$(mktemp -d)"
+git init -q "$test_repo_gl_allow"
+token="ghp_$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 36)"
+echo "token = '$token' # gitleaks:allow" > "$test_repo_gl_allow/secret.py"
+(cd "$test_repo_gl_allow" && git add secret.py)
+check "real hooks block secret with gitleaks:allow comment" check_commit_blocked "$test_repo_gl_allow" "betterleaks"
+rm -rf "$test_repo_gl_allow"
+
+test_repo_redact="$(mktemp -d)"
+git init -q "$test_repo_redact"
+token="ghp_$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 36)"
+echo "token = '$token'" > "$test_repo_redact/secret.py"
+(cd "$test_repo_redact" && git add secret.py)
+redact_err="$(mktemp)"
+(cd "$test_repo_redact" && BETTERLEAKS_CONFIG=/dev/null BETTERLEAKS_CONFIG_TOML="invalid" GITLEAKS_CONFIG=/dev/null GITLEAKS_CONFIG_TOML="invalid" git commit -m "secret") >/dev/null 2>"$redact_err" || true
+check "redacted output contains REDACTED" grep -q "REDACTED" "$redact_err"
+check "redacted output does not contain raw token" not grep -q "$token" "$redact_err"
+rm -f "$redact_err"
+rm -rf "$test_repo_redact"
 
 test_repo_code="$(mktemp -d)"
 git init -q "$test_repo_code"

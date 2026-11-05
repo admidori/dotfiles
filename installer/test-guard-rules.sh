@@ -136,16 +136,25 @@ run_suite() {
   test_case block "cat /home/u/.gitconfig" "protected hook machinery path"
   test_case block "cp /tmp/cfg ~/.gitconfig" "protected hook machinery path"
   test_case block "{ cat ~/.gitconfig; }" "protected hook machinery path"
-  # 4. Scanners (.local/bin/{gitleaks,semgrep,osv-scanner,pre-commit})
+  # 4. Scanners (.local/bin/{betterleaks,gitleaks,semgrep,osv-scanner,pre-commit})
+  test_case block "cat ~/.local/bin/betterleaks" "protected hook machinery path"
   test_case block "cat ~/.local/bin/gitleaks" "protected hook machinery path"
+  test_case block "rm \$HOME/.local/bin/betterleaks" "protected hook machinery path"
   test_case block "rm \$HOME/.local/bin/semgrep" "protected hook machinery path"
+  test_case block "touch \"\${HOME}\"/.local/bin/betterleaks" "protected hook machinery path"
   test_case block "touch \"\${HOME}\"/.local/bin/osv-scanner" "protected hook machinery path"
+  test_case block "chmod +x /home/u/.local/bin/betterleaks" "protected hook machinery path"
   test_case block "chmod +x /home/u/.local/bin/pre-commit" "protected hook machinery path"
   # 5. Pipx venvs (.local/share/pipx/venvs/{semgrep,pre-commit})
   test_case block "ls ~/.local/share/pipx/venvs/semgrep" "protected hook machinery path"
   test_case block "cat \$HOME/.local/share/pipx/venvs/pre-commit/bin/python" "protected hook machinery path"
   test_case block "ls \"\${HOME}\"/.local/share/pipx/venvs/semgrep" "protected hook machinery path"
   test_case block "touch /home/u/.local/share/pipx/venvs/pre-commit/bin/activate" "protected hook machinery path"
+  # 5b. uv tools (.local/share/uv/tools/{semgrep,pre-commit})
+  test_case block "ls ~/.local/share/uv/tools/semgrep" "protected hook machinery path"
+  test_case block "cat \$HOME/.local/share/uv/tools/pre-commit/bin/python" "protected hook machinery path"
+  test_case block "ls \"\${HOME}\"/.local/share/uv/tools/semgrep" "protected hook machinery path"
+  test_case block "touch /home/u/.local/share/uv/tools/pre-commit/bin/activate" "protected hook machinery path"
   # 6. .local/share/git-hooks
   test_case block "cat ~/.local/share/git-hooks/semgrep/default.yml" "protected hook machinery path"
   test_case block "ls \$HOME/.local/share/git-hooks" "protected hook machinery path"
@@ -311,6 +320,7 @@ run_suite() {
   test_case allow "cat /home/u/dotfiles/.claude/worktrees/x/bin/dotfiles/.claude/hooks/guard-rules.sh"
   test_case allow "cat ~/dotfiles-x-impl/bin/dotfiles/.git-hooks/pre-commit"
   test_case allow "cat ~/.local/bin/uv"
+  test_case allow "cat ~/.local/bin/betterleaks-foo"
   test_case allow "cat ~/.local/bin/gitleaks-foo"
   test_case allow "cat ~/.claude/skills/x/SKILL.md"
   test_case allow "cat ~/.claude/projects/x"
@@ -318,6 +328,10 @@ run_suite() {
   test_case allow "cat ~/.gitconfig-work"
   test_case allow "cat ~/.gitconfig.bak"
   test_case allow "cat \$XDG_DATA_HOME/git-hooks-foo"
+  test_case allow "cat ~/.local/share/uv/tools/google-colab-cli"
+  test_case allow "ls ~/.local/share/uv/tools/ruff"
+  test_case allow "cat ~/.local/share/uv/tools/semgrep-foo"
+  test_case allow "ls ~/.local/share/uv/tools/pre-commit-foo"
 
   # 4b. Accepted over-block: inline messages are not parsed (a regex cannot
   # follow shell quoting), so a message that mentions a bypass flag is

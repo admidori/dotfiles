@@ -94,10 +94,12 @@ echo "==> Testing architecture mapping"
 current_m="$(uname -m)"
 case "$current_m" in
   x86_64)
+    check "x86_64 maps to betterleaks x64" test "$(get_pinned_arch betterleaks)" = "x64"
     check "x86_64 maps to gitleaks x64" test "$(get_pinned_arch gitleaks)" = "x64"
     check "x86_64 maps to osv-scanner amd64" test "$(get_pinned_arch osv-scanner)" = "amd64"
     ;;
   aarch64|arm64)
+    check "aarch64 maps to betterleaks arm64" test "$(get_pinned_arch betterleaks)" = "arm64"
     check "aarch64 maps to gitleaks arm64" test "$(get_pinned_arch gitleaks)" = "arm64"
     check "aarch64 maps to osv-scanner arm64" test "$(get_pinned_arch osv-scanner)" = "arm64"
     ;;
@@ -108,7 +110,7 @@ unsupported_arch_test() {
   local s=0
   (
     uname() { echo "mips64"; }
-    get_pinned_arch gitleaks 2>"$err_file"
+    get_pinned_arch betterleaks 2>"$err_file"
   ) || s=$?
   [ "$s" -ne 0 ] && grep -F "WARN: unsupported architecture" "$err_file" >/dev/null
 }
@@ -117,6 +119,11 @@ check "unsupported arch warns and returns non-zero" unsupported_arch_test
 echo "==> Testing version probe idempotency"
 mock_bin_dir="$TEST_DIR/mock_bin"
 mkdir -p "$mock_bin_dir"
+
+printf '#!/bin/sh\necho "1.10.0"\n' > "$mock_bin_dir/betterleaks"
+chmod 0755 "$mock_bin_dir/betterleaks"
+check "betterleaks matching version skips install" \
+  test "$(install_betterleaks "$mock_bin_dir/betterleaks")" = "betterleaks 1.10.0 already installed at $mock_bin_dir/betterleaks (skipping)."
 
 printf '#!/bin/sh\necho "8.30.1"\n' > "$mock_bin_dir/gitleaks"
 chmod 0755 "$mock_bin_dir/gitleaks"
