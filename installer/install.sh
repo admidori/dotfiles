@@ -30,7 +30,7 @@ if command -v apt-get >/dev/null 2>&1; then
   $SUDO apt-get install -y --no-install-recommends \
     zsh tmux git curl ca-certificates locales vim \
     jq ripgrep fd-find fzf gh shellcheck direnv \
-    nodejs npm python3 python3-venv pipx
+    nodejs npm python3 python3-venv
 else
   echo "WARN: apt-get not found; skipping system package install." >&2
 fi
@@ -64,14 +64,10 @@ if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
 fi
 
 # --- user-scoped developer CLIs ---------------------------------------------
-if ! command -v uv >/dev/null 2>&1; then
-  if command -v pipx >/dev/null 2>&1; then
-    echo "Installing uv via pipx ..."
-    pipx install uv
-  else
-    echo "WARN: pipx not found; skipping uv install." >&2
-  fi
-fi
+# shellcheck source=installer/uv-tools.sh
+. "$SCRIPT_DIR/uv-tools.sh"
+
+install_uv "$HOME/.local/bin"
 
 # --- security scanners for the global git hooks -----------------------------
 # shellcheck source=installer/pinned-tools.sh
@@ -80,23 +76,8 @@ fi
 install_gitleaks "$HOME/.local/bin/gitleaks"
 install_osv_scanner "$HOME/.local/bin/osv-scanner"
 
-if ! command -v semgrep >/dev/null 2>&1; then
-  if command -v pipx >/dev/null 2>&1; then
-    echo "Installing semgrep via pipx ..."
-    pipx install semgrep
-  else
-    echo "WARN: pipx not found; skipping semgrep install." >&2
-  fi
-fi
-
-if ! command -v pre-commit >/dev/null 2>&1; then
-  if command -v pipx >/dev/null 2>&1; then
-    echo "Installing pre-commit via pipx ..."
-    pipx install pre-commit
-  else
-    echo "WARN: pipx not found; skipping pre-commit install." >&2
-  fi
-fi
+install_uv_tool semgrep
+install_uv_tool pre-commit
 
 echo "Updating semgrep registry pack ..."
 SEMGREP_PACK_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/git-hooks/semgrep"

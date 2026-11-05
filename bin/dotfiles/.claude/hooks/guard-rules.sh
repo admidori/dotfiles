@@ -188,7 +188,7 @@ ta')"
   # directories that hold protected files, is blocked as well.
   # shellcheck disable=SC2016 # $HOME and $XDG_* are literal pattern characters
   if printf '%s' "$home_paths" \
-      | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home/[^/]+|/Users/[^/]+|/root)/(\.git-hooks|\.gitconfig\.local|\.gitconfig|\.config/git|\.local/bin/(gitleaks|semgrep|osv-scanner|pre-commit)|\.local/share/pipx/venvs/(semgrep|pre-commit)|\.local/share/git-hooks|\.claude/hooks|\.claude/settings\.json|\.claude/settings\.local\.json|\.codex/hooks|\.codex/config\.toml|dotfiles/bin/dotfiles/(\.git-hooks|\.gitconfig|\.claude/hooks))(/|[[:space:]|;&()<>{}:,]|$)' \
+      | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home/[^/]+|/Users/[^/]+|/root)/(\.git-hooks|\.gitconfig\.local|\.gitconfig|\.config/git|\.local/bin/(gitleaks|semgrep|osv-scanner|pre-commit)|\.local/share/pipx/venvs/(semgrep|pre-commit)|\.local/share/uv/tools/(semgrep|pre-commit)|\.local/share/git-hooks|\.claude/hooks|\.claude/settings\.json|\.claude/settings\.local\.json|\.codex/hooks|\.codex/config\.toml|dotfiles/bin/dotfiles/(\.git-hooks|\.gitconfig|\.claude/hooks))(/|[[:space:]|;&()<>{}:,]|$)' \
       || printf '%s' "$home_paths" \
       | grep -Eq '(^|[^[:alnum:]_./-])(~[[:alnum:]_.-]*|\$HOME|\$\{HOME\}|/home/[^/]+|/Users/[^/]+|/root)/([^/[:space:]]*[]*?[{]|(\.local|\.claude|\.codex|\.config|dotfiles/bin)/[^[:space:]]*[]*?[{])' \
       || printf '%s' "$home_paths" \

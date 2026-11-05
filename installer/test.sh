@@ -137,13 +137,16 @@ check "zsh-autosuggestions installed"  test -d "$HOME/.oh-my-zsh/custom/plugins/
 
 echo "==> Verifying AI-native CLI tools"
 export PATH="$HOME/.local/bin:$PATH"
-for cmd in jq rg fd fzf gh shellcheck direnv node npm npx python3 pipx uv; do
+for cmd in jq rg fd fzf gh shellcheck direnv node npm npx python3 uv; do
   check "$cmd is available" command -v "$cmd"
 done
+check "pipx is not installed" not command -v pipx
 
 echo "==> Verifying global git hooks"
 check "pinned binary helper test suite passes" \
   bash "$REPO_ROOT/installer/test-pinned-tools.sh"
+check "uv tools installer test suite passes" \
+  bash "$REPO_ROOT/installer/test-uv-tools.sh"
 check "git-hooks test suite passes" \
   bash "$REPO_ROOT/installer/test-git-hooks.sh"
 check "semgrep rules test suite passes" \
@@ -154,6 +157,36 @@ check "guard rules test suite passes" \
 for cmd in gitleaks osv-scanner semgrep pre-commit; do
   check "$cmd is available" command -v "$cmd"
 done
+
+check_uv_tool_link() {
+  local tool="$1"
+  local bin="$HOME/.local/bin/$tool"
+  test -L "$bin" || return 1
+  local target
+  target="$(readlink -f "$bin" 2>/dev/null || true)"
+  local uv_tools_dir="${XDG_DATA_HOME:-$HOME/.local/share}/uv/tools"
+  case "$target" in
+    "$uv_tools_dir/$tool"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+check_tool_uv_managed() {
+  local tool="$1"
+  uv tool list 2>/dev/null | grep -Eq "^${tool}( |$)"
+}
+
+check "~/.local/bin/semgrep resolves into uv tool storage" check_uv_tool_link semgrep
+check "~/.local/bin/pre-commit resolves into uv tool storage" check_uv_tool_link pre-commit
+check "semgrep is managed by uv" check_tool_uv_managed semgrep
+check "pre-commit is managed by uv" check_tool_uv_managed pre-commit
+
+echo "==> Verifying second make install succeeds and preserves uv-managed tools"
+check "re-running make install succeeds" make -C "$REPO_ROOT" install
+check "~/.local/bin/semgrep still resolves into uv tool storage after second install" check_uv_tool_link semgrep
+check "~/.local/bin/pre-commit still resolves into uv tool storage after second install" check_uv_tool_link pre-commit
+check "semgrep is still managed by uv after second install" check_tool_uv_managed semgrep
+check "pre-commit is still managed by uv after second install" check_tool_uv_managed pre-commit
 
 check_gitleaks_version() {
   test "$(gitleaks version 2>/dev/null || true)" = "8.30.1"

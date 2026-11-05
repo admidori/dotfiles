@@ -36,6 +36,8 @@
       "Edit(~/.local/bin/pre-commit)",
       "Edit(~/.local/share/pipx/venvs/semgrep/**)",
       "Edit(~/.local/share/pipx/venvs/pre-commit/**)",
+      "Edit(~/.local/share/uv/tools/semgrep/**)",
+      "Edit(~/.local/share/uv/tools/pre-commit/**)",
       "Edit(~/.local/share/git-hooks/**)",
       "Edit(~/.claude/settings.json)",
       "Edit(~/.claude/settings.local.json)",

@@ -146,6 +146,11 @@ run_suite() {
   test_case block "cat \$HOME/.local/share/pipx/venvs/pre-commit/bin/python" "protected hook machinery path"
   test_case block "ls \"\${HOME}\"/.local/share/pipx/venvs/semgrep" "protected hook machinery path"
   test_case block "touch /home/u/.local/share/pipx/venvs/pre-commit/bin/activate" "protected hook machinery path"
+  # 5b. uv tools (.local/share/uv/tools/{semgrep,pre-commit})
+  test_case block "ls ~/.local/share/uv/tools/semgrep" "protected hook machinery path"
+  test_case block "cat \$HOME/.local/share/uv/tools/pre-commit/bin/python" "protected hook machinery path"
+  test_case block "ls \"\${HOME}\"/.local/share/uv/tools/semgrep" "protected hook machinery path"
+  test_case block "touch /home/u/.local/share/uv/tools/pre-commit/bin/activate" "protected hook machinery path"
   # 6. .local/share/git-hooks
   test_case block "cat ~/.local/share/git-hooks/semgrep/default.yml" "protected hook machinery path"
   test_case block "ls \$HOME/.local/share/git-hooks" "protected hook machinery path"
@@ -318,6 +323,10 @@ run_suite() {
   test_case allow "cat ~/.gitconfig-work"
   test_case allow "cat ~/.gitconfig.bak"
   test_case allow "cat \$XDG_DATA_HOME/git-hooks-foo"
+  test_case allow "cat ~/.local/share/uv/tools/google-colab-cli"
+  test_case allow "ls ~/.local/share/uv/tools/ruff"
+  test_case allow "cat ~/.local/share/uv/tools/semgrep-foo"
+  test_case allow "ls ~/.local/share/uv/tools/pre-commit-foo"
 
   # 4b. Accepted over-block: inline messages are not parsed (a regex cannot
   # follow shell quoting), so a message that mentions a bypass flag is

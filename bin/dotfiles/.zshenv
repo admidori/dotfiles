@@ -14,7 +14,7 @@ typeset -U path PATH
 # error on every single zsh start.
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
-# User-scoped tools (uv, pipx apps, the fd shim, agy) land here and must resolve
+# User-scoped tools (uv, uv tools, legacy pipx apps, the fd shim, agy) land here and must resolve
 # non-interactively too. Added unconditionally: the dir may be created after a
 # shell starts, a non-existent entry is harmless, and typeset -U collapses the
 # duplicate when .zshrc re-prepends it as part of its own precedence list.
