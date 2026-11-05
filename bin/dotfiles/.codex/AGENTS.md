@@ -36,6 +36,8 @@ Typical flow: the designer agrees the design with the operator → delegates eac
 to Antigravity with the `delegate` skill → verifies each step, reviews the delta,
 and prepares the accepted task submission commit upon task completion (or commits
 each accepted step in legacy host/strict mode).
+After agreeing the design, use Plan mode when available to organize the steps before
+starting implementation or delegation.
 Separate PR, task, and per-run step/attempt concepts:
 - **PR (Pull Request)**: The unit of integration to the main branch; may contain
   one or multiple accepted task commits.
