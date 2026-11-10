@@ -33,7 +33,7 @@ NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9.-]{1,63}$")
 TASK_ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
 GIT_HASH_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
 FORBIDDEN_BRANCHES = {"master", "main", "refs/heads/master", "refs/heads/main"}
-VALID_LIFECYCLES = {"provisioning", "ready", "running", "preserved", "failed"}
+VALID_LIFECYCLES = {"provisioning", "ready", "running", "preserved", "failed", "retired"}
 
 
 def validate_sandbox_name(name: str) -> str:
@@ -389,6 +389,14 @@ def read_task_record(record_path: Path, require_sandbox_id: bool = False) -> dic
     guest_harness_path = data.get("guest_harness_path")
     if guest_harness_path is not None and not isinstance(guest_harness_path, str):
         raise ValueError("Task record guest_harness_path must be a string or null")
+
+    host_worktree = data.get("host_worktree")
+    if host_worktree is not None and not isinstance(host_worktree, str):
+        raise ValueError("Task record host_worktree must be a string or null")
+
+    retirement = data.get("retirement")
+    if retirement is not None and not isinstance(retirement, dict):
+        raise ValueError("Task record retirement must be a dict or null")
 
     return data
 
@@ -816,10 +824,12 @@ def create_task(
             "guest_cwd": None,
             "guest_repo_path": None,
             "guest_harness_path": guest_harness_path,
+            "host_worktree": None,
             "status": "provisioning",
             "created_at": now,
             "updated_at": now,
             "preservations": [],
+            "retirement": None,
             "last_error": None,
         }
         write_task_record(val_record_path, record, create_new=True)
@@ -1037,7 +1047,8 @@ def status_task(
 
     if info is None:
         vm_status = "missing"
-        mismatch_reasons.append("sandbox_not_found_in_sbx_ls")
+        if record.get("status") != "retired":
+            mismatch_reasons.append("sandbox_not_found_in_sbx_ls")
     else:
         observed_id = info.get("id") or info.get("sandbox_id")
         vm_status = str(info.get("status", "unknown")).lower()
@@ -1097,6 +1108,8 @@ def start_task(
     """Explicitly resume recorded existing sandbox, verifying identity and base ancestry."""
     with TaskRecordLock(record_path):
         record = read_task_record(record_path, require_sandbox_id=True)
+        if record.get("status") == "retired":
+            raise RuntimeError("Task has been retired; cannot resume a retired task.")
         sandbox_name = record["sandbox_name"]
         expected_id = record["sandbox_id"]
 
@@ -1202,6 +1215,8 @@ def preserve_task(
 
     with TaskRecordLock(record_path):
         record = read_task_record(record_path, require_sandbox_id=True)
+        if record.get("status") == "retired":
+            raise RuntimeError("Task has been retired; cannot resume a retired task.")
         sandbox_name = record["sandbox_name"]
         expected_id = record["sandbox_id"]
         host_repo = Path(record["host_repo"])
@@ -1672,6 +1687,731 @@ def preserve_task(
             raise
 
 
+def parse_worktree_list_porcelain(raw_output: str) -> list[dict[str, Any]]:
+    """Parse output of 'git worktree list --porcelain'."""
+    worktrees: list[dict[str, Any]] = []
+    current: dict[str, Any] = {}
+    is_first = True
+
+    for line in raw_output.splitlines():
+        line = line.strip()
+        if not line:
+            if current:
+                current["is_main"] = is_first
+                worktrees.append(current)
+                current = {}
+                is_first = False
+            continue
+
+        if line.startswith("worktree "):
+            if current:
+                current["is_main"] = is_first
+                worktrees.append(current)
+                current = {}
+                is_first = False
+            current["worktree"] = line.removeprefix("worktree ").strip()
+        elif line.startswith("HEAD "):
+            current["HEAD"] = line.removeprefix("HEAD ").strip()
+        elif line.startswith("branch "):
+            current["branch"] = line.removeprefix("branch ").strip()
+        elif line == "detached":
+            current["detached"] = True
+        elif line == "bare":
+            current["bare"] = True
+
+    if current:
+        current["is_main"] = is_first
+        worktrees.append(current)
+
+    return worktrees
+
+
+def get_worktrees(host_repo: Path, git_bin: str = "git") -> list[dict[str, Any]]:
+    """List worktrees from host repo via 'git worktree list --porcelain'."""
+    res = subprocess.run(
+        [git_bin, "-C", str(host_repo), "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    return parse_worktree_list_porcelain(res.stdout)
+
+
+def verify_worktree_clean(worktree_path: Path, git_bin: str = "git") -> None:
+    """Verify worktree has no unstaged, staged, untracked, or ignored changes."""
+    subprocess.run(
+        [git_bin, "-C", str(worktree_path), "update-index", "-q", "--refresh"],
+        capture_output=True,
+        check=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+
+    diff_files = subprocess.run(
+        [git_bin, "-C", str(worktree_path), "diff-files", "--quiet"],
+        capture_output=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    if diff_files.returncode != 0:
+        names = subprocess.run(
+            [git_bin, "-C", str(worktree_path), "diff-files", "--name-status"],
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_TIMEOUT,
+        ).stdout.strip()
+        raise RuntimeError(f"Worktree at {worktree_path} has unstaged tracked changes:\n{names}")
+
+    diff_cached = subprocess.run(
+        [git_bin, "-C", str(worktree_path), "diff-index", "--cached", "--quiet", "HEAD", "--"],
+        capture_output=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    if diff_cached.returncode != 0:
+        names = subprocess.run(
+            [git_bin, "-C", str(worktree_path), "diff-index", "--cached", "--name-status", "HEAD", "--"],
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_TIMEOUT,
+        ).stdout.strip()
+        raise RuntimeError(f"Worktree at {worktree_path} has staged uncommitted changes:\n{names}")
+
+    untracked = subprocess.run(
+        [git_bin, "-C", str(worktree_path), "ls-files", "--others", "--exclude-standard"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    if untracked.stdout.strip():
+        raise RuntimeError(f"Worktree at {worktree_path} has untracked files:\n{untracked.stdout.strip()}")
+
+    ignored = subprocess.run(
+        [git_bin, "-C", str(worktree_path), "ls-files", "--others", "--ignored", "--exclude-standard"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    if ignored.stdout.strip():
+        raise RuntimeError(f"Worktree at {worktree_path} has ignored files:\n{ignored.stdout.strip()}")
+
+
+def ensure_durable_host_branch(
+    host_repo: Path,
+    branch_name: str,
+    target_sha: str,
+    bundle_path: Path | None = None,
+    git_bin: str = "git",
+) -> None:
+    """Ensure host repository has branch_name pointing to target_sha without overwriting divergent branch."""
+    res_verify = subprocess.run(
+        [git_bin, "-C", str(host_repo), "rev-parse", "--verify", "-q", f"refs/heads/{branch_name}"],
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    if res_verify.returncode == 0:
+        current_sha = res_verify.stdout.strip().lower()
+        if current_sha != target_sha.lower():
+            raise RuntimeError(
+                f"Host branch '{branch_name}' already exists at {current_sha}, which diverges from "
+                f"expected SHA {target_sha}. Refusing to overwrite existing divergent branch."
+            )
+        return
+
+    # Branch does not exist on host. Check if commit object is in host_repo.
+    res_cat = subprocess.run(
+        [git_bin, "-C", str(host_repo), "cat-file", "-e", f"{target_sha}^{{commit}}"],
+        capture_output=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    if res_cat.returncode == 0:
+        subprocess.run(
+            [git_bin, "-C", str(host_repo), "branch", branch_name, target_sha],
+            check=True,
+            capture_output=True,
+            timeout=DEFAULT_TIMEOUT,
+        )
+        res_check = subprocess.run(
+            [git_bin, "-C", str(host_repo), "rev-parse", "--verify", "-q", f"refs/heads/{branch_name}"],
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_TIMEOUT,
+        )
+        if res_check.returncode == 0 and res_check.stdout.strip().lower() == target_sha.lower():
+            return
+        raise RuntimeError(
+            f"Created host branch '{branch_name}' could not be verified at {target_sha}."
+        )
+
+    # Commit not in host repo. Fetch exact expected target commit directly into host branch ref.
+    # Do not fetch named refspecs to prevent creating wrong branches from stale bundle refs.
+    if bundle_path and bundle_path.is_file():
+        res_fetch = subprocess.run(
+            [
+                git_bin,
+                "-C",
+                str(host_repo),
+                "fetch",
+                str(bundle_path),
+                f"{target_sha}:refs/heads/{branch_name}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=LONG_TIMEOUT,
+        )
+        if res_fetch.returncode == 0:
+            res_check = subprocess.run(
+                [git_bin, "-C", str(host_repo), "rev-parse", "--verify", "-q", f"refs/heads/{branch_name}"],
+                capture_output=True,
+                text=True,
+                timeout=DEFAULT_TIMEOUT,
+            )
+            if res_check.returncode == 0 and res_check.stdout.strip().lower() == target_sha.lower():
+                return
+            raise RuntimeError(
+                f"Fetched branch '{branch_name}' could not be verified at expected SHA {target_sha}."
+            )
+
+    raise RuntimeError(
+        f"Required commit '{target_sha}' for branch '{branch_name}' could not be made durable on host repository. "
+        "A bundle alone is not the same as retaining the branch. Retirement refused."
+    )
+
+
+def verify_accepted_manifest(
+    manifest_path: Path,
+    record: dict[str, Any],
+    git_bin: str = "git",
+) -> dict[str, Any]:
+    """Read and validate accepted submission manifest matching task record."""
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Submission manifest file not found: {manifest_path}")
+    if manifest_path.is_symlink():
+        raise RuntimeError(f"Submission manifest file {manifest_path} must not be a symlink")
+    st = manifest_path.lstat()
+    if not stat.S_ISREG(st.st_mode):
+        raise RuntimeError(f"Submission manifest file {manifest_path} must be a regular file")
+    mode = st.st_mode & 0o777
+    if mode not in (0o600, 0o400):
+        raise RuntimeError(
+            f"Submission manifest file {manifest_path} has unsafe permissions ({oct(mode)}), expected 0600 or 0400"
+        )
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Failed to parse submission manifest JSON at {manifest_path}: {e}") from e
+
+    if not isinstance(data, dict):
+        raise ValueError(f"Submission manifest at {manifest_path} must be a JSON object")
+
+    if data.get("schema_version") != 1:
+        raise ValueError(f"Submission manifest has invalid schema_version: {data.get('schema_version')}")
+    if data.get("record_type") != "submission_manifest":
+        raise ValueError(f"Submission manifest has invalid record_type: '{data.get('record_type')}'")
+    if data.get("status") != "accepted":
+        raise ValueError(f"Submission manifest status is '{data.get('status')}', expected 'accepted'")
+    if data.get("designer_accepted") is not True:
+        raise ValueError("Submission manifest designer_accepted must be true")
+
+    if data.get("task_id") != record["task_id"]:
+        raise ValueError(
+            f"Manifest task_id '{data.get('task_id')}' does not match record task_id '{record['task_id']}'"
+        )
+
+    if str(data.get("base_commit", "")).lower() != str(record["base_commit"]).lower():
+        raise ValueError(
+            f"Manifest base_commit '{data.get('base_commit')}' does not match record base_commit '{record['base_commit']}'"
+        )
+
+    manifest_repo = Path(data.get("repo", "")).resolve()
+    record_repo = Path(record["host_repo"]).resolve()
+    if manifest_repo != record_repo:
+        raise ValueError(
+            f"Manifest repository '{manifest_repo}' does not match record host_repo '{record_repo}'"
+        )
+
+    submitted_sha = data.get("submitted_sha")
+    submitted_tree = data.get("submitted_tree")
+    reviewed_head = data.get("reviewed_head")
+    reviewed_tree = data.get("reviewed_tree")
+    sub_branch = data.get("submission_branch")
+
+    if not submitted_sha or not GIT_HASH_PATTERN.match(submitted_sha):
+        raise ValueError(f"Manifest submitted_sha '{submitted_sha}' is not a valid 40-char SHA")
+    if not submitted_tree or not GIT_HASH_PATTERN.match(submitted_tree):
+        raise ValueError(f"Manifest submitted_tree '{submitted_tree}' is not a valid 40-char SHA")
+    if not reviewed_head or not GIT_HASH_PATTERN.match(reviewed_head):
+        raise ValueError(f"Manifest reviewed_head '{reviewed_head}' is not a valid 40-char SHA")
+    if not reviewed_tree or not GIT_HASH_PATTERN.match(reviewed_tree):
+        raise ValueError(f"Manifest reviewed_tree '{reviewed_tree}' is not a valid 40-char SHA")
+
+    if submitted_tree.lower() != reviewed_tree.lower():
+        raise ValueError(
+            f"Manifest submitted_tree '{submitted_tree}' does not match reviewed_tree '{reviewed_tree}'"
+        )
+
+    validate_branch_name(sub_branch, git_bin=git_bin)
+
+    return data
+
+
+def verify_preservation_export(
+    record: dict[str, Any],
+    host_repo: Path,
+    git_bin: str = "git",
+) -> tuple[dict[str, Any], Path]:
+    """Verify task preservation receipt and actual artifact checksums outside repository."""
+    preservations = record.get("preservations", [])
+    verified_entries = [p for p in preservations if p.get("verified") is True]
+    if not verified_entries:
+        raise ValueError("No verified preservation export found in task record. Retirement requires verified preservation.")
+
+    latest_pres = verified_entries[-1]
+    dest_str = latest_pres.get("destination")
+    if not dest_str:
+        raise ValueError("Preservation entry has missing destination path")
+    dest = Path(dest_str).resolve()
+    if not dest.is_dir():
+        raise RuntimeError(f"Preservation destination directory does not exist: {dest}")
+
+    receipt_file = dest / "receipt.json"
+    if not receipt_file.is_file():
+        raise RuntimeError(f"Preservation receipt file does not exist: {receipt_file}")
+    if receipt_file.is_symlink():
+        raise RuntimeError(f"Preservation receipt file {receipt_file} must not be a symlink")
+    st = receipt_file.lstat()
+    mode = st.st_mode & 0o777
+    if mode not in (0o600, 0o400):
+        raise RuntimeError(f"Preservation receipt has unsafe permissions ({oct(mode)}), expected 0600 or 0400")
+
+    try:
+        receipt = json.loads(receipt_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Failed to parse preservation receipt JSON: {e}") from e
+
+    if not isinstance(receipt, dict):
+        raise ValueError("Preservation receipt must be a JSON object")
+
+    if receipt.get("verified") is not True or receipt.get("status") != "verified":
+        raise ValueError("Preservation receipt is not verified")
+    if receipt.get("task_id") != record["task_id"]:
+        raise ValueError(f"Receipt task_id '{receipt.get('task_id')}' != record task_id '{record['task_id']}'")
+    if receipt.get("sandbox_name") != record["sandbox_name"]:
+        raise ValueError(f"Receipt sandbox_name '{receipt.get('sandbox_name')}' != record sandbox_name '{record['sandbox_name']}'")
+    if receipt.get("sandbox_id") != record["sandbox_id"]:
+        raise ValueError(f"Receipt sandbox_id '{receipt.get('sandbox_id')}' != record sandbox_id '{record['sandbox_id']}'")
+
+    artifacts = [
+        ("bundle", receipt.get("bundle", {}).get("filename", "repo.bundle"), latest_pres.get("bundle_sha256")),
+        ("staged_patch", receipt.get("staged_patch", {}).get("filename", "staged.patch"), latest_pres.get("staged_patch_sha256")),
+        ("worktree", receipt.get("worktree", {}).get("filename", "worktree.tar.gz"), latest_pres.get("worktree_sha256")),
+        ("harness", receipt.get("harness", {}).get("filename", "harness.tar.gz"), latest_pres.get("harness_sha256")),
+    ]
+
+    for key, filename, record_sha in artifacts:
+        art_file = dest / filename
+        if not art_file.is_file():
+            raise RuntimeError(f"Preservation artifact '{filename}' not found at {art_file}")
+        h = hashlib.sha256()
+        with open(art_file, "rb") as f:
+            while chunk := f.read(65536):
+                h.update(chunk)
+        actual_sha = h.hexdigest()
+        receipt_sha = receipt.get(key, {}).get("sha256")
+        if actual_sha != receipt_sha:
+            raise RuntimeError(
+                f"Preservation artifact '{filename}' checksum mismatch with receipt: actual={actual_sha}, receipt={receipt_sha}"
+            )
+        if record_sha and actual_sha != record_sha:
+            raise RuntimeError(
+                f"Preservation artifact '{filename}' checksum mismatch with task record: actual={actual_sha}, record={record_sha}"
+            )
+
+    bundle_path = dest / receipt.get("bundle", {}).get("filename", "repo.bundle")
+    res_bv = subprocess.run(
+        [git_bin, "-C", str(host_repo), "bundle", "verify", str(bundle_path)],
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT,
+    )
+    if res_bv.returncode != 0:
+        raise RuntimeError(f"Preservation bundle verification failed: {res_bv.stderr}")
+
+    return receipt, dest
+
+
+def check_fresh_guest_state(
+    sandbox_name: str,
+    guest_repo: str,
+    guest_harness: str | None,
+    dest: Path,
+    sbx_bin: str = "sbx",
+) -> None:
+    """Check fresh guest state against preserved snapshot; fail if modified."""
+    manifest_after_path = dest / "manifest_after.json"
+    if not manifest_after_path.is_file():
+        manifest_after_path = dest / "manifest_before.json"
+    if not manifest_after_path.is_file():
+        raise RuntimeError("Preservation manifest JSON not found in destination.")
+
+    preserved_manifest = json.loads(manifest_after_path.read_text(encoding="utf-8"))
+    current_snapshot = get_guest_snapshot(sandbox_name, guest_repo, guest_harness or "", sbx_bin=sbx_bin)
+
+    if current_snapshot != preserved_manifest:
+        raise RuntimeError(
+            "Guest state has changed since preservation export (modifications detected). "
+            "Retirement refused because preservation export is stale."
+        )
+
+
+def register_worktree(
+    record_path: Path,
+    worktree_path: Path,
+    git_bin: str = "git",
+) -> dict[str, Any]:
+    """Register and validate a host worktree path in an existing task record."""
+    with TaskRecordLock(record_path):
+        record = read_task_record(record_path, require_sandbox_id=False)
+        wt = Path(worktree_path).resolve()
+        host_repo = Path(record["host_repo"]).resolve()
+        if wt == host_repo:
+            raise ValueError(f"Worktree path '{wt}' is the main repository checkout.")
+        wt_list = get_worktrees(host_repo, git_bin=git_bin)
+        matching = [w for w in wt_list if Path(w["worktree"]).resolve() == wt]
+        if not matching:
+            raise ValueError(f"Worktree path '{wt}' not found in 'git worktree list --porcelain' for {host_repo}")
+        if matching[0].get("is_main"):
+            raise ValueError(f"Worktree path '{wt}' is the main worktree.")
+        record["host_worktree"] = str(wt)
+        record["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        write_task_record(record_path, record)
+        return record
+
+
+def retire_task(
+    record_path: Path,
+    manifest_path: Path,
+    worktree_path: Path | None = None,
+    harness_path: str | None = None,
+    sbx_bin: str = "sbx",
+    git_bin: str = "git",
+) -> dict[str, Any]:
+    """Retire a completed task's exact sandbox and optional registered host worktree.
+
+    Verifies accepted submission manifest, matching preservation export, fresh guest state,
+    and durable host branch before destruction. Preflights all destructive targets before
+    first removal and journals retirement phases for safe resumption.
+    """
+    with TaskRecordLock(record_path):
+        record = read_task_record(record_path, require_sandbox_id=True)
+        host_repo = Path(record["host_repo"]).resolve()
+        sandbox_name = record["sandbox_name"]
+        expected_id = record["sandbox_id"]
+
+        retirement_info = record.get("retirement") or {}
+        if record.get("status") == "retired" and retirement_info.get("phase") == "completed":
+            return {
+                "task_id": record["task_id"],
+                "sandbox_name": sandbox_name,
+                "sandbox_id": expected_id,
+                "status": "retired",
+                "worktree_removed": retirement_info.get("host_worktree"),
+                "branch_preserved": retirement_info.get("submission_branch"),
+                "submitted_sha": retirement_info.get("submitted_sha"),
+                "retirement": retirement_info,
+                "already_retired": True,
+            }
+
+        registered_wt = record.get("host_worktree") or retirement_info.get("host_worktree")
+        registered_wt_path = Path(registered_wt).resolve() if registered_wt else None
+
+        if worktree_path is not None:
+            explicit_wt = worktree_path.resolve()
+            if registered_wt_path is not None and explicit_wt != registered_wt_path:
+                raise ValueError(
+                    f"Specified worktree path '{explicit_wt}' does not match registered host worktree '{registered_wt_path}' "
+                    f"for task '{record['task_id']}'. Cannot override a previously registered worktree during retirement."
+                )
+            wt_to_remove = explicit_wt
+        else:
+            wt_to_remove = registered_wt_path
+
+        try:
+            # ---------------- PREFLIGHT PHASE ----------------
+            # 1. Validate submission manifest
+            manifest = verify_accepted_manifest(manifest_path, record, git_bin=git_bin)
+            submitted_sha = manifest["submitted_sha"]
+            submitted_tree = manifest["submitted_tree"]
+            sub_branch = manifest["submission_branch"]
+
+            # 2. Validate preservation export and artifact checksums
+            receipt, pres_dest = verify_preservation_export(record, host_repo, git_bin=git_bin)
+            bundle_file = pres_dest / receipt.get("bundle", {}).get("filename", "repo.bundle")
+
+            # 3. Ensure durable host branch/ref at accepted SHA before any destruction
+            ensure_durable_host_branch(
+                host_repo,
+                sub_branch,
+                submitted_sha,
+                bundle_path=bundle_file,
+                git_bin=git_bin,
+            )
+
+            # Verify submitted_sha commit tree matches manifest submitted_tree
+            res_tree = subprocess.run(
+                [git_bin, "-C", str(host_repo), "rev-parse", f"{submitted_sha}^{{tree}}"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=DEFAULT_TIMEOUT,
+            )
+            actual_tree = res_tree.stdout.strip().lower()
+            if actual_tree != submitted_tree.lower():
+                raise ValueError(
+                    f"Submitted commit tree '{actual_tree}' does not match manifest tree '{submitted_tree}'"
+                )
+
+            # Ensure task implementation branch is also durable on host at reviewed_head
+            task_branch = record.get("branch")
+            if task_branch and task_branch != sub_branch:
+                expected_task_sha = manifest.get("reviewed_head")
+                if not expected_task_sha:
+                    raise RuntimeError("Accepted manifest is missing reviewed_head required to preserve task branch.")
+                ensure_durable_host_branch(
+                    host_repo,
+                    task_branch,
+                    expected_task_sha,
+                    bundle_path=bundle_file,
+                    git_bin=git_bin,
+                )
+
+            # 4. Preflight registered host worktree (if any)
+            if wt_to_remove is not None and retirement_info.get("phase") != "worktree_removed":
+                if wt_to_remove == host_repo:
+                    raise ValueError(f"Worktree path '{wt_to_remove}' is the main repository checkout. Cannot remove main checkout.")
+
+                cwd = Path.cwd().resolve()
+                if cwd == wt_to_remove or wt_to_remove in cwd.parents:
+                    raise ValueError(f"Current working directory '{cwd}' is inside target worktree '{wt_to_remove}'. Cannot remove active worktree.")
+
+                wt_list = get_worktrees(host_repo, git_bin=git_bin)
+                matching_wt = [w for w in wt_list if Path(w["worktree"]).resolve() == wt_to_remove]
+                if not matching_wt:
+                    raise ValueError(f"Registered worktree '{wt_to_remove}' not found in 'git worktree list --porcelain' for {host_repo}.")
+                wt_entry = matching_wt[0]
+                if wt_entry.get("is_main"):
+                    raise ValueError(f"Worktree '{wt_to_remove}' is the main checkout.")
+
+                res_c = subprocess.run(
+                    [git_bin, "-C", str(wt_to_remove), "rev-parse", "--git-common-dir"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    timeout=DEFAULT_TIMEOUT,
+                )
+                comm_dir = Path(res_c.stdout.strip())
+                if not comm_dir.is_absolute():
+                    comm_dir = (wt_to_remove / comm_dir).resolve()
+                else:
+                    comm_dir = comm_dir.resolve()
+                if comm_dir != (host_repo / ".git").resolve():
+                    raise ValueError(f"Worktree '{wt_to_remove}' git-common-dir '{comm_dir}' does not match '{host_repo / '.git'}'.")
+
+                if wt_entry.get("detached"):
+                    raise ValueError(f"Worktree '{wt_to_remove}' has detached HEAD, expected branch '{record['branch']}'.")
+                wt_branch = (wt_entry.get("branch") or "").removeprefix("refs/heads/")
+                if wt_branch not in (record.get("branch"), sub_branch):
+                    raise ValueError(f"Worktree '{wt_to_remove}' branch '{wt_branch}' does not match expected task branch '{record['branch']}'.")
+
+                verify_worktree_clean(wt_to_remove, git_bin=git_bin)
+
+            # 5. Preflight sandbox identity and fresh guest state
+            current_phase = retirement_info.get("phase")
+            info = get_sandbox_info(sandbox_name, sbx_bin=sbx_bin)
+            if info is None:
+                if current_phase in ("sandbox_removed", "worktree_removed", "completed"):
+                    pass
+                elif current_phase == "sandbox_stopped":
+                    record["retirement"]["phase"] = "sandbox_removed"
+                    write_task_record(record_path, record)
+                else:
+                    raise RuntimeError(f"Sandbox '{sandbox_name}' not found in sbx ls. Cannot retire missing sandbox.")
+            else:
+                observed_id = info.get("id") or info.get("sandbox_id")
+                if observed_id != expected_id:
+                    raise RuntimeError(
+                        f"Sandbox identity mismatch: recorded={expected_id}, observed={observed_id}. "
+                        "Never adopt or delete a same-name different-ID sandbox."
+                    )
+
+                observed_status = str(info.get("status", "")).lower()
+                if observed_status == "running":
+                    guest_repo = record.get("guest_repo_path")
+                    if not guest_repo:
+                        raise RuntimeError("Task record is missing guest_repo_path.")
+                    guest_harness_raw = harness_path or record.get("guest_harness_path")
+                    check_fresh_guest_state(sandbox_name, guest_repo, guest_harness_raw, pres_dest, sbx_bin=sbx_bin)
+                elif current_phase in ("sandbox_stopped", "sandbox_removed", "worktree_removed", "completed"):
+                    # Supported retry after a journaled stop from a previous retirement preflight
+                    if observed_status not in ("stopped", "exited", "created"):
+                        raise RuntimeError(
+                            f"Sandbox '{sandbox_name}' in unexpected status '{observed_status}' during retirement resumption."
+                        )
+                else:
+                    raise RuntimeError(
+                        f"Sandbox '{sandbox_name}' is stopped (status: '{observed_status}'). "
+                        "Retirement requires a fresh guest snapshot check against a running sandbox to verify no "
+                        "modifications occurred after preservation. Please resume the sandbox with "
+                        f"'python3 sandbox/task.py start --record {record_path}', preserve again, and retry retirement."
+                    )
+
+            # Preflight passed. Journal preflight phase.
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            if wt_to_remove is not None:
+                record["host_worktree"] = str(wt_to_remove)
+            if not record.get("retirement"):
+                record["retirement"] = {
+                    "started_at": now_iso,
+                    "phase": "preflight_passed",
+                    "manifest_path": str(manifest_path.resolve()),
+                    "submitted_sha": submitted_sha,
+                    "submission_branch": sub_branch,
+                    "host_worktree": str(wt_to_remove) if wt_to_remove else None,
+                    "phases": [],
+                }
+            record["retirement"]["phases"].append({
+                "phase": "preflight_passed",
+                "timestamp": now_iso,
+                "status": "completed",
+            })
+            write_task_record(record_path, record)
+
+            # ---------------- EXECUTION PHASE ----------------
+            # 1. Quiesce / stop sandbox (if running)
+            info = get_sandbox_info(sandbox_name, sbx_bin=sbx_bin)
+            if info is not None:
+                observed_status = str(info.get("status", "")).lower()
+                if observed_status == "running":
+                    subprocess.run([sbx_bin, "stop", sandbox_name], check=True, timeout=DEFAULT_TIMEOUT)
+                    info_after = get_sandbox_info(sandbox_name, sbx_bin=sbx_bin)
+                    if info_after is not None:
+                        id_after = info_after.get("id") or info_after.get("sandbox_id")
+                        if id_after != expected_id:
+                            raise RuntimeError(f"Sandbox identity changed after stop: {id_after} != {expected_id}")
+                        st_after = str(info_after.get("status", "")).lower()
+                        if st_after not in ("stopped", "exited", "created"):
+                            raise RuntimeError(f"Sandbox failed to quiesce: observed status '{st_after}'")
+
+            record["retirement"]["phase"] = "sandbox_stopped"
+            record["retirement"]["phases"].append({
+                "phase": "sandbox_stopped",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "status": "completed",
+            })
+            write_task_record(record_path, record)
+
+            # 2. Remove sandbox
+            info = get_sandbox_info(sandbox_name, sbx_bin=sbx_bin)
+            if info is not None:
+                observed_id = info.get("id") or info.get("sandbox_id")
+                if observed_id != expected_id:
+                    raise RuntimeError(f"Sandbox identity mismatch before rm: {observed_id} != {expected_id}")
+                observed_status = str(info.get("status", "")).lower()
+                if observed_status not in ("stopped", "exited", "created"):
+                    raise RuntimeError(
+                        f"Refusing to remove sandbox '{sandbox_name}': expected stopped status, observed '{observed_status}'"
+                    )
+                # Targeted local removal with --force to bypass interactive confirmation noninteractively.
+                # Safe because sandbox ID matches task record, container was confirmed stopped, and removal targets only sandbox_name (never --all).
+                subprocess.run([sbx_bin, "rm", "--force", sandbox_name], check=True, timeout=DEFAULT_TIMEOUT)
+                info_after_rm = get_sandbox_info(sandbox_name, sbx_bin=sbx_bin)
+                if info_after_rm is not None:
+                    raise RuntimeError(f"Sandbox '{sandbox_name}' still exists in sbx ls after 'sbx rm'.")
+
+            record["retirement"]["phase"] = "sandbox_removed"
+            record["retirement"]["phases"].append({
+                "phase": "sandbox_removed",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "status": "completed",
+            })
+            write_task_record(record_path, record)
+
+            # 3. Remove host worktree (if registered)
+            if wt_to_remove is not None:
+                wt_list = get_worktrees(host_repo, git_bin=git_bin)
+                matching_wt = [w for w in wt_list if Path(w["worktree"]).resolve() == wt_to_remove]
+                if matching_wt:
+                    wt_entry = matching_wt[0]
+                    if wt_to_remove == host_repo or wt_entry.get("is_main"):
+                        raise ValueError(f"Worktree '{wt_to_remove}' is the main checkout.")
+                    cwd = Path.cwd().resolve()
+                    if cwd == wt_to_remove or wt_to_remove in cwd.parents:
+                        raise ValueError(f"Current working directory '{cwd}' is inside target worktree '{wt_to_remove}'.")
+
+                    # Recheck worktree branch and cleanliness immediately before removal,
+                    # including ignored files, to guard against mutations introduced between phases.
+                    wt_branch = (wt_entry.get("branch") or "").removeprefix("refs/heads/")
+                    if wt_branch not in (record.get("branch"), sub_branch):
+                        raise ValueError(
+                            f"Worktree '{wt_to_remove}' branch '{wt_branch}' does not match expected task branch '{record['branch']}'."
+                        )
+                    verify_worktree_clean(wt_to_remove, git_bin=git_bin)
+
+                    subprocess.run(
+                        [git_bin, "-C", str(host_repo), "worktree", "remove", str(wt_to_remove)],
+                        check=True,
+                        timeout=DEFAULT_TIMEOUT,
+                    )
+                    wt_list_after = get_worktrees(host_repo, git_bin=git_bin)
+                    if any(Path(w["worktree"]).resolve() == wt_to_remove for w in wt_list_after):
+                        raise RuntimeError(f"Worktree '{wt_to_remove}' still present after 'git worktree remove'.")
+
+                record["retirement"]["phase"] = "worktree_removed"
+                record["retirement"]["phases"].append({
+                    "phase": "worktree_removed",
+                    "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "status": "completed",
+                })
+                write_task_record(record_path, record)
+
+            # 4. Mark retired and completed
+            now_done = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            record["status"] = "retired"
+            record["updated_at"] = now_done
+            record["retirement"]["phase"] = "completed"
+            record["retirement"]["completed_at"] = now_done
+            record["retirement"]["phases"].append({
+                "phase": "completed",
+                "timestamp": now_done,
+                "status": "completed",
+            })
+            record["last_error"] = None
+            write_task_record(record_path, record)
+
+            return {
+                "task_id": record["task_id"],
+                "sandbox_name": sandbox_name,
+                "sandbox_id": expected_id,
+                "status": "retired",
+                "worktree_removed": str(wt_to_remove) if wt_to_remove else None,
+                "branch_preserved": sub_branch,
+                "submitted_sha": submitted_sha,
+                "retirement": record["retirement"],
+            }
+
+        except Exception as err:
+            if "retirement" in record and isinstance(record["retirement"], dict):
+                record["retirement"]["error"] = str(err)
+            record["last_error"] = str(err)
+            record["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            try:
+                write_task_record(record_path, record)
+            except Exception:
+                pass
+            raise
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build command line argument parser."""
     parser = argparse.ArgumentParser(
@@ -1737,6 +2477,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_preserve.add_argument("--sbx-bin", default=os.environ.get("SBX_BIN", "sbx"), help="Path to sbx binary")
     p_preserve.add_argument("--git-bin", default=os.environ.get("GIT_BIN", "git"), help="Path to git binary")
+
+    # register-worktree
+    p_reg = subparsers.add_parser("register-worktree", help="Register a host worktree path in a task record.")
+    p_reg.add_argument("--record", required=True, help="Path to JSON task record file")
+    p_reg.add_argument("--worktree", required=True, help="Host worktree path")
+    p_reg.add_argument("--git-bin", default=os.environ.get("GIT_BIN", "git"), help="Path to git binary")
+
+    # retire
+    p_retire = subparsers.add_parser("retire", help="Retire completed task sandbox and optional registered worktree.")
+    p_retire.add_argument("--record", required=True, help="Path to JSON task record file")
+    p_retire.add_argument("--manifest", required=True, help="Path to accepted submission manifest JSON file")
+    p_retire.add_argument("--worktree", default=None, help="Optional host worktree path to retire")
+    p_retire.add_argument("--harness-path", default=None, help="Explicit guest task harness directory path")
+    p_retire.add_argument("--sbx-bin", default=os.environ.get("SBX_BIN", "sbx"), help="Path to sbx binary")
+    p_retire.add_argument("--git-bin", default=os.environ.get("GIT_BIN", "git"), help="Path to git binary")
 
     return parser
 
@@ -1808,6 +2563,27 @@ def main(argv: list[str] | None = None) -> int:
                 git_bin=args.git_bin,
             )
             print(f"Preservation verified: destination={receipt['destination']} bundle_sha={receipt['bundle']['sha256']}")
+            return 0
+
+        elif args.subcommand == "register-worktree":
+            rec = register_worktree(record_path, Path(args.worktree), git_bin=args.git_bin)
+            print(f"Registered worktree for task {rec['task_id']}: {rec['host_worktree']}")
+            return 0
+
+        elif args.subcommand == "retire":
+            res = retire_task(
+                record_path=record_path,
+                manifest_path=Path(args.manifest),
+                worktree_path=Path(args.worktree) if args.worktree else None,
+                harness_path=args.harness_path,
+                sbx_bin=args.sbx_bin,
+                git_bin=args.git_bin,
+            )
+            print(
+                f"Task environment retired: {res['sandbox_name']} "
+                f"(task: {res['task_id']}, worktree: {res['worktree_removed'] or 'none'}, "
+                f"branch: {res['branch_preserved']})"
+            )
             return 0
 
         else:
