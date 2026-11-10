@@ -540,17 +540,24 @@ python3 sandbox/task.py preserve \
 - **Failure Safety:** If verification fails or concurrent modification is detected, failure diagnostics and transferred files are retained with `verified: false`.
 - **Receipt:** Writes an immutable `receipt.json` with `"verification_scope": "Verification covers this point in time; retirement always requires a fresh check and explicit authorization."`
 
-### Explicit Retirement
+### Explicit Retirement (`sandbox/task.py retire`)
 
 Preservation and submission acceptance do NOT constitute deletion authorization.
-Removing a sandbox (`sbx rm <sandbox-name>`) requires separate explicit operator
-approval, a fresh state check confirming a quiesced container, and verified host
-export before deletion:
+Once a task is accepted and preserved, the operator authorizes explicit retirement via
+`sandbox/task.py retire`:
 
 ```bash
-sbx rm <sandbox-name>
+python3 sandbox/task.py retire \
+  --record /path/to/task-record.json \
+  --manifest /path/to/accepted-manifest.json \
+  [--worktree /path/to/host/worktree]
 ```
 
+- **Gated Cleanup:** Verifies accepted submission manifest, matching verified preservation receipt and artifact checksums, durable host branches at exact SHAs, and fresh quiesced guest state before destruction. Refuses initially stopped sandboxes lacking a journaled retirement stop, requiring resumption and re-preservation.
+- **Atomic Preflight & Phase Journaling:** Preflights all destructive targets (sandbox and registered host worktree) before first removal; journals phases so partial failure can be retried without removing unrelated VMs or worktrees.
+- **Targeted Non-Interactive Removal:** Quiesces the guest with `sbx stop`, verifies `stopped` status and exact sandbox ID, then removes the container with `sbx rm --force <sandbox-name>`. Using `--force` is safe and non-interactive because exact VM identity and stopped status are confirmed, and removal targets only the specific task sandbox (never `--all` or force-stopping running VMs).
+- **Mandatory Branch Retention:** Preserves all branches; imports guest-only branches by fetching only the exact expected commit SHA from the verified bundle (never named refspecs), preventing wrong branch creation from stale bundle refs.
+- **Worktree Safety & Recheck:** Removes registered clean host worktrees (`git worktree remove` without `--force` or pruning); cannot swap a previously registered worktree; rechecks worktree cleanliness and ignored files immediately before removal to guard against concurrent mutations between phases. Leaves main checkout, active cwd, and branches untouched.
 - Interrupted tasks remain recorded and can be safely resumed with `python3 sandbox/task.py start --record ...`.
 - Never delete a sandbox as routine cleanup without verified preservation and explicit operator instruction.
 - Existing legacy project environments are not automatically deleted.

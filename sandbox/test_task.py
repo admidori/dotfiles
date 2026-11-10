@@ -66,15 +66,28 @@ class FakeSbxManager:
         self.exec_calls: list[list[str]] = []
         self.cp_calls: list[list[str]] = []
         self.ls_calls: list[list[str]] = []
+        self.stop_calls: list[list[str]] = []
+        self.rm_calls: list[list[str]] = []
         self.corrupt_bundle_transfer = False
         self.corrupt_staged_patch_transfer = False
         self.corrupt_worktree_transfer = False
         self.mutate_source_during_tar = False
         self.mutate_harness_during_tar = False
         self.mutate_during_transfer = False
+        self.on_rm_callback: Any = None
+        self.fail_git_fetch = False
 
     def dispatch(self, cmd: list[str], *args, **kwargs):
-        if not cmd or cmd[0] != "sbx":
+        if not cmd:
+            return ORIG_SUBPROCESS_RUN(cmd, *args, **kwargs)
+
+        if cmd[0] == "git" and "fetch" in cmd and getattr(self, "fail_git_fetch", False):
+            res = subprocess.CompletedProcess(cmd, 128, stdout="", stderr="fatal: bundle fetch failed\n")
+            if kwargs.get("check"):
+                raise subprocess.CalledProcessError(res.returncode, cmd, output=res.stdout, stderr=res.stderr)
+            return res
+
+        if cmd[0] != "sbx":
             return ORIG_SUBPROCESS_RUN(cmd, *args, **kwargs)
 
         res = self._handle_sbx(cmd, *args, **kwargs)
@@ -151,6 +164,27 @@ class FakeSbxManager:
             if not name or name not in self.sandboxes:
                 return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Sandbox not found\n")
             self.sandboxes[name]["status"] = "running"
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        elif subcommand == "stop":
+            self.stop_calls.append(cmd)
+            name = cmd[2]
+            if name not in self.sandboxes:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr=f"Sandbox {name} not found\n")
+            self.sandboxes[name]["status"] = "stopped"
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        elif subcommand == "rm":
+            self.rm_calls.append(cmd)
+            args = [a for a in cmd[2:] if not a.startswith("-")]
+            if not args:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Missing sandbox name\n")
+            name = args[0]
+            if name not in self.sandboxes:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr=f"Sandbox {name} not found\n")
+            del self.sandboxes[name]
+            if getattr(self, "on_rm_callback", None):
+                self.on_rm_callback(name)
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         elif subcommand == "exec":
@@ -1317,6 +1351,643 @@ class TestCli(unittest.TestCase):
         ret = task.main(["preserve", "--record", rec_file, "--dest", dest_dir, "--quiesced"])
         self.assertEqual(ret, 0)
         self.assertTrue((Path(dest_dir) / "receipt.json").exists())
+
+
+class TestTaskRetirement(unittest.TestCase):
+    """Test suite for task.py retire command, preflights, worktree cleanup, and idempotency."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        self.host_repo = self.root / "host_repo"
+        self.base_sha = create_test_git_repo(self.host_repo)
+        self.workload = self.root / "workload"
+        self.workload.mkdir()
+        self.mixin = self.root / "mixin"
+        self.mixin.mkdir()
+        self.records_dir = self.root / "records"
+        self.records_dir.mkdir()
+        self.manifests_dir = self.root / "manifests"
+        self.manifests_dir.mkdir()
+
+        self.sbx_manager = FakeSbxManager(self.root / "sbx_env")
+        self.patcher = patch("subprocess.run", side_effect=self.sbx_manager.dispatch)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        self.temp_dir.cleanup()
+
+    def _setup_completed_task(
+        self,
+        task_id: str = "task-01",
+        name: str = "box-01",
+        branch: str = "task/feature-01",
+        sub_branch: str = "sub/feature-01",
+        with_worktree: bool = True,
+        host_has_sub_branch: bool = True,
+    ) -> tuple[Path, Path, Path | None, str]:
+        rec_path = self.records_dir / f"{task_id}.json"
+        harness_path = f"/home/agent/.local/state/agent-harness/{name}"
+        task.create_task(
+            record_path=rec_path,
+            task_id=task_id,
+            sandbox_name=name,
+            host_repo=self.host_repo,
+            base_ref="trunk",
+            branch=branch,
+            workload_path=self.workload,
+            mixin_path=self.mixin,
+            guest_harness_path=harness_path,
+        )
+
+        box = self.sbx_manager.sandboxes[name]
+        guest_repo = box["guest_repo"]
+        guest_harness = box["guest_harness"]
+        (guest_harness / "run.log").write_text("harness output\n")
+
+        # Make commit in guest
+        (guest_repo / "feature.txt").write_text("feature content\n")
+        subprocess.run(["git", "-C", str(guest_repo), "add", "feature.txt"], check=True)
+        subprocess.run(["git", "-C", str(guest_repo), "commit", "-m", f"feat: {task_id}"], check=True)
+        rev_head = subprocess.check_output(["git", "-C", str(guest_repo), "rev-parse", "HEAD"], text=True).strip()
+        rev_tree = subprocess.check_output(["git", "-C", str(guest_repo), "rev-parse", "HEAD^{tree}"], text=True).strip()
+
+        # Create sub_branch in guest so it gets included in preservation bundle
+        subprocess.run(["git", "-C", str(guest_repo), "branch", sub_branch, rev_head], check=True)
+
+        pres_dir = self.root / f"preserved_{task_id}"
+        task.preserve_task(rec_path, pres_dir, quiesced=True, harness_path=harness_path)
+
+        if host_has_sub_branch:
+            subprocess.run(["git", "-C", str(self.host_repo), "checkout", "-b", sub_branch, self.base_sha], check=True, capture_output=True)
+            (self.host_repo / "feature.txt").write_text("feature content\n")
+            subprocess.run(["git", "-C", str(self.host_repo), "add", "feature.txt"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(self.host_repo), "commit", "-m", f"feat: {task_id} squashed"], check=True, capture_output=True)
+            sub_sha = subprocess.check_output(["git", "-C", str(self.host_repo), "rev-parse", "HEAD"], text=True).strip()
+            sub_tree = subprocess.check_output(["git", "-C", str(self.host_repo), "rev-parse", "HEAD^{tree}"], text=True).strip()
+            subprocess.run(["git", "-C", str(self.host_repo), "checkout", "trunk"], check=True, capture_output=True)
+        else:
+            sub_sha = rev_head
+            sub_tree = rev_tree
+
+        manifest_path = self.manifests_dir / f"manifest_{task_id}.json"
+        manifest_data = {
+            "schema_version": 1,
+            "record_type": "submission_manifest",
+            "task_id": task_id,
+            "repo": str(self.host_repo.resolve()),
+            "status": "accepted",
+            "base_commit": self.base_sha,
+            "reviewed_head": rev_head,
+            "reviewed_tree": rev_tree,
+            "submission_branch": sub_branch,
+            "submitted_sha": sub_sha,
+            "submitted_tree": sub_tree,
+            "commit_message": f"feat: {task_id} squashed\n",
+            "dependencies": [],
+            "designer_accepted": True,
+            "verification_evidence": "All tests passed cleanly.",
+            "accepted_at": "2026-11-10T12:00:00Z",
+        }
+        manifest_path.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+        os.chmod(manifest_path, 0o600)
+
+        wt_dir = None
+        if with_worktree:
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.host_repo),
+                    "fetch",
+                    str(pres_dir / "repo.bundle"),
+                    f"{rev_head}:{branch}",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            wt_dir = self.root / f"wt_{task_id}"
+            subprocess.run(["git", "-C", str(self.host_repo), "worktree", "add", str(wt_dir), branch], check=True, capture_output=True)
+            task.register_worktree(rec_path, wt_dir)
+
+        return rec_path, manifest_path, wt_dir, sub_sha
+
+    def test_retire_success_sandbox_and_worktree(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-ok",
+            name="box-retire-ok",
+            branch="task/retire-ok",
+            sub_branch="sub/retire-ok",
+            with_worktree=True,
+        )
+        self.assertIn("box-retire-ok", self.sbx_manager.sandboxes)
+        self.assertTrue(wt_dir.exists())
+
+        res = task.retire_task(rec_path, manifest_path)
+
+        self.assertEqual(res["status"], "retired")
+        self.assertEqual(res["task_id"], "retire-ok")
+        self.assertEqual(res["worktree_removed"], str(wt_dir.resolve()))
+        self.assertEqual(res["branch_preserved"], "sub/retire-ok")
+
+        # Sandbox stopped and removed
+        self.assertNotIn("box-retire-ok", self.sbx_manager.sandboxes)
+        self.assertTrue(any(c[1] == "stop" and "box-retire-ok" in c for c in self.sbx_manager.stop_calls))
+        self.assertTrue(any(c[1] == "rm" and "--force" in c and "box-retire-ok" in c for c in self.sbx_manager.rm_calls))
+        self.assertFalse(any("--all" in c for c in self.sbx_manager.rm_calls))
+
+        # Worktree removed
+        wt_list = task.get_worktrees(self.host_repo)
+        self.assertFalse(any(Path(w["worktree"]).resolve() == wt_dir.resolve() for w in wt_list))
+
+        # Branches are preserved
+        res_b1 = subprocess.run(["git", "-C", str(self.host_repo), "rev-parse", "refs/heads/task/retire-ok"], capture_output=True, text=True)
+        self.assertEqual(res_b1.returncode, 0)
+        res_b2 = subprocess.run(["git", "-C", str(self.host_repo), "rev-parse", "refs/heads/sub/retire-ok"], capture_output=True, text=True)
+        self.assertEqual(res_b2.returncode, 0)
+
+        # Task record updated to retired
+        rec = task.read_task_record(rec_path, require_sandbox_id=False)
+        self.assertEqual(rec["status"], "retired")
+        self.assertEqual(rec["retirement"]["phase"], "completed")
+
+        # Status command reflects retired state cleanly
+        stat_res = task.status_task(rec_path)
+        self.assertEqual(stat_res["task_lifecycle"], "retired")
+        self.assertEqual(stat_res["vm_status"], "missing")
+        self.assertIsNone(stat_res["mismatch"])
+
+    def test_retire_success_no_worktree(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-no-wt",
+            name="box-retire-no-wt",
+            branch="task/retire-no-wt",
+            sub_branch="sub/retire-no-wt",
+            with_worktree=False,
+        )
+        self.assertIsNone(wt_dir)
+
+        res = task.retire_task(rec_path, manifest_path)
+        self.assertEqual(res["status"], "retired")
+        self.assertIsNone(res["worktree_removed"])
+        self.assertNotIn("box-retire-no-wt", self.sbx_manager.sandboxes)
+
+    def test_retire_ensures_durable_host_branch_from_bundle(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-fetch-br",
+            name="box-fetch-br",
+            branch="task/fetch-br",
+            sub_branch="sub/fetch-br",
+            with_worktree=False,
+            host_has_sub_branch=False,
+        )
+        # Ensure sub/fetch-br does NOT exist on host repository before retirement
+        res_pre = subprocess.run(["git", "-C", str(self.host_repo), "rev-parse", "--verify", "-q", "refs/heads/sub/fetch-br"], capture_output=True)
+        self.assertNotEqual(res_pre.returncode, 0)
+
+        res = task.retire_task(rec_path, manifest_path)
+        self.assertEqual(res["status"], "retired")
+
+        # Now sub/fetch-br MUST exist on host repository and point to sub_sha
+        res_post = subprocess.run(["git", "-C", str(self.host_repo), "rev-parse", "--verify", "refs/heads/sub/fetch-br"], capture_output=True, text=True)
+        self.assertEqual(res_post.returncode, 0)
+        self.assertEqual(res_post.stdout.strip().lower(), sub_sha.lower())
+
+    def test_retire_rejects_divergent_host_branch(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-div",
+            name="box-div",
+            branch="task/div-br",
+            sub_branch="sub/div-br",
+            with_worktree=False,
+            host_has_sub_branch=True,
+        )
+        # Point sub/div-br on host to a divergent commit
+        (self.host_repo / "divergent.txt").write_text("divergent content\n")
+        subprocess.run(["git", "-C", str(self.host_repo), "add", "divergent.txt"], check=True)
+        subprocess.run(["git", "-C", str(self.host_repo), "commit", "-m", "divergent commit"], check=True)
+        div_sha = subprocess.check_output(["git", "-C", str(self.host_repo), "rev-parse", "HEAD"], text=True).strip()
+        subprocess.run(["git", "-C", str(self.host_repo), "update-ref", "refs/heads/sub/div-br", div_sha], check=True)
+
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path, manifest_path)
+        self.assertIn("diverges from expected SHA", str(cm.exception))
+
+        # Sandbox must NOT be deleted
+        self.assertIn("box-div", self.sbx_manager.sandboxes)
+        self.assertEqual(len(self.sbx_manager.rm_calls), 0)
+
+    def test_retire_rejects_stale_preservation_when_guest_mutated(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-stale",
+            name="box-stale",
+            branch="task/stale-br",
+            sub_branch="sub/stale-br",
+            with_worktree=False,
+        )
+        # Mutate guest after preservation
+        box = self.sbx_manager.sandboxes["box-stale"]
+        guest_repo = box["guest_repo"]
+        (guest_repo / "unpreserved.txt").write_text("unpreserved data\n")
+
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path, manifest_path)
+        self.assertIn("Guest state has changed since preservation export", str(cm.exception))
+
+        # Sandbox must NOT be deleted
+        self.assertIn("box-stale", self.sbx_manager.sandboxes)
+        self.assertEqual(len(self.sbx_manager.rm_calls), 0)
+
+    def test_retire_rejects_sandbox_id_mismatch(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-mis",
+            name="box-mis",
+            branch="task/mis-br",
+            sub_branch="sub/mis-br",
+            with_worktree=False,
+        )
+        # Change ID in sandbox manager
+        self.sbx_manager.sandboxes["box-mis"]["id"] = "different-unauthorized-id"
+
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path, manifest_path)
+        self.assertIn("Sandbox identity mismatch", str(cm.exception))
+        self.assertEqual(len(self.sbx_manager.rm_calls), 0)
+
+    def test_retire_rejects_missing_or_unaccepted_manifest(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-man-chk",
+            name="box-man-chk",
+            branch="task/man-br",
+            sub_branch="sub/man-br",
+            with_worktree=False,
+        )
+        non_manifest = self.manifests_dir / "nonexistent.json"
+        with self.assertRaises(FileNotFoundError):
+            task.retire_task(rec_path, non_manifest)
+
+        # Unaccepted status
+        unacc_path = self.manifests_dir / "unaccepted.json"
+        data = json.loads(manifest_path.read_text())
+        data["status"] = "prepared"
+        unacc_path.write_text(json.dumps(data))
+        os.chmod(unacc_path, 0o600)
+        with self.assertRaises(ValueError) as cm:
+            task.retire_task(rec_path, unacc_path)
+        self.assertIn("expected 'accepted'", str(cm.exception))
+
+        # Task ID mismatch
+        mismatch_path = self.manifests_dir / "mismatch.json"
+        data["status"] = "accepted"
+        data["task_id"] = "wrong-task-id"
+        mismatch_path.write_text(json.dumps(data))
+        os.chmod(mismatch_path, 0o600)
+        with self.assertRaises(ValueError) as cm:
+            task.retire_task(rec_path, mismatch_path)
+        self.assertIn("does not match record task_id", str(cm.exception))
+
+    def test_retire_rejects_corrupted_preservation_checksum(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-corrupt",
+            name="box-corrupt",
+            branch="task/corrupt-br",
+            sub_branch="sub/corrupt-br",
+            with_worktree=False,
+        )
+        pres_dir = self.root / "preserved_retire-corrupt"
+        # Tamper with bundle file
+        bundle_file = pres_dir / "repo.bundle"
+        bundle_file.write_bytes(bundle_file.read_bytes() + b"\ncorrupt")
+
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path, manifest_path)
+        self.assertIn("checksum mismatch", str(cm.exception))
+        self.assertIn("box-corrupt", self.sbx_manager.sandboxes)
+
+    def test_retire_dirty_worktree_rejections(self):
+        # 1. Unstaged tracked changes
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-wt-dirty1",
+            name="box-wt-dirty1",
+            branch="task/wt-dirty1",
+            sub_branch="sub/wt-dirty1",
+            with_worktree=True,
+        )
+        (wt_dir / "README.md").write_text("unstaged modification\n")
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path, manifest_path)
+        self.assertIn("unstaged tracked changes", str(cm.exception))
+        self.assertIn("box-wt-dirty1", self.sbx_manager.sandboxes)
+        self.assertEqual(len(self.sbx_manager.rm_calls), 0)
+
+        # 2. Staged uncommitted changes
+        rec_path2, manifest_path2, wt_dir2, sub_sha2 = self._setup_completed_task(
+            task_id="retire-wt-dirty2",
+            name="box-wt-dirty2",
+            branch="task/wt-dirty2",
+            sub_branch="sub/wt-dirty2",
+            with_worktree=True,
+        )
+        (wt_dir2 / "staged.txt").write_text("staged content\n")
+        subprocess.run(["git", "-C", str(wt_dir2), "add", "staged.txt"], check=True)
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path2, manifest_path2)
+        self.assertIn("staged uncommitted changes", str(cm.exception))
+        self.assertIn("box-wt-dirty2", self.sbx_manager.sandboxes)
+
+        # 3. Untracked files
+        rec_path3, manifest_path3, wt_dir3, sub_sha3 = self._setup_completed_task(
+            task_id="retire-wt-dirty3",
+            name="box-wt-dirty3",
+            branch="task/wt-dirty3",
+            sub_branch="sub/wt-dirty3",
+            with_worktree=True,
+        )
+        (wt_dir3 / "untracked.txt").write_text("untracked\n")
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path3, manifest_path3)
+        self.assertIn("untracked files", str(cm.exception))
+        self.assertIn("box-wt-dirty3", self.sbx_manager.sandboxes)
+
+        # 4. Ignored files
+        rec_path4, manifest_path4, wt_dir4, sub_sha4 = self._setup_completed_task(
+            task_id="retire-wt-dirty4",
+            name="box-wt-dirty4",
+            branch="task/wt-dirty4",
+            sub_branch="sub/wt-dirty4",
+            with_worktree=True,
+        )
+        (self.host_repo / ".git" / "info").mkdir(parents=True, exist_ok=True)
+        (self.host_repo / ".git" / "info" / "exclude").write_text("*.log\n")
+        (wt_dir4 / "test.log").write_text("ignored log data\n")
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path4, manifest_path4)
+        self.assertIn("ignored files", str(cm.exception))
+        self.assertIn("box-wt-dirty4", self.sbx_manager.sandboxes)
+
+    def test_retire_rejects_main_worktree_and_cwd(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-main-wt",
+            name="box-main-wt",
+            branch="task/main-wt",
+            sub_branch="sub/main-wt",
+            with_worktree=False,
+        )
+        # Attempt to retire main repo checkout as worktree
+        with self.assertRaises(ValueError) as cm:
+            task.retire_task(rec_path, manifest_path, worktree_path=self.host_repo)
+        self.assertIn("main repository checkout", str(cm.exception))
+
+        # Attempt to retire current working directory
+        with self.assertRaises(ValueError) as cm:
+            task.retire_task(rec_path, manifest_path, worktree_path=Path.cwd())
+        self.assertIn("inside target worktree", str(cm.exception))
+
+    def test_retire_journal_resumption_and_idempotency(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-resume",
+            name="box-resume",
+            branch="task/resume",
+            sub_branch="sub/resume",
+            with_worktree=True,
+        )
+        # Simulate partial failure: sandbox was stopped and removed, record has phase sandbox_removed
+        del self.sbx_manager.sandboxes["box-resume"]
+        rec = task.read_task_record(rec_path, require_sandbox_id=False)
+        rec["retirement"] = {
+            "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "phase": "sandbox_removed",
+            "manifest_path": str(manifest_path.resolve()),
+            "submitted_sha": sub_sha,
+            "submission_branch": "sub/resume",
+            "host_worktree": str(wt_dir.resolve()),
+            "phases": [{"phase": "sandbox_removed", "timestamp": "...", "status": "completed"}],
+        }
+        task.write_task_record(rec_path, rec)
+
+        # Retry retirement: skips missing sandbox and completes worktree removal
+        res = task.retire_task(rec_path, manifest_path)
+        self.assertEqual(res["status"], "retired")
+        self.assertEqual(res["worktree_removed"], str(wt_dir.resolve()))
+
+        # Check worktree is gone
+        wt_list = task.get_worktrees(self.host_repo)
+        self.assertFalse(any(Path(w["worktree"]).resolve() == wt_dir.resolve() for w in wt_list))
+
+        # Re-running on already retired task is idempotent
+        res_idem = task.retire_task(rec_path, manifest_path)
+        self.assertEqual(res_idem["status"], "retired")
+        self.assertTrue(res_idem.get("already_retired"))
+
+    def test_backward_compatibility_read_record(self):
+        # Record with no host_worktree or retirement fields
+        old_record = {
+            "schema_version": 1,
+            "task_id": "legacy-task",
+            "sandbox_name": "legacy-box",
+            "sandbox_id": "legacy-id",
+            "host_repo": str(self.host_repo),
+            "base_ref": "trunk",
+            "base_commit": self.base_sha,
+            "branch": "task/legacy",
+            "status": "ready",
+            "guest_harness_path": None,
+        }
+        rec_path = self.records_dir / "legacy.json"
+        task.write_task_record(rec_path, old_record)
+
+        loaded = task.read_task_record(rec_path, require_sandbox_id=False)
+        self.assertEqual(loaded["task_id"], "legacy-task")
+        self.assertIsNone(loaded.get("host_worktree"))
+        self.assertIsNone(loaded.get("retirement"))
+
+        # Retired record
+        old_record["status"] = "retired"
+        task.write_task_record(rec_path, old_record)
+        loaded_retired = task.read_task_record(rec_path, require_sandbox_id=False)
+        self.assertEqual(loaded_retired["status"], "retired")
+
+    def test_cli_retire_and_register_worktree(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-cli",
+            name="box-retire-cli",
+            branch="task/retire-cli",
+            sub_branch="sub/retire-cli",
+            with_worktree=False,
+        )
+        # Create worktree manually
+        manifest = json.loads(manifest_path.read_text())
+        rev_head = manifest["reviewed_head"]
+        pres_dir = self.root / "preserved_retire-cli"
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.host_repo),
+                "fetch",
+                str(pres_dir / "repo.bundle"),
+                f"{rev_head}:task/retire-cli",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        wt_dir = self.root / "wt_cli"
+        subprocess.run(["git", "-C", str(self.host_repo), "worktree", "add", str(wt_dir), "task/retire-cli"], check=True, capture_output=True)
+
+        ret_reg = task.main(["register-worktree", "--record", str(rec_path), "--worktree", str(wt_dir)])
+        self.assertEqual(ret_reg, 0)
+        rec = task.read_task_record(rec_path, require_sandbox_id=False)
+        self.assertEqual(rec["host_worktree"], str(wt_dir.resolve()))
+
+        ret_retire = task.main(["retire", "--record", str(rec_path), "--manifest", str(manifest_path)])
+        self.assertEqual(ret_retire, 0)
+        self.assertNotIn("box-retire-cli", self.sbx_manager.sandboxes)
+        wt_list = task.get_worktrees(self.host_repo)
+        self.assertFalse(any(Path(w["worktree"]).resolve() == wt_dir.resolve() for w in wt_list))
+
+    def test_retire_stops_before_removal_on_branch_fetch_failure(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-fetch-fail",
+            name="box-fetch-fail",
+            branch="task/fetch-fail",
+            sub_branch="sub/fetch-fail",
+            with_worktree=False,
+            host_has_sub_branch=False,
+        )
+        # Ensure sub_branch does not exist on host
+        subprocess.run(["git", "-C", str(self.host_repo), "branch", "-D", "sub/fetch-fail"], capture_output=True)
+        # Simulate fetch failure
+        self.sbx_manager.fail_git_fetch = True
+
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path, manifest_path)
+        self.assertIn("could not be made durable", str(cm.exception))
+
+        # Sandbox must NOT have been stopped or removed
+        self.assertIn("box-fetch-fail", self.sbx_manager.sandboxes)
+        self.assertEqual(len(self.sbx_manager.stop_calls), 0)
+        self.assertEqual(len(self.sbx_manager.rm_calls), 0)
+
+        # Task record must not be retired
+        rec_post = task.read_task_record(rec_path, require_sandbox_id=False)
+        self.assertNotEqual(rec_post.get("status"), "retired")
+
+    def test_retire_rejects_worktree_mismatch_with_registered(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-wt-mismatch",
+            name="box-wt-mismatch",
+            branch="task/wt-mismatch",
+            sub_branch="sub/wt-mismatch",
+            with_worktree=True,
+        )
+        mismatch_wt = self.root / "other_unregistered_worktree"
+        mismatch_wt.mkdir(parents=True, exist_ok=True)
+
+        with self.assertRaises(ValueError) as cm:
+            task.retire_task(rec_path, manifest_path, worktree_path=mismatch_wt)
+        self.assertIn("does not match registered host worktree", str(cm.exception))
+
+        # Neither worktree nor sandbox should be removed
+        self.assertTrue(wt_dir.exists())
+        self.assertIn("box-wt-mismatch", self.sbx_manager.sandboxes)
+        self.assertEqual(len(self.sbx_manager.rm_calls), 0)
+        rec_post = task.read_task_record(rec_path, require_sandbox_id=False)
+        self.assertNotEqual(rec_post.get("status"), "retired")
+
+    def test_retire_worktree_recheck_mutation_between_phases(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-wt-race",
+            name="box-wt-race",
+            branch="task/wt-race",
+            sub_branch="sub/wt-race",
+            with_worktree=True,
+        )
+
+        def on_rm(name):
+            # Simulate concurrent mutation staged in worktree between sandbox rm and worktree rm
+            mutation = wt_dir / "concurrent_staged.txt"
+            mutation.write_text("concurrent staged data\n")
+            subprocess.run(["git", "-C", str(wt_dir), "add", "concurrent_staged.txt"], check=True)
+
+        self.sbx_manager.on_rm_callback = on_rm
+
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path, manifest_path)
+        self.assertIn("has staged uncommitted changes", str(cm.exception))
+
+        # Sandbox was stopped and removed
+        self.assertNotIn("box-wt-race", self.sbx_manager.sandboxes)
+        self.assertTrue(any(c[1] == "rm" and "--force" in c and "box-wt-race" in c for c in self.sbx_manager.rm_calls))
+
+        # But worktree removal was aborted immediately upon cleanliness recheck
+        self.assertTrue(wt_dir.exists())
+        self.assertTrue((wt_dir / "concurrent_staged.txt").exists())
+        wt_list = task.get_worktrees(self.host_repo)
+        self.assertTrue(any(Path(w["worktree"]).resolve() == wt_dir.resolve() for w in wt_list))
+
+        # Journal shows sandbox_removed, but not worktree_removed or completed
+        rec = task.read_task_record(rec_path, require_sandbox_id=False)
+        self.assertEqual(rec["retirement"]["phase"], "sandbox_removed")
+        self.assertNotEqual(rec["status"], "retired")
+
+    def test_retire_rejects_initially_stopped_sandbox(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-init-stopped",
+            name="box-init-stopped",
+            branch="task/init-stopped",
+            sub_branch="sub/init-stopped",
+            with_worktree=False,
+        )
+        # Sandbox is observed stopped before any recorded retirement phase
+        self.sbx_manager.sandboxes["box-init-stopped"]["status"] = "stopped"
+
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path, manifest_path)
+        self.assertIn("is stopped", str(cm.exception))
+        self.assertIn("task.py start", str(cm.exception))
+
+        # No stop or rm calls must have been dispatched
+        self.assertEqual(len(self.sbx_manager.stop_calls), 0)
+        self.assertEqual(len(self.sbx_manager.rm_calls), 0)
+
+        # Sandbox must NOT be deleted
+        self.assertIn("box-init-stopped", self.sbx_manager.sandboxes)
+        rec = task.read_task_record(rec_path, require_sandbox_id=False)
+        self.assertNotEqual(rec.get("status"), "retired")
+
+    def test_retire_does_not_create_wrong_branch_on_stale_bundle_ref(self):
+        rec_path, manifest_path, wt_dir, sub_sha = self._setup_completed_task(
+            task_id="retire-stale-ref",
+            name="box-stale-ref",
+            branch="task/stale-ref",
+            sub_branch="sub/stale-ref",
+            with_worktree=False,
+            host_has_sub_branch=False,
+        )
+        # Ensure sub/stale-ref does not exist on host
+        res = subprocess.run(
+            ["git", "-C", str(self.host_repo), "rev-parse", "--verify", "-q", "refs/heads/sub/stale-ref"],
+            capture_output=True,
+        )
+        self.assertNotEqual(res.returncode, 0)
+
+        # Modify manifest with a non-existent target commit SHA
+        # The preservation bundle still has a named ref 'refs/heads/sub/stale-ref' pointing to rev_head
+        m_data = json.loads(manifest_path.read_text())
+        m_data["submitted_sha"] = "0" * 40
+        manifest_path.write_text(json.dumps(m_data, indent=2))
+
+        with self.assertRaises(RuntimeError) as cm:
+            task.retire_task(rec_path, manifest_path)
+        self.assertIn("could not be made durable", str(cm.exception))
+
+        # Crucial check: verify that host repository does NOT have refs/heads/sub/stale-ref created
+        res_post = subprocess.run(
+            ["git", "-C", str(self.host_repo), "rev-parse", "--verify", "-q", "refs/heads/sub/stale-ref"],
+            capture_output=True,
+        )
+        self.assertNotEqual(res_post.returncode, 0, "Wrong branch ref must not be created on host from stale bundle ref")
 
 
 if __name__ == "__main__":

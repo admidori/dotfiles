@@ -4,6 +4,8 @@ The `sandbox/task.py` script manages the lifecycle of per-task Docker Sandboxes
 and their persistence records, using standard library Python and native `sbx`
 commands.
 
+Subcommands: `create`, `status`, `start`, `preserve`, `register-worktree`, `retire`.
+
 State is stored in caller-provided JSON task records outside the repository.
 
 ---
@@ -191,6 +193,64 @@ python3 sandbox/task.py preserve \
 
 ---
 
+### 5. `register-worktree`
+
+Registers an existing clean host worktree path with a recorded task:
+
+```bash
+python3 sandbox/task.py register-worktree \
+  --record /path/to/task-record.json \
+  --worktree /path/to/host/worktree
+```
+
+**Invariants & Behavior:**
+- Verifies that the worktree appears in `git worktree list --porcelain` and belongs to the host repository.
+- Rejects the main repository checkout and non-worktree directories.
+- Stores `host_worktree` in the task record for subsequent retirement. Note that `task.py create` does not take a `--worktree` flag to preserve host branch collision invariants; worktrees are registered after task creation.
+
+---
+
+### 6. `retire`
+
+Retires a completed task's exact sandbox and optional registered host worktree while preserving all branches. The operator has explicitly authorized no-confirmation deletion for completed tasks through this command.
+
+```bash
+python3 sandbox/task.py retire \
+  --record /path/to/task-record.json \
+  --manifest /path/to/accepted-manifest.json \
+  [--worktree /path/to/host/worktree] \
+  [--harness-path /home/agent/.local/state/agent-harness/task-01]
+```
+
+**Invariants & Behavior:**
+- Requires both the task record and the accepted submission manifest (`sandbox/submit.py accept`), verifying matching `task_id`, `base_commit`, and canonical repository path.
+- Verifies that accepted commit (`submitted_sha`) and tree (`submitted_tree == reviewed_tree`) exist and match the manifest.
+- Re-verifies the preservation export on the host: loads `receipt.json`, confirms `verified: true` matching task and sandbox identity, independently recomputes streaming SHA256 checksums of all four preservation artifacts (`repo.bundle`, `staged.patch`, `worktree.tar.gz`, `harness.tar.gz`) against both receipt and task record hashes, and runs `git bundle verify`.
+- Ensures both the accepted submission branch (at `submitted_sha`) and the task implementation branch (at `reviewed_head`) are durably present on the host repository before any destruction:
+  - If a branch exists on the host, verifies it points to the exact expected commit and refuses if divergent (never overwrites divergent branches).
+  - If a branch exists only in the guest, imports/creates the durable host branch by fetching the exact expected commit SHA from the verified bundle (never named refspecs, preventing wrong branch creation from stale bundle refs) or creating it from the host object database before `sbx rm`. Refuses and fails closed if any branch cannot be made durable or if fetch fails.
+  - Preserves all branches; never deletes any Git branch.
+- Enforces worktree association immutability:
+  - If a host worktree is already registered in the task record, `--worktree` cannot override or swap it with a different path (rejects mismatch with `ValueError`).
+  - If no worktree is registered in the record, `--worktree` validates the explicit association in preflight and registers it upon preflight completion.
+  - If no host worktree is registered, no host worktree removal is attempted.
+- Preflights all destructive targets before first removal:
+  - Verifies the exact sandbox identity (`sandbox_id`) matches the record. Never adopts or deletes a same-name different-ID VM.
+  - Enforces fresh guest state verification:
+    - If the sandbox is running, takes a fresh guest snapshot and compares it against the preserved snapshot (`manifest_after.json`); refuses if guest state changed after preservation.
+    - If the sandbox is observed stopped prior to any recorded retirement phase, refuses removal and fails closed: requires the operator to resume the sandbox (`task.py start`), preserve again (`task.py preserve`), then retry retirement.
+    - Resumption after an already journaled retirement stop (`sandbox_stopped`) remains supported and rechecks exact ID and stopped status before removal.
+  - If a host worktree is registered, verifies its exact canonical path appears in `git worktree list --porcelain`, belongs to the expected repository (`--git-common-dir`), is not the main checkout, is not the current working directory or its parent, matches the expected branch, and has no unstaged tracked, staged uncommitted, untracked, or ignored files. Refuses before any removal if the worktree is dirty.
+- Journals retirement phases (`preflight_passed`, `sandbox_stopped`, `sandbox_removed`, `worktree_removed`, `completed`) in the task record:
+  - If a step fails, the failure is recorded in `last_error` and the phase journal allows safe retry without removing unrelated VMs or worktrees.
+  - If `sbx rm` succeeded but record writing failed, subsequent runs detect the missing VM against the recorded stopped phase and proceed safely.
+- Quiesces the guest container with native `sbx stop`, verifies status transitioned to `stopped` and ID still matches, then removes the sandbox non-interactively using targeted `sbx rm --force <name>` (never `--all` or force-stopping in-use sandboxes). Skipping the confirmation prompt via `--force` is safe because exact VM identity and stopped state are verified prior to removal.
+- Removes the clean host worktree with standard `git worktree remove` without `--force` or pruning, rechecking worktree identity, branch, and cleanliness (including ignored files) immediately before removal to guard against concurrent mutations between phases.
+- Updates task lifecycle status to `retired`. Status checks (`task.py status`) cleanly report retired tasks without treating missing VMs as errors.
+- Calling `retire` on an already-retired task is idempotent and returns successfully.
+
+---
+
 ## JSON Task Record Schema
 
 ```json
@@ -203,6 +263,7 @@ python3 sandbox/task.py preserve \
   "base_ref": "HEAD",
   "base_commit": "1d64a6c6c1024cc6f7565655fc4bef1d0f94d9d2",
   "branch": "task/feature-01",
+  "host_worktree": "/home/user/repo-worktree-01",
   "workload_path": "/home/user/repo/sandbox/kits/antigravity-workload",
   "mixin_path": "/home/user/repo/sandbox/kits/antigravity-mixin",
   "cpus": 2,
@@ -212,9 +273,9 @@ python3 sandbox/task.py preserve \
   "guest_cwd": "/home/agent",
   "guest_repo_path": "/home/user/repo",
   "guest_harness_path": "/home/agent/.local/state/agent-harness/task-01",
-  "status": "ready",
+  "status": "retired",
   "created_at": "2026-11-05T12:00:00Z",
-  "updated_at": "2026-11-05T12:00:00Z",
+  "updated_at": "2026-11-05T13:00:00Z",
   "preservations": [
     {
       "timestamp": "2026-11-05T12:30:00Z",
@@ -228,6 +289,21 @@ python3 sandbox/task.py preserve \
       "status": "verified"
     }
   ],
+  "retirement": {
+    "started_at": "2026-11-05T13:00:00Z",
+    "phase": "completed",
+    "manifest_path": "/tmp/manifests/manifest-task-01.json",
+    "submitted_sha": "...",
+    "submission_branch": "sub/feature-01",
+    "host_worktree": "/home/user/repo-worktree-01",
+    "phases": [
+      {"phase": "preflight_passed", "timestamp": "...", "status": "completed"},
+      {"phase": "sandbox_stopped", "timestamp": "...", "status": "completed"},
+      {"phase": "sandbox_removed", "timestamp": "...", "status": "completed"},
+      {"phase": "worktree_removed", "timestamp": "...", "status": "completed"},
+      {"phase": "completed", "timestamp": "...", "status": "completed"}
+    ]
+  },
   "last_error": null
 }
 ```
