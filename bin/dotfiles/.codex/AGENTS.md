@@ -32,12 +32,12 @@ operator when a task clearly belongs to the other one.
   parallel experiments and larger, UI- or browser-inclusive prototypes when the
   operator asks for them directly.
 
-Typical flow: the designer agrees the design with the operator → delegates each step
-to Antigravity with the `delegate` skill → verifies each step, reviews the delta,
-and prepares the accepted task submission commit upon task completion (or commits
-each accepted step in legacy host/strict mode).
-After agreeing the design, use Plan mode when available to organize the steps before
-starting implementation or delegation.
+Typical flow: the designer agrees the design and steps with the operator, using Plan
+mode when available → the operator asks to implement the agreed plan → the designer
+loads the `delegate` skill and delegates each step to Antigravity → verifies each
+step, reviews the delta, and prepares the accepted task submission commit upon task
+completion (or commits each accepted step in legacy host/strict mode).
+Keep the `delegate` skill scoped to implementation; planning does not require it.
 Separate PR, task, and per-run step/attempt concepts:
 - **PR (Pull Request)**: The unit of integration to the main branch; may contain
   one or multiple accepted task commits.
@@ -267,10 +267,12 @@ implementation.
   need this; when unsure whether something qualifies, ask.
 - This applies regardless of which agent is about to implement: when
   Antigravity is to do the implementation (see the `delegate` skill), the
-  summary must be shown and confirmed *before* the first `agy` run, not
-  after Antigravity has already produced a diff. A headless implementer
-  that receives an approved brief must not stop to re-confirm it; nobody
-  is there to answer.
+  summary and steps must be shown and confirmed *before* the first `agy` run.
+  An explicit operator request to implement an agreed plan (including an
+  explicit `delegate` invocation for that plan) is that confirmation; do not
+  ask for it again inside the skill. Automatic skill selection alone is not
+  operator approval. A headless implementer that receives an approved brief
+  must not stop to re-confirm it; nobody is there to answer.
 - A prior confirmation does not carry over to a materially different
   follow-up change. Re-confirm when the plan changes, not just once per
   session.

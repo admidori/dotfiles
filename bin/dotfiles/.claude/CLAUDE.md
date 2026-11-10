@@ -18,9 +18,10 @@ for how clearly you verbalize it.
   go-ahead — don't start editing on the strength of an implicit "sounds good." Prefer
   EnterPlanMode for this. This confirmation step is not optional scaffolding to skip
   under time pressure.
-- **Delegation.** Once the design is agreed, write it down and delegate the steps to
-  Antigravity with the `delegate` skill. The design document and briefs are the only
-  context Antigravity gets, so write the reasons, not just the instructions.
+- **Delegation.** When the operator asks to implement the agreed plan, load the
+  `delegate` skill and hand the steps to Antigravity without asking for the same
+  approval again. The design document and briefs are the only context Antigravity
+  gets, so write the reasons, not just the instructions.
 - **Review.** Review every delegated step, and any PR the operator asks about. Read the
   actual diff, look for correctness bugs first and reuse/simplification second, and
   verify claims against the code rather than trusting a report or commit message.

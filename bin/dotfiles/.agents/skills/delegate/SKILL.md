@@ -1,6 +1,6 @@
 ---
 name: delegate
-description: Use when a design has been agreed with the operator and its implementation should be delegated to Antigravity — the designer (Claude or Codex) writes the design and one brief per step, Antigravity implements each step headlessly via `agy -p` (creating linear checkpoint commits when opted into task-commits in Docker Sandbox mode, or leaving working changes in strict mode) and reports what it did, and the designer reviews, polishes, and assembles the accepted submission commit under standing authorization (or preserves checkpoints when deferred). Every hand-off is a file, so the harness can be inspected and improved. Triggers on "/delegate", "これで実装して", "Antigravityに実装させて", "実装を委譲して", "delegate this to antigravity". Not for changes the operator wants the designer to make directly.
+description: Implement an operator-approved design through Antigravity when the operator asks Claude or Codex to implement or delegate that plan. Load at implementation time, including after Plan mode; do not use during design or for work the operator wants the designer to implement directly. The designer writes briefs, reviews each `agy -p` run, verifies changes, and accepts the task submission.
 ---
 
 Runs the delegation loop: agreed design → `design.md` → per step, `brief.md` → Antigravity implements, runs the verification itself, and returns a report → the designer re-checks, reviews, polishes, and records/commits under the applicable Git policy (or records a reproducible checkpoint if deferred) → next step.
@@ -73,7 +73,7 @@ The harness supports two execution modes via `HARNESS_EXECUTION_MODE=host|docker
 
 ## Setup
 
-1. **Confirm the design is final.** If it hasn't been agreed with the operator in this conversation, produce it first. Immediately before delegating, restate a short summary (approach, files, risks) and get an explicit go-ahead — an earlier open-ended discussion is not that confirmation. In Codex, request this approval through the available user-input UI and wait for the submitted answer; if the UI is unavailable, ask in chat. A preselected UI option or silence is not approval. If a previous delegation on this branch is being substantially reworked, treat it as a sign the design wasn't final and re-confirm.
+1. **Check the implementation request against the agreed plan.** The operator must have seen the approach, affected files, risks, and step boundaries, and explicitly asked to implement or delegate that plan. An explicit invocation of this skill for the agreed plan counts as that implementation approval; so does an explicit request such as "implement this plan" after Plan mode. Do not ask for the same approval again merely because the skill was loaded. Automatic skill selection, a preselected UI option, and silence are not operator approval. If the plan is missing, the request is ambiguous, or the implementation would materially change the agreed scope, resolve that before the first `agy` run. Reconfirm any substantially reworked design rather than treating an earlier request as approval for new work.
 
 2. **Write `design.md` and seed `context.md`** in the task directory:
    - Write `design.md` from `templates/design.md`. Record the reason behind each non-obvious decision and the alternatives rejected: the implementer gets no chat history, and the reasons are what let it handle cases the design didn't foresee. Fill in the steps table:
@@ -83,7 +83,7 @@ The harness supports two execution modes via `HARNESS_EXECUTION_MODE=host|docker
    - Seed `context.md` from `templates/context.md` with exploration knowledge: compact navigation (key files, entry points), established facts with paths/symbols, reasons, and evidence scope (static, mock, integration, live), superseded or corrected claims (compactly, avoiding raw history dumps), rejected paths, verification constraints, and uncertainties (clearly distinguishing hypotheses from verified facts). Set freshness (base commit SHA and initial checkpoint). Designer verifies findings before promoting them. Keep secrets, raw credentials, and verbose log dumps out.
    - Legacy tasks lacking `context.md` are supported: the runner preserves legacy runs with a visible notice, but the designer should seed `context.md` whenever exploration context exists.
 
-   Show the operator the step list and get a go-ahead on the decomposition itself before the first run. In Codex, use the available user-input UI and wait for the submitted answer; fall back to chat when the UI is unavailable. If the design summary and step list are ready together, one UI confirmation may cover both when it explicitly names both decisions.
+   Use the agreed step list as the decomposition. If writing `design.md` reveals a material change to the steps, show the revised list and obtain the operator's approval before the first run. Otherwise continue under the implementation request from step 1.
 
 3. **Create an implementation worktree (Host mode) or use the task clone checkout (Docker Sandbox mode):**
    - **Host mode (`HARNESS_EXECUTION_MODE=host`):** Create an implementation worktree branched from your task branch, reused for every step:
