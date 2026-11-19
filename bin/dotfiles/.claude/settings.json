@@ -6,10 +6,7 @@
       "Bash(git log:*)",
       "Bash(git branch:*)",
       "Bash(make test)",
-      "Bash(zsh -n:*)",
-      "Read(*)",
-      "Edit(*)",
-      "Write(*)"
+      "Bash(zsh -n:*)"
     ],
     "ask": [
       "Edit(**/.claude/settings.json)",
