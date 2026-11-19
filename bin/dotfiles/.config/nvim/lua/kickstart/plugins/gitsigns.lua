@@ -6,6 +6,7 @@
 return {
   { -- Adds git related signs to the gutter, as well as utilities for managing changes
     'lewis6991/gitsigns.nvim',
+    version = vim.fn.has('nvim-0.11') == 0 and 'v1.0.2' or nil,
     opts = {
       signs = {
         add = { text = '+' },
