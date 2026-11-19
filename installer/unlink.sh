@@ -53,8 +53,19 @@ unlink_dir_contents() {
 }
 
 for src in "$DOTFILES_DIR"/.??*; do
-  unlink_if_managed "$HOME/$(basename "$src")"
+  name="$(basename "$src")"
+  case "$name" in
+    .gitignore|.config) continue ;;
+  esac
+  unlink_if_managed "$HOME/$name"
 done
+
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+if [ "$DOTFILES_DIR/.config" -ef "$config_home" ]; then
+  unlink_if_managed "$config_home"
+elif [ -d "$DOTFILES_DIR/.config" ]; then
+  unlink_dir_contents "$DOTFILES_DIR/.config" "$config_home" ".config"
+fi
 
 for tool in "${TOOL_DIRS[@]}"; do
   unlink_dir_contents "$DOTFILES_DIR/$tool" "$HOME/$tool" "$tool"

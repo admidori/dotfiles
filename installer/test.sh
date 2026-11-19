@@ -34,22 +34,29 @@ check_json() {
   jq -e "$filter" "$file" >/dev/null 2>&1
 }
 
-echo "==> Seeding pre-existing (non-dotfiles) Claude skill/hook and Gemini config"
+echo "==> Seeding pre-existing (non-dotfiles) Claude skill/hook, Gemini config, and unrelated XDG config"
 mkdir -p "$HOME/.claude/skills/third-party-skill"
 echo "not managed by dotfiles" > "$HOME/.claude/skills/third-party-skill/SKILL.md"
 mkdir -p "$HOME/.claude/hooks"
 echo "// not managed by dotfiles" > "$HOME/.claude/hooks/third-party-hook.js"
 mkdir -p "$HOME/.gemini/config/projects"
 echo "local project data" > "$HOME/.gemini/config/projects/local.txt"
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/unrelated-app"
+echo "custom setting" > "${XDG_CONFIG_HOME:-$HOME/.config}/unrelated-app/app.conf"
 
 echo "==> Running 'make install'"
 make -C "$REPO_ROOT" install
 
 echo "==> Verifying dotfile symlinks"
-for f in .zshenv .zshrc .tmux.conf .tmux.d .vimrc .gitconfig .latexmkrc .git-hooks; do
+for f in .zshenv .zshrc .tmux.conf .tmux.d .gitconfig .latexmkrc .git-hooks; do
   check "~/$f is a symlink" test -L "$HOME/$f"
 done
+check "~/.vimrc is absent" test ! -e "$HOME/.vimrc" -a ! -L "$HOME/.vimrc"
 check "~/.tmux.d/agent-usage is executable" test -x "$HOME/.tmux.d/agent-usage"
+check "~/.config is NOT a symlink" test ! -L "${XDG_CONFIG_HOME:-$HOME/.config}"
+check "~/.config/nvim is a symlink" test -L "${XDG_CONFIG_HOME:-$HOME/.config}/nvim"
+check "~/.config/nvim/init.lua resolves to a file" test -f "${XDG_CONFIG_HOME:-$HOME/.config}/nvim/init.lua"
+check "pre-existing unrelated XDG config survives install" test -f "${XDG_CONFIG_HOME:-$HOME/.config}/unrelated-app/app.conf"
 check "~/.claude/settings.json is a real file (copy-once, not synced)" test -f "$HOME/.claude/settings.json"
 check "~/.claude/settings.json is NOT a symlink" test ! -L "$HOME/.claude/settings.json"
 check "~/.claude/settings.json seeded from the tracked template" \
@@ -129,6 +136,8 @@ check "~/.gemini/config/mcp_config.json is still a real file after re-install" \
   test ! -L "$HOME/.gemini/config/mcp_config.json"
 check "pre-existing Gemini config survives re-linking" \
   test -f "$HOME/.gemini/config/projects/local.txt"
+check "pre-existing unrelated XDG config survives re-linking" \
+  test -f "${XDG_CONFIG_HOME:-$HOME/.config}/unrelated-app/app.conf"
 
 echo "==> Verifying oh-my-zsh was installed fresh (not vendored)"
 check "~/.oh-my-zsh exists"            test -d "$HOME/.oh-my-zsh"
@@ -187,6 +196,8 @@ check "~/.local/bin/semgrep still resolves into uv tool storage after second ins
 check "~/.local/bin/pre-commit still resolves into uv tool storage after second install" check_uv_tool_link pre-commit
 check "semgrep is still managed by uv after second install" check_tool_uv_managed semgrep
 check "pre-commit is still managed by uv after second install" check_tool_uv_managed pre-commit
+check "pre-existing unrelated XDG config survives second install" \
+  test -f "${XDG_CONFIG_HOME:-$HOME/.config}/unrelated-app/app.conf"
 
 check_betterleaks_version() {
   test "$(betterleaks version 2>/dev/null || true)" = "1.10.0"

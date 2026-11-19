@@ -20,12 +20,20 @@ echo "########################"
 for src in "$DOTFILES_DIR"/.??*; do
   name="$(basename "$src")"
   case "$name" in
-    .gitignore|.oh-my-zsh) continue ;;
+    .gitignore|.oh-my-zsh|.config) continue ;;
   esac
   is_tool_dir "$name" && continue
   ln -snf "$src" "$HOME/$name"
   echo "linked $name"
 done
+
+# XDG config directory entries are linked individually into XDG_CONFIG_HOME
+# so unrelated user configs and tools are preserved.
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+# An older installer could have linked the config root directly to this repo.
+if [ -d "$DOTFILES_DIR/.config" ] && [ ! "$DOTFILES_DIR/.config" -ef "$config_home" ]; then
+  link_dir_contents "$DOTFILES_DIR/.config" "$config_home" ".config"
+fi
 
 # Link AI tool config files individually so we never clobber runtime data
 # (auth, history, projects, state databases, etc.) in those directories.
