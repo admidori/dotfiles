@@ -1924,11 +1924,14 @@ def verify_accepted_manifest(
             f"Manifest base_commit '{data.get('base_commit')}' does not match record base_commit '{record['base_commit']}'"
         )
 
-    manifest_repo = Path(data.get("repo", "")).resolve()
-    record_repo = Path(record["host_repo"]).resolve()
-    if manifest_repo != record_repo:
+    manifest_repo = data.get("repo")
+    if not isinstance(manifest_repo, str) or not Path(manifest_repo).is_absolute():
+        raise ValueError("Manifest repository must be an absolute path")
+    host_repo = Path(record["host_repo"]).resolve()
+    # Guest paths belong to the sandbox namespace, so do not resolve them on the host.
+    if manifest_repo != record.get("guest_repo_path") and Path(manifest_repo).resolve() != host_repo:
         raise ValueError(
-            f"Manifest repository '{manifest_repo}' does not match record host_repo '{record_repo}'"
+            f"Manifest repository '{manifest_repo}' does not match the recorded host or guest repository"
         )
 
     submitted_sha = data.get("submitted_sha")

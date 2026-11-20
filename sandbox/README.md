@@ -54,9 +54,9 @@ a guest implementer (Antigravity, `agy`) in an isolated container environment:
    submission branch at base (`sandbox/submit.py prepare`), commits the accepted
    task submission commit with all contributor trailers, and records the accepted
    manifest (`sandbox/submit.py accept`).
-6. **Preservation & Retirement:** Task state is verified and preserved using
-   `sandbox/task.py preserve`. Retirement (`sbx rm`) additionally requires separate
-   explicit operator approval and a fresh preservation check.
+6. **Preservation & Retirement:** After acceptance, export and verify task state with
+   `sandbox/task.py preserve`. The delegate workflow then runs `sandbox/task.py retire`
+   for eligible task sandboxes under standing authorization.
 7. **PR Assembly:** Multiple accepted task submissions are assembled into an
    integration PR branch using `sandbox/submit.py assemble`.
 
@@ -366,10 +366,10 @@ The task sandbox workflow enforces:
   - Verify base ancestry and divergence (`git log <base>..<branch>`); explain unexpected divergence.
   - Don't stack a new feature branch on unmerged work without telling the operator.
 - **Lifecycle Separation:** A task sandbox lives for the duration of that task.
-  Preservation and submission acceptance do NOT authorize deletion; explicit retirement
-  requires separate operator approval, a fresh state check confirming a quiesced container,
-  and verified host export before `sbx rm`. Existing legacy project environments are not
-  automatically deleted.
+  Automatic retirement requires an accepted submission, a fresh verified host export,
+  and the identity and stopped-state checks in `sandbox/task.py retire`. Keep task
+  sandboxes when requested by the operator. Registered host worktrees require separate
+  approval before retiring both, and legacy project environments are excluded.
 
 ### Known Limitations
 
@@ -518,12 +518,13 @@ The kits place a root-owned marker inside the container filesystem:
 
 ## Preserving Task Work & Retirement
 
-Task Sandboxes live for the duration of the task. Upon task acceptance, state is
-verified and preserved before explicit sandbox retirement:
+After task acceptance, the designer exports and verifies task state before
+retirement.
 
 ### Point-in-Time Preservation via `sandbox/task.py preserve`
 
-Run preservation from the host when all processes in the sandbox are stopped:
+Run preservation from the host after development and agent processes stop.
+Keep the VM running for the export:
 
 ```bash
 python3 sandbox/task.py preserve \
@@ -540,11 +541,12 @@ python3 sandbox/task.py preserve \
 - **Failure Safety:** If verification fails or concurrent modification is detected, failure diagnostics and transferred files are retained with `verified: false`.
 - **Receipt:** Writes an immutable `receipt.json` with `"verification_scope": "Verification covers this point in time; retirement always requires a fresh check and explicit authorization."`
 
-### Explicit Retirement (`sandbox/task.py retire`)
+### Retirement (`sandbox/task.py retire`)
 
-Preservation and submission acceptance do NOT constitute deletion authorization.
-Once a task is accepted and preserved, the operator authorizes explicit retirement via
-`sandbox/task.py retire`:
+The delegate workflow invokes `sandbox/task.py retire` automatically after acceptance
+and fresh verified preservation when the task record and retirement journal have no
+host worktree and the operator has not asked to keep the sandbox. Obtain separate
+approval if the command would also remove a host worktree:
 
 ```bash
 python3 sandbox/task.py retire \
@@ -559,7 +561,7 @@ python3 sandbox/task.py retire \
 - **Mandatory Branch Retention:** Preserves all branches; imports guest-only branches by fetching only the exact expected commit SHA from the verified bundle (never named refspecs), preventing wrong branch creation from stale bundle refs.
 - **Worktree Safety & Recheck:** Removes registered clean host worktrees (`git worktree remove` without `--force` or pruning); cannot swap a previously registered worktree; rechecks worktree cleanliness and ignored files immediately before removal to guard against concurrent mutations between phases. Leaves main checkout, active cwd, and branches untouched.
 - Interrupted tasks remain recorded and can be safely resumed with `python3 sandbox/task.py start --record ...`.
-- Never delete a sandbox as routine cleanup without verified preservation and explicit operator instruction.
+- Use the retirement helper so blocked checks and partial failures are recorded in the task record.
 - Existing legacy project environments are not automatically deleted.
 
 ---

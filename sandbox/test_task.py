@@ -1528,6 +1528,24 @@ class TestTaskRetirement(unittest.TestCase):
         )
         self.assertIsNone(wt_dir)
 
+        # The private clone may have a different path from its seed repository.
+        guest_repo = "/home/agent/task checkout"
+        self.sbx_manager.sandboxes["box-retire-no-wt"]["guest_repo_str"] = guest_repo
+        record = task.read_task_record(rec_path)
+        record["guest_repo_path"] = guest_repo
+        task.write_task_record(rec_path, record)
+
+        manifest = json.loads(manifest_path.read_text())
+        manifest["repo"] = "/home/agent/other checkout"
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "does not match the recorded host or guest repository"):
+            task.retire_task(rec_path, manifest_path)
+        self.assertFalse(self.sbx_manager.rm_calls)
+
+        manifest["repo"] = guest_repo
+        manifest_path.write_text(json.dumps(manifest))
+        task.preserve_task(rec_path, self.root / "fresh_export", quiesced=True)
+
         res = task.retire_task(rec_path, manifest_path)
         self.assertEqual(res["status"], "retired")
         self.assertIsNone(res["worktree_removed"])
