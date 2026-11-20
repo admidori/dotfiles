@@ -88,10 +88,13 @@ The harness supports two execution modes via `HARNESS_EXECUTION_MODE=host|docker
 3. **Create an implementation worktree (Host mode) or use the task clone checkout (Docker Sandbox mode):**
    - **Host mode (`HARNESS_EXECUTION_MODE=host`):** Create an implementation worktree branched from your task branch, reused for every step:
      ```
-     git worktree add ../<repo>-<task>-impl -b <task>-impl HEAD
+     git -C "<absolute-task-worktree>" worktree add -b <task>-impl "<absolute-impl-worktree>" HEAD
      ```
      `<task>-impl` stacks on the unmerged task branch only for the loop's duration; close-out fast-forwards it back and deletes it. If you're not in a task worktree, branch from the integration branch instead, passing the base explicitly when HEAD isn't it. Never target a directory with unrelated uncommitted changes.
+     If the designer session is confined to its task worktree and cannot create a sibling, use an absolute path under its permitted scratchpad for the implementation worktree. Run Git commands with `git -C` and absolute worktree paths. Scratch space can be cleared, so promptly commit each accepted step under step 9 or preserve its approved deferred checkpoint outside scratch. Record the worktree path for close-out.
    - **Docker Sandbox mode (`HARNESS_EXECUTION_MODE=docker-sandbox`):** Provision a dedicated task Sandbox using `sandbox/task.py create` (see [`sandbox/task.md`](../../../../../sandbox/task.md)). The host task source checkout seeds the container clone read-only via `sbx create --clone`. Sequential designer->agy->designer execution operates directly in the same task clone checkout (`$workdir`), without creating an additional implementation worktree. The clone is directly writable on the assigned implementation branch (`task/...`). Keep all harness artifacts in Sandbox-local state outside the repository (`$AGENT_HARNESS_DIR`, default `~/.local/state/agent-harness`), and preserve them via `sandbox/task.py preserve` before retiring the container.
+
+   **Stage offline dependencies before the first run.** If verification needs dependencies and the implementer has restricted or no network access, prefetch the dependencies for the planned steps into caches readable from the implementation environment. In Host mode, the designer stages them on the host. For an offline Docker Sandbox, arrange staging in the task container within its access policy. Record the cache paths, offline environment variables, and verification commands in `context.md` under "Verification constraints". Check that the intended offline commands can use those caches.
 
 ## Per-step loop
 
@@ -99,6 +102,7 @@ Repeat for each step in order, one step per run. Never batch steps.
 
 4. **Write `steps/<NN>-<slug>/brief.md`** from `templates/brief.md`. Carry the part of the design this step depends on and what earlier steps already changed, including whether they are committed or held as checkpoints — each new step starts a fresh Antigravity session. Point to shared knowledge in `context.md` without copying it all; keep the specific scope boundary and acceptance criteria in `brief.md`. Map each acceptance criterion to required evidence and scope (`static`, `mock`, `integration`, or `live`), and explicitly assign unavailable live checks (e.g. requiring network or external environments) to the designer. Do not introduce a new mandatory live test for all tasks; require live checks where relevant, and keep required but unavailable checks pending. State the scope boundary explicitly, and list in "Verification" the commands that must pass with their cwd, scope, and expected status. In host mode, commands run sandboxed without network access; in Docker Sandbox mode, commands follow the external container network policy. For resumed runs, the latest brief defines scope; current code and actual logs settle facts, and previous model statements from earlier turns are not proof. The run rules (no confirmation stops, evidence discipline, verify your own work, the selected Git policy rules) and the report format are appended by the runner from `templates/report.md`, so don't repeat them.
 
+   - **Documentation steps:** List the intended behavioral claims and the source paths or symbols that implement them. Use placeholders for secrets, IDs, and environment-specific hostnames in examples.
    - **Remote GPU compute (optional):** If this step requires ephemeral GPU resources, place a validated `compute.json` in the step directory (see `templates/compute.json` and `templates/compute-colab.json`).
      - Backends: `coder` (file/tar staging, remote commands, logs) or `colab` (official Google `colab-mcp`, notebook cell injection, stable dataset URIs).
      - Lifecycle: probe -> acquire -> stage -> execute -> observe -> diagnose -> collect -> release.
@@ -156,7 +160,12 @@ Repeat for each step in order, one step per run. Never batch steps.
    - **Under strict policy (Host mode or strict Docker mode):** Run `git -C <workdir> status` and `diff`. If earlier steps are committed, the working-tree diff is exactly this step. If commits are deferred, compare the current tree against the preceding accepted checkpoint; the cumulative diff from HEAD is not this step's diff.
    - **Re-run verification:** Re-run the brief's verification commands yourself and compare the results with the report's "Verification" section. Antigravity running them first saves rework rounds, but its report is a claim, not proof. Runner exit `SUCCESS` means only that execution finished; it is not verification or review acceptance. Distinguish four lifecycle states: execution finished, verified, accepted, and awaiting commit. Check claims against evidence, inspected paths/symbols, and actual assertions/triggers, distinguishing independent designer reruns from implementer-only reports. Mock success is not live verification; after relevant code changes, rerun affected checks. Checks the report lists as blocked or not verified (anything needing the network or assigned to the designer, for example) are yours to run. Changes outside the step's scope are dropped or preserved for a separate focused commit; say which.
 
+   - **Designer-assigned live checks:** When the step needs a repeatable live check, prefer a repo-tracked opt-in test or script with a documented invocation. Use dummy data for external writes and obtain the operator's approval before running them.
+   - **Regression and security tests:** For tests that protect a fix or an important invariant, use a safe, temporary mutation in an isolated test environment where practical. Confirm the original passes, temporarily remove or revert the protection and confirm the intended assertion fails, then restore it and confirm the test passes again. Record the mutation and outcomes in the review, or record why the check was impractical.
+
 7. **Review and write `review-<n>.md`** from `templates/review.md`. Correctness first, then reuse and simplification. Compare the report with the diff and check claims against inspected paths/symbols, actual assertions/triggers, and test evidence; note anything changed but unreported, reported but not done, or ungrounded claims (invented outputs, log paths, or APIs). Note corrected or retracted claims and identify remaining gaps. Apply evidence discipline to designer reporting as well (distinguish observed facts, inferences, and unknowns). Check the report's "Context discoveries / corrections" against diff evidence and record in the review what was promoted to `context.md` or rejected (with reasons). When compute was used, complete the "Compute audit" section: confirm remote resources were released cleanly (or preserved with reason), verify that no remote edits bypassed the local diff review, confirm neither state.json nor events.jsonl contains credentials, tokens, dataset contents, or other secrets, verify that collected artifacts are in the attempt-specific harness directory (confirming truthful Colab artifact handling with no base64 inlining), and check that job ID, input/data hashes, runtime facts, and collected artifacts match expectations. Fill in "Harness notes": what in the brief, templates, or instructions caused a problem or helped.
+
+   For documentation changes, verify every behavioral statement against the implementation and check that examples use placeholders for secrets, IDs, and environment-specific hostnames.
 
    Before the next handoff, update `context.md`:
    - Merge verified implementer findings with paths/symbols, reasons, and evidence scope (`static`, `mock`, `integration`, `live`).
@@ -214,9 +223,9 @@ Repeat for each step in order, one step per run. Never batch steps.
 11. **Close out worktrees, preserve state, and assemble PR:**
     - **Host mode:** Fast-forward and remove the implementation worktree as soon as the last step is committed. From your task worktree:
       ```
-      git merge --ff-only <task>-impl
-      git worktree remove ../<repo>-<task>-impl
-      git branch -d <task>-impl
+      git -C "<absolute-task-worktree>" merge --ff-only <task>-impl
+      git -C "<absolute-task-worktree>" worktree remove "<absolute-impl-worktree>"
+      git -C "<absolute-task-worktree>" branch -d <task>-impl
       ```
       Always `--ff-only`; if it refuses, something moved the task branch — stop and report. Remove only a clean worktree, never with `--force`. Delete the branch after the removal, with `-d`.
     - **Docker Sandbox mode:**

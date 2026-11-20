@@ -43,9 +43,14 @@ to bypass permissions.>
 
 - `<command>` (cwd: `<dir>`, scope: <static|mock|integration|live>): <result> — exit <code|unknown>; <one-line evidence, tested attempt/checkpoint if known> (report said: <result>)
 
+- **Mutation check (when applicable):** <test, temporary change, expected failure observed, restored run result, or reason skipped>
+
 ## Findings
 
 - <Defect or concern in the diff, with file:line.>
+- **Shared state (when applicable):** <Verify every read and write follows the field's documented synchronization or ownership rule.>
+- **Trust boundaries (when applicable):** <For inputs from other processes or users, including IPC, signals, environment variables, files, and arguments, check sender authentication where identity matters, input validation, and secret exposure in errors or logs.>
+- **Documentation (when applicable):** <Check every behavioral statement against implementation paths or symbols. Confirm examples use placeholders for secrets, IDs, and environment-specific hostnames.>
 
 ## Polished by the designer
 

@@ -26,7 +26,9 @@ are not proof.>
 <Map each observable condition to required evidence and scope (static, mock,
 integration, or live). Explicitly assign unavailable live checks to the
 designer. Do not make live tests mandatory for all tasks; only require them
-where relevant; keep required but unavailable checks pending.>
+where relevant; keep required but unavailable checks pending. If a criterion
+is meant to exercise a specific test seam, name the function or boundary
+directly so the test stays focused and avoids environment-dependent setup.>
 
 - <Observable condition>: required evidence: <inspected paths/symbols, command output, or assertion>; scope: <static | mock | integration | live> (if live check is unavailable in sandbox, note: assigned to designer)
 
@@ -42,4 +44,5 @@ expected exit status, and evidence scope (static/mock/integration/live).>
 ## Constraints
 
 - Follow the surrounding code's style, naming, and idiom.
+- <For concurrent code, list each shared field and the lock, channel, or ownership rule that protects its reads and writes.>
 - <Step-specific constraints.>
