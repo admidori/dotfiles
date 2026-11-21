@@ -86,12 +86,20 @@ The harness supports two execution modes via `HARNESS_EXECUTION_MODE=host|docker
    Use the agreed step list as the decomposition. If writing `design.md` reveals a material change to the steps, show the revised list and obtain the operator's approval before the first run. Otherwise continue under the implementation request from step 1.
 
 3. **Create an implementation worktree (Host mode) or use the task clone checkout (Docker Sandbox mode):**
-   - **Host mode (`HARNESS_EXECUTION_MODE=host`):** Create an implementation worktree branched from your task branch, reused for every step:
+   - **Host mode (`HARNESS_EXECUTION_MODE=host`)** uses a dedicated implementation worktree at
+     `~/worktrees/<main-checkout-name>/<task-name>-impl`. Reuse the worktree for the
+     implementation branch when it already exists. Set `task_worktree` to the absolute
+     task worktree path, `repo_name` to the main checkout name, and `task_branch` and
+     `task_name` to the current task's branch and path name:
+     ```bash
+     impl_worktree="$HOME/worktrees/$repo_name/${task_name}-impl"
+     git -C "$task_worktree" worktree add -b "${task_branch}-impl" "$impl_worktree" HEAD
      ```
-     git -C "<absolute-task-worktree>" worktree add -b <task>-impl "<absolute-impl-worktree>" HEAD
-     ```
-     `<task>-impl` stacks on the unmerged task branch only for the loop's duration; close-out fast-forwards it back and deletes it. If you're not in a task worktree, branch from the integration branch instead, passing the base explicitly when HEAD isn't it. Never target a directory with unrelated uncommitted changes.
-     If the designer session is confined to its task worktree and cannot create a sibling, use an absolute path under its permitted scratchpad for the implementation worktree. Run Git commands with `git -C` and absolute worktree paths. Scratch space can be cleared, so promptly commit each accepted step under step 9 or preserve its approved deferred checkpoint outside scratch. Record the worktree path for close-out.
+     The implementation branch stacks on the task branch during the loop. If starting
+     without a task worktree, branch from the intended integration commit explicitly.
+     Use the existing approval flow for target-path or `.git` writes. Start designer
+     sessions in the target worktree and pass `--add-dir` only when accessing it
+     from another session. Record the absolute implementation path for close-out.
    - **Docker Sandbox mode (`HARNESS_EXECUTION_MODE=docker-sandbox`):** Provision a dedicated task Sandbox using `sandbox/task.py create` (see [`sandbox/task.md`](../../../../../sandbox/task.md)). The host task source checkout seeds the container clone read-only via `sbx create --clone`. Sequential designer->agy->designer execution operates directly in the same task clone checkout (`$workdir`), without creating an additional implementation worktree. The clone is directly writable on the assigned implementation branch (`task/...`). Keep all harness artifacts in Sandbox-local state outside the repository (`$AGENT_HARNESS_DIR`, default `~/.local/state/agent-harness`), and preserve them via `sandbox/task.py preserve` before retiring the container.
 
    **Stage offline dependencies before the first run.** If verification needs dependencies and the implementer has restricted or no network access, prefetch the dependencies for the planned steps into caches readable from the implementation environment. In Host mode, the designer stages them on the host. For an offline Docker Sandbox, arrange staging in the task container within its access policy. Record the cache paths, offline environment variables, and verification commands in `context.md` under "Verification constraints". Check that the intended offline commands can use those caches.
@@ -223,11 +231,13 @@ Repeat for each step in order, one step per run. Never batch steps.
 11. **Close out worktrees, preserve state, and assemble PR:**
     - **Host mode:** Fast-forward and remove the implementation worktree as soon as the last step is committed. From your task worktree:
       ```
-      git -C "<absolute-task-worktree>" merge --ff-only <task>-impl
-      git -C "<absolute-task-worktree>" worktree remove "<absolute-impl-worktree>"
-      git -C "<absolute-task-worktree>" branch -d <task>-impl
+      git -C "$task_worktree" merge --ff-only "${task_branch}-impl"
+      git -C "$task_worktree" worktree remove "$impl_worktree"
+      git -C "$task_worktree" branch -d "${task_branch}-impl"
       ```
-      Always `--ff-only`; if it refuses, something moved the task branch — stop and report. Remove only a clean worktree, never with `--force`. Delete the branch after the removal, with `-d`.
+      Use the recorded absolute `impl_worktree` from setup. If the fast-forward
+      refuses, stop and report the changed task branch. Remove only a clean
+      worktree using the command above. Delete the branch with `-d` after removal.
     - **Docker Sandbox mode:**
       - The task submission commit is prepared and accepted via `sandbox/submit.py` (see [`sandbox/submit.md`](../../../../../sandbox/submit.md)). Copy the accepted manifest to a durable host path with mode `0600` for retirement and PR assembly.
       - After submission acceptance, quiesce development and agent processes while leaving the VM running for export. Run `sandbox/task.py preserve --record RECORD --dest DEST --quiesced` with a fresh host destination (see [`sandbox/task.md`](../../../../../sandbox/task.md)). This verifies the Git bundle, staged binary patch, worktree archive, and guest harness archive and writes a verified receipt.

@@ -51,19 +51,30 @@ nested guest worktrees. On the host, repository operations (edits, reviews, buil
 happen in dedicated task worktrees.
 The status line shows a yellow `*|*` marker next to the branch in a worktree.
 
-- **At the start of a new, self-contained implementation or change task, enter a task
-  worktree before editing.** Use the `EnterWorktree` tool with a short, task-descriptive
-  `name` (e.g. `statusline-marker`). It branches from the repo's default branch
-  (origin/<default>) and switches this session into `.claude/worktrees/<name>`, so the
-  branch and the `*|*` marker identify this pane at a glance.
-- **Reviews and continued work get a worktree too, per the baseline rule.** Reuse
-  the worktree holding the branch; if it no longer exists, create one on that branch
-  (`git worktree add .claude/worktrees/<name> <branch>`). Enter the existing path with
-  `EnterWorktree` and `path`; a fresh `name` worktree would branch from the default
-  branch and lose that context. Before starting, verify the working directory,
-  branch, and base. Only reading files to answer a question stays in the
-  current checkout.
-- When it's unclear whether a task warrants its own worktree, ask rather than guessing.
+- Start a named task from the repository with `claude --worktree "$task_name"`.
+  `WorktreeCreate` creates `~/worktrees/<main-checkout-name>/<task-name>` on a dedicated
+  branch with a unique suffix. The base is the local `origin/HEAD` or the sole local
+  `main` or `master` branch. An occupied path or an unresolved base stops creation.
+- To continue work on a branch, reuse its existing worktree. To create a checkout
+  for an existing branch, set `task_worktree` to its absolute path under
+  `~/worktrees/<main-checkout-name>` and run
+  `git -C "$main_checkout" worktree add "$task_worktree" "$task_branch"`.
+  For PR review, pin the checkout to the reviewed commit using the Git command in
+  the shared instructions. Claude converts `--worktree '#61'` into `pr-61`.
+  The creation hook rejects these PR numbers.
+- Start the session in the target worktree with `cd "$task_worktree" && claude`.
+  Pass `--add-dir` only to sessions that need access to this directory from
+  elsewhere. Use the usual approval flow for checkout-path and `.git` writes.
+- When exiting a named session, select **Remove worktree** to invoke
+  `WorktreeRemove`. It removes its registered checkout if the recorded branch and
+  starting commit still match and the worktree is clean and unlocked. It retains
+  worktrees with staged, modified, untracked or ignored files and those with
+  index flags that can conceal changes. Git keeps the task branch.
+- Install the hook link with the usual installer. For an existing
+  `~/.claude/settings.json`, run `python3 installer/migrate-claude-settings.py`
+  from the dotfiles checkout. Use `--dry-run` to preview. The migration saves
+  a byte-for-byte backup and reports any existing worktree hook before stopping.
+
 - Once the task's work is committed and handed to the operator for review, remove the
   worktree so the operator can check the branch out. Git refuses to check out a branch
   that a worktree still holds, so a lingering worktree blocks review in the main tree.
@@ -81,9 +92,9 @@ The status line shows a yellow `*|*` marker next to the branch in a worktree.
   requires separate approval before retiring both.
 - When delegating to Antigravity:
   - **Host mode (`HARNESS_EXECUTION_MODE=host`):** Antigravity gets its own implementation
-    worktree branched from this task branch and makes edits only; you review and commit
-    each step there, then fast-forward it into your task branch (`git merge --ff-only`)
-    and remove it. It is a scratch sandbox and must not outlive the delegation.
+    worktree under `~/worktrees/<main-checkout-name>/<task-name>-impl`, branched
+    from the task branch. Review and commit each step there, then fast-forward
+    the task branch with `git merge --ff-only` and remove the implementation worktree.
   - **Docker Sandbox mode (`HARNESS_EXECUTION_MODE=docker-sandbox`):** Designer and
     Antigravity sequentially use the SAME task clone checkout; no nested guest
     worktree is created. See the `delegate` skill.

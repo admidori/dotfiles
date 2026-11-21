@@ -201,8 +201,18 @@ implementation.
 - When working on the host, do repository operations in a dedicated worktree,
   never in the shared main checkout: edits, branch/PR reviews, builds, tests,
   and changes to Git state. This applies to every agent.
-  - Review a branch or PR in a dedicated host worktree on its head branch only when
-    host-specific verification is required; remove it when finished.
+  - Put new named host worktrees under `~/worktrees/<main-checkout-name>/<task-name>`.
+    Leave existing worktrees in place and reuse the one holding the target branch.
+  - Use a dedicated host worktree for branch or PR reviews that need host-specific
+    verification. Reuse a checkout at the reviewed commit when available. For a
+    pinned PR review, set `repo_name` to the main checkout name and run
+    `git -C "$main_checkout" worktree add --detach "$HOME/worktrees/$repo_name/$review_task" "$review_commit"`.
+    Remove the review worktree when finished.
+  - Start the session in the target worktree. Pass `--add-dir` only to sessions
+    that need access to that worktree from elsewhere. Use the normal approval
+    flow for target-path and `.git` writes.
+  - In the Codex desktop app, set **Worktree root** in **Settings > Worktrees**
+    to `~/worktrees/_codex`.
   - Main-checkout exceptions: read-only investigation; worktree and branch
     management; syncing and re-linking after an approved merge; and using it as
     the read-only source for seeding task clones. Do not edit source files there.
