@@ -63,6 +63,13 @@ check "~/.claude/settings.json seeded from the tracked template" \
   cmp -s "$HOME/.claude/settings.json" "$REPO_ROOT/bin/dotfiles/.claude/settings.json"
 check "security-guidance plugin is enabled in Claude settings" \
   check_json "$HOME/.claude/settings.json" '.enabledPlugins["security-guidance@claude-plugins-official"] == true'
+# Claude expands $HOME when invoking the hook.
+# shellcheck disable=SC2016
+check "WorktreeCreate hook is configured in Claude settings" \
+  check_json "$HOME/.claude/settings.json" '.hooks.WorktreeCreate[0].hooks[0].command == "python3 \"$HOME/.claude/hooks/worktree.py\""'
+# shellcheck disable=SC2016
+check "WorktreeRemove hook is configured in Claude settings" \
+  check_json "$HOME/.claude/settings.json" '.hooks.WorktreeRemove[0].hooks[0].command == "python3 \"$HOME/.claude/hooks/worktree.py\""'
 check "~/.claude/CLAUDE.md is a symlink" test -L "$HOME/.claude/CLAUDE.md"
 check "~/.codex/config.toml is a real file (copy-once, not synced)" test -f "$HOME/.codex/config.toml"
 check "~/.codex/config.toml is NOT a symlink" test ! -L "$HOME/.codex/config.toml"
@@ -113,6 +120,7 @@ echo "==> Verifying merged hooks dir (dotfiles + third-party content coexist)"
 check "~/.claude/hooks is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/hooks"
 check "~/.claude/hooks/bash-guard.sh is a symlink" test -L "$HOME/.claude/hooks/bash-guard.sh"
 check "~/.claude/hooks/guard-rules.sh is a symlink" test -L "$HOME/.claude/hooks/guard-rules.sh"
+check "~/.claude/hooks/worktree.py is a symlink" test -L "$HOME/.claude/hooks/worktree.py"
 check "pre-existing third-party hook survives untouched" test -f "$HOME/.claude/hooks/third-party-hook.js"
 
 echo "==> Verifying merged Gemini config dir (dotfiles + machine-local content coexist)"
@@ -162,6 +170,8 @@ check "semgrep rules test suite passes" \
   bash "$REPO_ROOT/installer/test-semgrep-rules.sh"
 check "guard rules test suite passes" \
   bash "$REPO_ROOT/installer/test-guard-rules.sh"
+check "worktree hooks test suite passes" \
+  python3 -B "$REPO_ROOT/installer/test-worktree-hooks.py"
 
 for cmd in betterleaks osv-scanner semgrep pre-commit; do
   check "$cmd is available" command -v "$cmd"
