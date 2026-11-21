@@ -28,7 +28,6 @@ no extra guest worktrees are required.
 - [Running Antigravity Inside the Sandbox](#running-antigravity-inside-the-sandbox)
 - [Accidental-Host Guard & Environment Marker](#accidental-host-guard--environment-marker)
 - [Preserving Task Work & Retirement](#preserving-task-work--retirement)
-- [Legacy Project Sandbox SSH Lifecycle (Deprecated)](#legacy-project-sandbox-ssh-lifecycle-deprecated)
 
 ---
 
@@ -373,13 +372,7 @@ The task sandbox workflow enforces:
 
 ### Known Limitations
 
-1. **No Automatic Boot Enablement:** The SSH service is deliberately not configured as a persistent boot unit
-   to ensure operator pauses are respected. After a WSL restart or reboot, unlock
-   the keyring, run `project-ssh.py stop NAME` to clean up stale managed state, then
-   run `start` again. A real WSL reboot has not been tested.
-2. **Netcat Transport Dependency on Windows:** Windows SSH requires `ProxyCommand ... nc -6 ::1 <PORT>` due to
-   WSL mirrored networking routing constraints.
-3. **Session Renewal:** Long-duration OAuth token renewal during uninterrupted background execution
+1. **Session Renewal:** Long-duration OAuth token renewal during uninterrupted background execution
    without container restart remains unverified.
 
 ---
@@ -432,7 +425,32 @@ all_sentinels_valid: True
 
 ### GitHub Proxy Sentinel Verification
 
-Verify that GitHub credentials inside the sandbox and SSH sessions match only the documented proxy sentinel without printing token strings to logs or the terminal.
+Verify that GitHub credentials inside the sandbox match only the documented proxy sentinel without printing token strings to logs or the terminal.
+
+#### Host-Managed Dynamic GitHub Secret
+
+Register the GitHub secret on the host for the named task sandbox.
+
+```bash
+sbx secret set github --sandbox my-task-sandbox \
+  --command '"/mnt/c/Users/<username>/AppData/Local/Microsoft/WinGet/Links/op.exe" read "op://<vault>/<item>/<field>" --no-newline' \
+  --refresh 55m
+```
+
+Replace the sandbox name and the 1Password placeholders. For a Windows
+1Password CLI used from WSL, use the quoted absolute path to `op.exe`.
+For a native Linux installation, use the absolute path to `op`. Keep the
+executable, its dependencies and configuration, and the host temporary
+directory outside writable guest mounts.
+See [Docker's dynamic secret documentation](https://docs.docker.com/ai/sandboxes/configuration/credentials/#use-a-dynamic-secret-source).
+
+The host resolves the command and caches the credential for 55 minutes
+with this setting. The host 1Password CLI needs an authenticated session
+and may request desktop approval during resolution or refresh.
+
+The proxy attaches the host-managed PAT to GitHub API requests. Scope the
+PAT to the required repositories and permissions. Use the sandbox's
+public sentinel for `gh` so the PAT stays on the host.
 
 #### Secret-Free Sentinel Check
 
@@ -450,7 +468,7 @@ Both checks output strictly boolean status (`True` when proxy authentication is 
 
 #### Read-Only GitHub API Verification
 
-Test read-only API access through the proxy (for example, inside an SSH session):
+Test read-only API access through the proxy:
 
 ```bash
 gh api user
@@ -459,7 +477,7 @@ gh api repos/<owner>/<repo>
 
 > [!NOTE]
 > **Live Verification is Designer-Owned:**
-> Live credential verification—including registering the host command secret, testing SSH connections from Windows/WSL, executing live GitHub API calls, and verifying that the public sentinel returns HTTP 401 when sent directly to GitHub without the proxy—is owned and performed by the designer. Implementer verification is restricted to mocked unit tests and static syntax/diff checks.
+> Live credential verification—including registering the host command secret, executing live GitHub API calls, and verifying that the public sentinel returns HTTP 401 when sent directly to GitHub without the proxy—is owned and performed by the designer. Implementer verification is restricted to mocked unit tests and static syntax/diff checks.
 
 ---
 
@@ -563,133 +581,3 @@ python3 sandbox/task.py retire \
 - Interrupted tasks remain recorded and can be safely resumed with `python3 sandbox/task.py start --record ...`.
 - Use the retirement helper so blocked checks and partial failures are recorded in the task record.
 - Existing legacy project environments are not automatically deleted.
-
----
-
-## Legacy Project Sandbox SSH Lifecycle (Deprecated)
-
-> [!WARNING]
-> **Deprecated Workflow:** The persistent project-wide sandbox and guest OpenSSH daemon workflow
-> (`project-ssh.py`, `guest-bootstrap.py`) is deprecated in favor of task-scoped sandboxes
-> (`sandbox/task.py`) and native `sbx` transport. It is preserved below as a reference for
-> existing environments and migration only. Do not use this as the active default for new tasks.
-> Existing legacy sandboxes are not automatically deleted.
-
-Direct localhost SSH access to a persistent sandbox is managed via `sandbox/project-ssh.py`.
-This enables external tools, IDEs, and the Windows host to connect to the container's
-`agent` user.
-
-### Security Architecture
-
-- **Host Loopback Exposure Only:** Binds strictly to `[::1]:PORT:2222/tcp6` on the WSL host.
-  Wildcard (`0.0.0.0`) or external LAN listeners on the host are prohibited.
-- **Guest Listener:** OpenSSH server listens on guest port `2222` inside the microVM.
-- **Hardened Agent-Only Authentication:** Only public-key authentication for user `agent` is permitted
-  (`UsePAM yes`, `AuthenticationMethods publickey`, `PermitRootLogin no`, `PasswordAuthentication no`, `KbdInteractiveAuthentication no`, `AllowUsers agent`).
-- **Forwarding Restrictions:** SSH agent forwarding (`AllowAgentForwarding no`) and X11 forwarding are disabled.
-  Local-only TCP forwarding (`AllowTcpForwarding local`) is permitted for application tunneling including dynamic SOCKS forwarding; remote forwarding is denied.
-- **Preflight & Ownership Safety:** Preflight port checks prevent overwriting configurations if an unmanaged listener already occupies port 2222.
-- **Safe Runtime Environment Propagation:** Propagates only an approved allowlist of non-secret runtime variables
-  (`PATH`, upper/lowercase proxy variables, CA bundle paths, `NODE_USE_ENV_PROXY`, sandbox identifiers,
-  agent/credential mode sentinels, and verified GitHub proxy sentinel `GH_TOKEN`) via a single combined `SetEnv` directive.
-  Credential-bearing proxy URLs, unverified `GH_TOKEN` values, newlines, and full environment dumps are strictly rejected with errors.
-- **Host Key Generation at Runtime:** Host keys are generated on first runtime use inside the container
-  (`ssh-keygen -A`) and preserved across runs. No private keys are baked into image layers or copied from host.
-- **Transient Foreground Process & Dual Verification:** Held in foreground by a transient WSL systemd user unit
-  (`systemd-run --user --unit=sbx-ssh-<name> --collect --property=Restart=no sbx exec ...`).
-  Start boundedly verifies both systemd unit activation and guest listener readiness before declaring success.
-  Explicit stop terminates the owned listener without killing arbitrary processes or restarting stopped sandboxes.
-
-### CLI Commands
-
-Run these commands from the repository root on the host with an existing
-sandbox. Relative `--public-key` paths resolve from that directory.
-
-```bash
-# 1. Start SSH listener for a sandbox (default host port: 40222)
-python3 sandbox/project-ssh.py start dotfiles-agy-dev --public-key ./path/to/key.pub --port 40222
-
-# 2. Query status (read-only; reports sbx status, unit status, and port mapping without starting stopped guests)
-python3 sandbox/project-ssh.py status dotfiles-agy-dev --json
-
-# 3. Stop SSH listener (terminates guest sshd, stops host systemd unit, and unpublishes port)
-python3 sandbox/project-ssh.py stop dotfiles-agy-dev
-```
-
-### Windows Client Configuration (`~/.ssh/config`)
-
-Under WSL with mirrored networking, direct connections from Windows to localhost IPv6 may fail
-to route across the virtual network switch. Connect using the verified WSL netcat proxy command:
-
-```ssh-config
-Host sbx-dotfiles
-    HostName 127.0.0.1
-    Port 40222
-    User agent
-    IdentityFile ~/.ssh/id_ed25519_sbx_dotfiles
-    IdentitiesOnly yes
-    IdentityAgent none
-    ForwardAgent no
-    PasswordAuthentication no
-    KbdInteractiveAuthentication no
-    StrictHostKeyChecking yes
-    UserKnownHostsFile ~/.ssh/known_hosts_sbx_dotfiles
-    ProxyCommand C:/Windows/System32/wsl.exe -d Debian -- /usr/bin/nc -6 ::1 40222
-```
-
-### Host Key Verification & `known_hosts`
-
-Upon running `project-ssh.py start`, the script prints the SHA256 fingerprints of the container's
-generated host keys. Preserve the existing verified Windows alias and known_hosts entry.
-For a new Sandbox, compare the public host key obtained through `sbx exec` with
-these fingerprints and register it in the dedicated known_hosts file before
-connecting with strict checking. The commands do not edit Windows SSH configuration.
-
-```text
-Host Key Fingerprints:
-  - 256 SHA256:d8Q... root@sandbox (ED25519)
-  - 256 SHA256:7uK... root@sandbox (ECDSA)
-```
-
-Never copy private host or client keys into the guest. Staging directories are ephemeral and
-cleaned up automatically after public key installation.
-
-### Explicit Stop Before Keyring Lock
-
-Before locking the host session keyring or suspending the host, explicitly stop the SSH service
-and the container:
-
-```bash
-python3 sandbox/project-ssh.py stop dotfiles-agy-dev
-sbx stop dotfiles-agy-dev
-```
-
-- `project-ssh.py stop` leaves container data, branches, and worktrees intact.
-- Stopping an already-stopped sandbox is idempotent and **never invokes `sbx exec`**, ensuring
-  a stopped container is not unintentionally re-awakened.
-
-### GitHub Proxy Access via SSH (Dynamic Host Secret)
-
-To use the GitHub CLI (`gh`) over legacy project SSH sessions without passing real personal access tokens (PATs) into the guest container:
-
-1. **Project-Scoped Dynamic Host Secret:**
-   Register a dynamic command secret on the host scoped to the project sandbox:
-   ```bash
-   sbx secret set --sandbox my-project github \
-     --command '"/mnt/c/Users/<username>/AppData/Local/Microsoft/WinGet/Links/op.exe" read "op://<vault>/<item>/<field>" --no-newline' \
-     --refresh 55m
-   ```
-   - **Absolute Windows `op.exe` path:** Replace the sandbox name, username, and reference placeholders with your local values. The WSL shell alias `op` is unavailable to the daemon, so use the actual absolute Windows executable path. Keep both path and reference quoted; never put the PAT itself in the command. See [Docker's dynamic secret documentation](https://docs.docker.com/ai/sandboxes/configuration/credentials/#use-a-dynamic-secret-source).
-   - **Host Cache Duration:** The host stores the command instead of the PAT value, resolves it on the host, and caches the result for 55 minutes by default (`--refresh 55m`). Source changes apply to existing local sandboxes without restarting them.
-   - **1Password Approval Dependency:** Resolution requires an authenticated Windows 1Password CLI and may prompt for desktop app approval. Cache expiry can therefore require user interaction; this is not a guarantee of unattended access.
-   - **Host Isolation:** Keep the executable, its dependencies and configuration, and host temporary directories outside writable guest mounts. Check the project's mounts before registering the command. This flow does not pass the real PAT into the guest or write it to guest files.
-
-2. **In-Guest Proxy Sentinel & `gh` CLI:**
-   - **Proxy Interception:** Docker Sandbox's host proxy intercepts outbound requests to GitHub APIs and attaches the host-managed credential transparently.
-   - **Public Proxy Sentinel:** In container sessions, the environment variable `GH_TOKEN` is set to Docker's fixed public sentinel value:
-     `gho_sbxproxymanaged000000000000000000000`
-   - **Dummy Auth Token:** Inside the container, running `gh auth token` returns this dummy sentinel string, not the real PAT.
-   - **API Permissions:** The proxy enables operations allowed by the underlying PAT. Keeping the PAT outside the guest does not make those operations read-only; scope the PAT to the intended repositories and permissions.
-   - **No In-Guest Login or Token Import:** Do not run `gh auth login` or import a real token inside the guest. Authentication uses the host proxy and the sentinel.
-   - **Safe SSH Propagation:** When SSH sessions are started via `project-ssh.py`, `guest-bootstrap.py` inspects `GH_TOKEN`. If present, it must match the exact literal sentinel `gho_sbxproxymanaged000000000000000000000` to be propagated into the OpenSSH daemon's `SetEnv` directive. Any other present value (empty string, real token, prefix lookalike) is rejected immediately with a static secret-free `ValueError` before config generation. `GITHUB_TOKEN` and unrelated credential environment variables remain strictly excluded.
-   - **Existing SSH Sessions:** After updating the bootstrap, stop and start managed SSH with `project-ssh.py`, then reconnect clients. Existing processes may retain their previous environment.
