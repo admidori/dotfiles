@@ -191,12 +191,13 @@ implementation.
     This captures a full Git bundle (`--all HEAD`), staged binary patch, worktree archive,
     and guest harness archive, strictly verified on the host (bare repo fetch, strict fsck,
     index reconstruction, member SHA256 checks) before returning a verified receipt.
-  - Explicit retirement: preservation and submission acceptance are NOT deletion authorization.
-    Removing a sandbox (`sbx rm`) requires separate explicit operator approval, a fresh state
-    check confirming a quiesced container, and verified host export before deletion. There is
-    no routine retention as a project-wide persistent environment. Interrupted tasks may
-    remain until safely resumed or explicitly retired; existing legacy project environments
-    are not automatically deleted.
+  - Automatic retirement: after submission acceptance and a fresh verified host export with
+    development and agent processes quiesced, run `sandbox/task.py retire` for the recorded
+    task sandbox under standing authorization. The helper verifies identity and fresh guest
+    state, preserves the host branches, and confirms the VM is stopped before removing it.
+    Honor operator requests to retain a sandbox. If the task record or retirement journal names
+    a host worktree, obtain separate approval before retiring both. Keep interrupted tasks,
+    tasks pending acceptance, and legacy project environments outside this automatic path.
 - When working on the host, do repository operations in a dedicated worktree,
   never in the shared main checkout: edits, branch/PR reviews, builds, tests,
   and changes to Git state. This applies to every agent.
@@ -310,4 +311,5 @@ implementation.
   push and that PR, not a later comment, another push, or another PR. When follow-up
   work needs one of those, ask again.
 - Also confirm before local actions that are hard to undo, such as deleting or
-  overwriting files you didn't create.
+  overwriting files you didn't create. The standing authorization for automatic task
+  sandbox retirement above applies to its defined scope.

@@ -46,7 +46,8 @@
 End the run with a final response in exactly this Markdown structure. It is
 saved verbatim as the step's report and is the designer's primary record of
 what you did and why, so write it for a reader who sees only this report and
-the diff. Write it as plain Markdown, not wrapped in a code block.
+the diff. Begin the final response with the `# Report: Step <NN>` heading
+on its first line. Write it as plain Markdown, without a surrounding code block.
 
 ```
 # Report: Step <NN>

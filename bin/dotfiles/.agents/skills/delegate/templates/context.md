@@ -40,7 +40,10 @@ Explain why each was rejected so later steps do not re-explore them.>
 
 ## Verification constraints
 
-<Tooling, sandbox boundaries, environment quirks, offline constraints, or test suite limits.>
+<Tooling, sandbox boundaries, environment quirks, offline constraints, or test suite limits.
+If dependency staging is needed, record staged dependencies, cache paths
+readable from the implementation environment, offline environment variables,
+and verification commands.>
 
 - <Constraint>: <details and workaround/implication>
 

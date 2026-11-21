@@ -75,11 +75,10 @@ The status line shows a yellow `*|*` marker next to the branch in a worktree.
   expected, and say so when you do. Removing your own task worktree returns this session
   to the shared base checkout, so if the operator is reviewing there, leave that worktree
   open and remove only temporary implementation worktrees from Host mode delegations.
-  In Docker Sandbox mode, task sandboxes are managed via `sandbox/task.py`: state is
-  preserved via `task.py preserve` and submitted via `sandbox/submit.py`. Preservation and
-  submission acceptance do not authorize deletion; explicit retirement requires separate
-  operator approval, a fresh state check confirming a quiesced container, and verified
-  host export before `sbx rm`. There is no routine retention as a persistent project environment.
+  In Docker Sandbox mode, follow the shared AGENTS.md retirement policy and the delegate
+  skill's close-out steps. Use `sandbox/task.py retire` after acceptance and fresh verified
+  preservation when retirement targets only the sandbox. A registered host worktree
+  requires separate approval before retiring both.
 - When delegating to Antigravity:
   - **Host mode (`HARNESS_EXECUTION_MODE=host`):** Antigravity gets its own implementation
     worktree branched from this task branch and makes edits only; you review and commit

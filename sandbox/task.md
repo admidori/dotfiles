@@ -212,7 +212,11 @@ python3 sandbox/task.py register-worktree \
 
 ### 6. `retire`
 
-Retires a completed task's exact sandbox and optional registered host worktree while preserving all branches. The operator has explicitly authorized no-confirmation deletion for completed tasks through this command.
+Retires a completed task's exact sandbox and optional registered host worktree while preserving all branches.
+The delegate workflow invokes this after acceptance and a fresh verified export under
+standing authorization for sandbox-only retirement. If the record or retirement journal
+names a host worktree, obtain separate approval before invoking the command, even when
+omitting `--worktree`.
 
 ```bash
 python3 sandbox/task.py retire \
@@ -223,7 +227,7 @@ python3 sandbox/task.py retire \
 ```
 
 **Invariants & Behavior:**
-- Requires both the task record and the accepted submission manifest (`sandbox/submit.py accept`), verifying matching `task_id`, `base_commit`, and canonical repository path.
+- Requires both the task record and the accepted submission manifest (`sandbox/submit.py accept`), verifying matching `task_id` and `base_commit`. The manifest's absolute repository path must match the canonical host repository or the exact recorded guest checkout. When accepting in the guest, copy the manifest to the host with mode `0600` before invoking retirement.
 - Verifies that accepted commit (`submitted_sha`) and tree (`submitted_tree == reviewed_tree`) exist and match the manifest.
 - Re-verifies the preservation export on the host: loads `receipt.json`, confirms `verified: true` matching task and sandbox identity, independently recomputes streaming SHA256 checksums of all four preservation artifacts (`repo.bundle`, `staged.patch`, `worktree.tar.gz`, `harness.tar.gz`) against both receipt and task record hashes, and runs `git bundle verify`.
 - Ensures both the accepted submission branch (at `submitted_sha`) and the task implementation branch (at `reviewed_head`) are durably present on the host repository before any destruction:
