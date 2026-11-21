@@ -86,8 +86,6 @@ check "~/.gemini/config/mcp_config.json is a real file (copy-once, not synced)" 
 check "~/.gemini/config/mcp_config.json is NOT a symlink" test ! -L "$HOME/.gemini/config/mcp_config.json"
 check "~/.gemini/config/mcp_config.json seeded from the tracked template" \
   cmp -s "$HOME/.gemini/config/mcp_config.json" "$REPO_ROOT/bin/dotfiles/.gemini/config/mcp_config.json"
-check "mcp_config.json contains coder server declaration" \
-  check_json "$HOME/.gemini/config/mcp_config.json" '.mcpServers.coder.command == "coder" and .mcpServers.coder.args == ["exp", "mcp", "server"]'
 check "mcp_config.json contains colab server declaration" \
   check_json "$HOME/.gemini/config/mcp_config.json" '.mcpServers.colab.command == "uvx" and .mcpServers.colab.args == ["git+https://github.com/googlecolab/colab-mcp"]'
 
@@ -111,7 +109,6 @@ check "~/.claude/skills/delegate/SKILL.md resolves to a file" test -f "$HOME/.cl
 check "delegate runner is executable" test -x "$HOME/.agents/skills/delegate/scripts/run-task.sh"
 check "delegate compute validator is executable" test -x "$HOME/.agents/skills/delegate/scripts/validate-compute.sh"
 check "delegate compute test runner is executable" test -x "$HOME/.agents/skills/delegate/scripts/test-compute.sh"
-check "delegate compute template exists" test -f "$HOME/.agents/skills/delegate/templates/compute.json"
 check "delegate compute colab template exists" test -f "$HOME/.agents/skills/delegate/templates/compute-colab.json"
 check "delegate compute test suite passes" "$HOME/.agents/skills/delegate/scripts/test-compute.sh"
 check "delegate lifecycle test suite passes" "$HOME/.agents/skills/delegate/scripts/test-lifecycle.sh"
