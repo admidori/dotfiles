@@ -116,6 +116,12 @@ check "delegate compute colab template exists" test -f "$HOME/.agents/skills/del
 check "delegate compute test suite passes" "$HOME/.agents/skills/delegate/scripts/test-compute.sh"
 check "delegate lifecycle test suite passes" "$HOME/.agents/skills/delegate/scripts/test-lifecycle.sh"
 
+echo "==> Verifying shared skills dir (ai-playground for Claude and Codex)"
+check "~/.agents/skills/ai-playground is a symlink" test -L "$HOME/.agents/skills/ai-playground"
+check "~/.agents/skills/ai-playground/SKILL.md resolves to a file" test -f "$HOME/.agents/skills/ai-playground/SKILL.md"
+check "~/.claude/skills/ai-playground/SKILL.md resolves to a file" test -f "$HOME/.claude/skills/ai-playground/SKILL.md"
+check "ai-playground runner is executable" test -x "$HOME/.agents/skills/ai-playground/scripts/run.py"
+
 echo "==> Verifying merged hooks dir (dotfiles + third-party content coexist)"
 check "~/.claude/hooks is NOT a symlink (merged dir)" test ! -L "$HOME/.claude/hooks"
 check "~/.claude/hooks/bash-guard.sh is a symlink" test -L "$HOME/.claude/hooks/bash-guard.sh"
