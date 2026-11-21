@@ -127,6 +127,7 @@ path=(
 # that. Appended so Linux tools keep their precedence, while the aliases
 # route interactive ssh/ssh-add to the .exe. Guarded because the mount
 # exists only under WSL.
+_op_exe= _sumatra_exe= _sakura_exe= _sakura_win=
 if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
 	path+=(
 		/mnt/c/Windows
@@ -135,12 +136,56 @@ if [ -d /mnt/c/Windows/System32/OpenSSH ]; then
 	)
 	alias ssh='ssh.exe'
 	alias ssh-add='ssh-add.exe'
-	[[ -x /mnt/c/Users/admidori/AppData/Local/Microsoft/WinGet/Links/op.exe ]] && alias op='/mnt/c/Users/admidori/AppData/Local/Microsoft/WinGet/Links/op.exe'
+
+	# Resolve Windows application paths dynamically from the host environment.
+	_init_wsl_windows_apps() {
+		local cmd=/mnt/c/Windows/System32/cmd.exe win_dirs
+		[ -x "$cmd" ] && command -v wslpath >/dev/null 2>&1 && command -v iconv >/dev/null 2>&1 || return 0
+
+		# Query both values without expanding them as cmd.exe commands.
+		win_dirs="$("$cmd" /d /u /c 'set LOCALAPPDATA&set ProgramFiles(x86)&exit /b 0' 2>/dev/null |
+			iconv -f UTF-16LE -t UTF-8 2>/dev/null)" || return 0
+
+		local line win_localappdata='' win_programfiles_x86=''
+		while IFS= read -r line; do
+			line="${line%$'\r'}"
+			case "${(U)line%%=*}" in
+				LOCALAPPDATA) win_localappdata="${line#*=}" ;;
+				'PROGRAMFILES(X86)') win_programfiles_x86="${line#*=}" ;;
+			esac
+		done <<< "$win_dirs"
+
+		local localappdata='' programfiles_x86=''
+		if [ -n "$win_localappdata" ]; then
+			localappdata="$(wslpath -u "$win_localappdata" 2>/dev/null)" || localappdata=
+		fi
+		if [ -n "$win_programfiles_x86" ]; then
+			programfiles_x86="$(wslpath -u "$win_programfiles_x86" 2>/dev/null)" || programfiles_x86=
+		fi
+
+		if [[ "$localappdata" == /* ]]; then
+			_op_exe="$localappdata/Microsoft/WinGet/Links/op.exe"
+			_sumatra_exe="$localappdata/SumatraPDF/SumatraPDF.exe"
+		fi
+
+		if [[ "$programfiles_x86" == /* ]]; then
+			_sakura_exe="$programfiles_x86/sakura/sakura.exe"
+			_sakura_win="${win_programfiles_x86%[/\\]}\\sakura\\sakura.exe"
+		fi
+	}
+	_init_wsl_windows_apps
+	unfunction _init_wsl_windows_apps
+
+	[[ -n "$_op_exe" && -x "$_op_exe" ]] && alias op='"$_op_exe"'
 
 	# Resolve the unlock password only when explicitly requested, never at shell startup.
 	keyring-unlock() {
+		if [ -z "$_op_exe" ] || [ ! -x "$_op_exe" ]; then
+			printf 'keyring-unlock: op.exe not found: %s\n' "${_op_exe:-not configured}" >&2
+			return 1
+		fi
 		/usr/bin/python3 -I "$HOME/.keyring/unlock.py" \
-			--op /mnt/c/Users/admidori/AppData/Local/Microsoft/WinGet/Links/op.exe \
+			--op "$_op_exe" \
 			--reference 'op://Credentials/WSL Keyring/password' "$@"
 	}
 
@@ -167,7 +212,7 @@ fi
 # WSL: pdf <file.pdf...> opens files in the Windows SumatraPDF viewer.
 # Launched directly (no cmd.exe) and disowned so the shell is not held.
 # Missing files are rejected before launch so no empty viewer window opens.
-if [ -x /mnt/c/Users/admidori/AppData/Local/SumatraPDF/SumatraPDF.exe ]; then
+if [ -n "$_sumatra_exe" ] && [ -x "$_sumatra_exe" ]; then
 	pdf() {
 		local p
 		local -a args
@@ -182,7 +227,7 @@ if [ -x /mnt/c/Users/admidori/AppData/Local/SumatraPDF/SumatraPDF.exe ]; then
 			fi
 			args+=("$(wslpath -w "$p")")
 		done
-		/mnt/c/Users/admidori/AppData/Local/SumatraPDF/SumatraPDF.exe "${args[@]}" >/dev/null 2>&1 &!
+		"$_sumatra_exe" "${args[@]}" >/dev/null 2>&1 &!
 	}
 fi
 
@@ -191,6 +236,10 @@ fi
 # are created empty instead (their directory must exist). All arguments are
 # checked before anything is created, so an error never leaves stray files.
 function sakura() {
+  if [ -z "$_sakura_exe" ] || [ ! -x "$_sakura_exe" ] || [ -z "$_sakura_win" ] || [ ! -x /mnt/c/Windows/System32/cmd.exe ]; then
+    printf 'sakura: app not available\n' >&2
+    return 1
+  fi
   local p create=0
   local -a sakura_arg
   if [ "$1" = "-n" ]; then create=1; shift; fi
@@ -208,10 +257,10 @@ function sakura() {
   done
   for p in "$@"; do
       if [ ! -e "$p" ]; then : > "$p" || return 1; fi
-      sakura_arg+=("`wslpath -w $p`")
+      sakura_arg+=("$(wslpath -w "$p")")
   done
   (
-    /mnt/c/Windows/System32/cmd.exe /c 'C:\Program Files (x86)\sakura\sakura.exe' $sakura_arg[@] >/dev/null 2>&1 &
+    /mnt/c/Windows/System32/cmd.exe /c "$_sakura_win" "${sakura_arg[@]}" >/dev/null 2>&1 &
     sleep 2
     pid="$!"
     if [ -x "/proc/$pid" ]; then kill $pid; fi
