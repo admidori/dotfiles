@@ -602,11 +602,12 @@ This enables external tools, IDEs, and the Windows host to connect to the contai
 
 ### CLI Commands
 
-All commands require an existing sandbox and must be run from the host:
+Run these commands from the repository root on the host with an existing
+sandbox. Relative `--public-key` paths resolve from that directory.
 
 ```bash
 # 1. Start SSH listener for a sandbox (default host port: 40222)
-python3 sandbox/project-ssh.py start dotfiles-agy-dev --public-key /mnt/c/Users/admidori/.ssh/id_ed25519_sbx_dotfiles.pub --port 40222
+python3 sandbox/project-ssh.py start dotfiles-agy-dev --public-key ./path/to/key.pub --port 40222
 
 # 2. Query status (read-only; reports sbx status, unit status, and port mapping without starting stopped guests)
 python3 sandbox/project-ssh.py status dotfiles-agy-dev --json
