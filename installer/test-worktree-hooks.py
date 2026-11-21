@@ -180,7 +180,9 @@ class TestWorktreeLifecycle(unittest.TestCase):
         # 3. Dangling symlink root
         os.unlink(repo_parent)
         shutil.rmtree(worktrees_root)
-        os.symlink("/nonexistent/dangling/path", worktrees_root)
+        missing_target = "missing-target"
+        self.assertFalse(os.path.lexists(os.path.join(self.fake_home, missing_target)))
+        os.symlink(missing_target, worktrees_root)
         res3 = run_cmd(["python3", "-B", HOOK_SCRIPT], input_text=payload, env=self.env)
         self.assertNotEqual(res3.returncode, 0, "Must reject dangling symlink root")
 
@@ -546,7 +548,7 @@ class TestSettingsMigration(unittest.TestCase):
         """When conflicting values exist, no changes are made, focused diff is shown, exits non-zero."""
         conflicting = {
             "hooks": {
-                "WorktreeCreate": [{"hooks": [{"type": "command", "command": "/custom/my-create.sh"}]}]
+                "WorktreeCreate": [{"hooks": [{"type": "command", "command": "./custom/my-create.sh"}]}]
             }
         }
         with open(self.settings_file, "w") as f:
@@ -555,7 +557,7 @@ class TestSettingsMigration(unittest.TestCase):
         res = run_cmd(["python3", "-B", MIGRATE_SCRIPT, "--settings-file", self.settings_file, "--template-file", TEMPLATE_SETTINGS])
         self.assertNotEqual(res.returncode, 0, "Must exit non-zero on conflict")
         self.assertIn("Conflict: 'WorktreeCreate'", res.stderr)
-        self.assertIn("-        \"command\": \"/custom/my-create.sh\"", res.stderr)
+        self.assertIn("-        \"command\": \"./custom/my-create.sh\"", res.stderr)
         self.assertIn("No changes made", res.stdout)
 
         backups = [f for f in os.listdir(self.claude_dir) if "pre-worktrees" in f]
