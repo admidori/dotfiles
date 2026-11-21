@@ -4,7 +4,7 @@
 #
 # Validates a delegate step's compute.json manifest before launching Antigravity.
 # Enforces a strict, documented schema:
-#   - backend: "coder" | "colab" string
+#   - backend: "colab" string
 #   - target: non-empty remote workspace/notebook identifier string
 #             (do not treat as a local filesystem path)
 #   - command: non-empty argv array of non-empty strings (no shell string)
@@ -60,7 +60,7 @@ if jq -e 'has("commands")' "$compute_file" >/dev/null 2>&1; then
   exit 2
 fi
 
-# Required: backend ('coder' or 'colab')
+# Required: backend ('colab')
 backend_type="$(jq -r 'if has("backend") then (.backend | type) else "missing" end' "$compute_file")"
 if [ "$backend_type" = "missing" ] || [ "$backend_type" = "null" ]; then
   echo "validation error: missing required field 'backend'" >&2
@@ -71,8 +71,8 @@ if [ "$backend_type" != "string" ]; then
   exit 2
 fi
 backend="$(jq -r '.backend' "$compute_file")"
-if [ "$backend" != "coder" ] && [ "$backend" != "colab" ]; then
-  echo "validation error: unknown backend '$backend' (must be 'coder' or 'colab')" >&2
+if [ "$backend" != "colab" ]; then
+  echo "validation error: unknown backend '$backend' (must be 'colab')" >&2
   exit 2
 fi
 
@@ -213,7 +213,7 @@ validate_path_array() {
         exit 2
       fi
       # Colab does not support directory staging for scripts or directory sync for artifacts
-      if [ "$backend" = "colab" ] && { [ "$field" = "scripts" ] || [ "$field" = "artifacts" ]; }; then
+      if [ "$field" = "scripts" ] || [ "$field" = "artifacts" ]; then
         if [[ "$p" =~ /$ ]]; then
           echo "validation error: colab backend does not support directory staging or collection: $p" >&2
           exit 2

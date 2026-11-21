@@ -907,18 +907,6 @@ Record remote execution lifecycle transitions and milestones to \`$compute_event
 All collected output artifacts MUST be stored in \`$compute_artifacts_dir\`, NOT in the source worktree unless a later reviewed step explicitly promotes one.
 
 ### Backend-specific staging rules: $compute_backend
-EOF
-    if [ "$compute_backend" = "coder" ]; then
-      cat <<EOF
-- Use Coder MCP tools to interact with the remote Coder workspace.
-- Upload/stage required local files and tarballs from the local worktree to the remote workspace.
-- Remote edits are disposable: code fixes MUST be made in the local worktree and restaged. Never retain code changes only in the remote workspace.
-- Execute remote commands and observe execution progress and logs.
-- Collect output artifacts into \`$compute_artifacts_dir\`, not into the source worktree.
-- Clean up remote workspace resources upon completion or failure, and record release outcome.
-EOF
-    elif [ "$compute_backend" = "colab" ]; then
-      cat <<EOF
 - Use official Google Colab MCP (\`colab-mcp\`) tools to interact with the notebook session.
 - Google's official Colab MCP is notebook-oriented: inject listed scripts from the manifest (\`scripts\`) into notebook cells or execute cells.
 - Scripts may be injected only from the manifest; datasets use the declared URIs (\`datasets\`). Never claim a general directory-sync capability or inline dataset contents.
@@ -928,9 +916,6 @@ EOF
 - Large or binary artifacts must be uploaded by notebook code to an operator-declared external destination, or reported as not collected. Never base64-inline them into prompts or cell output.
 - Do not promise or expect that arbitrary Colab artifact paths will be downloaded to the local harness.
 - Ephemeral release guarantee: Release and disconnect the Colab session and runtime upon completion or failure. If the connected client cannot release the runtime, record \`preserved\` with the reason instead of claiming it was released.
-EOF
-    fi
-    cat <<EOF
 
 ### Retry and release requirements
 - Maximum attempts: $compute_attempts. Bounded retries only: diagnose failures before retrying.

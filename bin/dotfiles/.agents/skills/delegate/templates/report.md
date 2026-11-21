@@ -83,8 +83,8 @@ on its first line. Write it as plain Markdown, without a surrounding code block.
 - <What you could not check yourself (needs network, a device, a human; assigned to designer), or "None".>
 
 ## Remote compute (when compute.json was used)
-- Backend: <coder | colab>
-- Target / session: <workspace or notebook/session>
+- Backend: <colab>
+- Target / session: <notebook/session>
 - Job ID: <remote job ID>
 - Input / data hashes: <hashes of staged inputs and dataset references>
 - Runtime facts: <GPU model, driver/CUDA version, host facts>

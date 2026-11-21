@@ -4,7 +4,7 @@
 #
 # Focused offline test suite for remote compute manifest validation and
 # delegation runner integration.
-# Does not require network, Coder, Colab, or real Antigravity.
+# Does not require network, Colab, or real Antigravity.
 #
 set -euo pipefail
 
@@ -49,8 +49,6 @@ trap 'rm -rf "$TMP_TEST_DIR"' EXIT
 echo "==> Testing compute manifest validation (validate-compute.sh)"
 
 # 1. Valid templates
-assert_ok "coder manifest template is valid" \
-  "$VALIDATE_BIN" "$SKILL_DIR/templates/compute.json"
 assert_ok "colab manifest template is valid" \
   "$VALIDATE_BIN" "$SKILL_DIR/templates/compute-colab.json"
 
@@ -69,8 +67,8 @@ assert_fail "non-object JSON root rejected" \
 # 3. Legacy aliases rejected
 cat <<'EOF' > "$TMP_TEST_DIR/legacy-timeout-alias.json"
 {
-  "backend": "coder",
-  "target": "gpu-node",
+  "backend": "colab",
+  "target": "notebook.ipynb",
   "command": ["python", "train.py"],
   "timeout": 600,
   "max_attempts": 2
@@ -81,8 +79,8 @@ assert_fail "legacy 'timeout' alias rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/legacy-attempts-alias.json"
 {
-  "backend": "coder",
-  "target": "gpu-node",
+  "backend": "colab",
+  "target": "notebook.ipynb",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
   "attempts": 2
@@ -93,8 +91,8 @@ assert_fail "legacy 'attempts' alias rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/legacy-commands-alias.json"
 {
-  "backend": "coder",
-  "target": "gpu-node",
+  "backend": "colab",
+  "target": "notebook.ipynb",
   "commands": ["python", "train.py"],
   "timeout_seconds": 600,
   "max_attempts": 2
@@ -142,7 +140,7 @@ assert_fail "unknown backend rejected" \
 # 5. Target checks
 cat <<'EOF' > "$TMP_TEST_DIR/missing-target.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
   "max_attempts": 2
@@ -153,7 +151,7 @@ assert_fail "missing target rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/numeric-target.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": 123,
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -165,7 +163,7 @@ assert_fail "numeric target rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/empty-target.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "   ",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -177,8 +175,8 @@ assert_fail "empty target string rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/remote-id-target.json"
 {
-  "backend": "coder",
-  "target": "/workspaces/remote-gpu-workspace",
+  "backend": "colab",
+  "target": "notebooks/remote-gpu-task",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
   "max_attempts": 2
@@ -190,7 +188,7 @@ assert_ok "remote target identifier with slashes is accepted (not treated as loc
 # 6. Command checks
 cat <<'EOF' > "$TMP_TEST_DIR/missing-command.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "timeout_seconds": 600,
   "max_attempts": 2
@@ -201,7 +199,7 @@ assert_fail "missing command rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/string-command.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": "python train.py --epochs 5",
   "timeout_seconds": 600,
@@ -213,7 +211,7 @@ assert_fail "shell string command rejected (must be argv array)" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/empty-command-array.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": [],
   "timeout_seconds": 600,
@@ -225,7 +223,7 @@ assert_fail "empty command array rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/command-array-with-empty.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "  "],
   "timeout_seconds": 600,
@@ -237,7 +235,7 @@ assert_fail "command array with blank command rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/command-array-non-string.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", 123],
   "timeout_seconds": 600,
@@ -250,7 +248,7 @@ assert_fail "command array with non-string element rejected" \
 # 7. timeout_seconds checks
 cat <<'EOF' > "$TMP_TEST_DIR/missing-timeout.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "max_attempts": 2
@@ -261,7 +259,7 @@ assert_fail "missing timeout_seconds rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/string-timeout.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": "600",
@@ -273,7 +271,7 @@ assert_fail "string timeout_seconds rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/float-timeout.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600.5,
@@ -285,7 +283,7 @@ assert_fail "non-integer float timeout_seconds rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/zero-timeout.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 0,
@@ -297,7 +295,7 @@ assert_fail "zero timeout_seconds rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/negative-timeout.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": -30,
@@ -309,7 +307,7 @@ assert_fail "negative timeout_seconds rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/excessive-timeout.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 86401,
@@ -322,7 +320,7 @@ assert_fail "excessive timeout_seconds (>86400) rejected" \
 # 8. max_attempts checks
 cat <<'EOF' > "$TMP_TEST_DIR/missing-attempts.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600
@@ -333,7 +331,7 @@ assert_fail "missing max_attempts rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/string-attempts.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -345,7 +343,7 @@ assert_fail "string max_attempts rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/float-attempts.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -357,7 +355,7 @@ assert_fail "non-integer float max_attempts rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/zero-attempts.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -369,7 +367,7 @@ assert_fail "zero max_attempts rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/excessive-attempts.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -383,14 +381,14 @@ assert_fail "unbounded excessive max_attempts (>10) rejected" \
 for values in '0.0 2' '-1.0 2' '86401.0 2' '1e100 2' \
   '600 0.0' '600 -1.0' '600 11.0' '600 1e100'; do
   read -r timeout_value attempts_value <<< "$values"
-  printf '{"backend":"coder","target":"gpu-workspace","command":["true"],"timeout_seconds":%s,"max_attempts":%s}\n' \
+  printf '{"backend":"colab","target":"notebook.ipynb","command":["true"],"timeout_seconds":%s,"max_attempts":%s}\n' \
     "$timeout_value" "$attempts_value" > "$TMP_TEST_DIR/numeric-boundary.json"
   assert_fail "out-of-range numeric literals $values rejected" \
     "$VALIDATE_BIN" "$TMP_TEST_DIR/numeric-boundary.json"
 done
 for values in '1.0 1.0' '86400.0 10.0' '8.64e4 1e1'; do
   read -r timeout_value attempts_value <<< "$values"
-  printf '{"backend":"coder","target":"gpu-workspace","command":["true"],"timeout_seconds":%s,"max_attempts":%s}\n' \
+  printf '{"backend":"colab","target":"notebook.ipynb","command":["true"],"timeout_seconds":%s,"max_attempts":%s}\n' \
     "$timeout_value" "$attempts_value" > "$TMP_TEST_DIR/numeric-boundary.json"
   assert_ok "valid numeric boundaries $values accepted" \
     "$VALIDATE_BIN" "$TMP_TEST_DIR/numeric-boundary.json"
@@ -399,7 +397,7 @@ done
 # 9. Path boundary checks
 cat <<'EOF' > "$TMP_TEST_DIR/non-array-inputs.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -412,7 +410,7 @@ assert_fail "non-array inputs rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/abs-path-inputs.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -425,7 +423,7 @@ assert_fail "absolute local path in inputs rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/traverse-inputs.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -438,7 +436,7 @@ assert_fail "traversing local path in inputs rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/traverse-mid-inputs.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -451,7 +449,7 @@ assert_fail "mid-path traversal in inputs rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/abs-path-artifacts.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -464,7 +462,7 @@ assert_fail "absolute local path in artifacts rejected" \
 
 cat <<'EOF' > "$TMP_TEST_DIR/traverse-artifacts.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": ["python", "train.py"],
   "timeout_seconds": 600,
@@ -504,12 +502,12 @@ assert_fail "colab directory artifacts collection rejected" \
 for field in inputs scripts artifacts; do
   for paths in '[""]' '["train.py", ""]' '["", "train.py"]' '["train.py", " "]'; do
     jq --arg field "$field" --argjson paths "$paths" '.[$field] = $paths' \
-      "$SKILL_DIR/templates/compute.json" > "$TMP_TEST_DIR/empty-path.json"
+      "$SKILL_DIR/templates/compute-colab.json" > "$TMP_TEST_DIR/empty-path.json"
     assert_fail "$field rejects empty path in $paths" \
       "$VALIDATE_BIN" "$TMP_TEST_DIR/empty-path.json"
   done
   jq --arg field "$field" '.[$field] = []' \
-    "$SKILL_DIR/templates/compute.json" > "$TMP_TEST_DIR/empty-path.json"
+    "$SKILL_DIR/templates/compute-colab.json" > "$TMP_TEST_DIR/empty-path.json"
   assert_ok "$field accepts an empty optional array" \
     "$VALIDATE_BIN" "$TMP_TEST_DIR/empty-path.json"
 done
@@ -838,25 +836,25 @@ assert_ok "metrics for step without compute.json records null compute_backend" \
 assert_ok "metrics has no duplicate backend field" \
   jq -e 'has("backend") | not' "$TASK_DIR_A/metrics.jsonl"
 
-# Scenario B: Step WITH valid coder compute.json
-TASK_DIR_B="$TMP_TEST_DIR/task-coder"
-STEP_DIR_B="$TASK_DIR_B/steps/02-gpu-coder"
+# Scenario B: Step WITH valid colab compute.json
+TASK_DIR_B="$TMP_TEST_DIR/task-colab-basic"
+STEP_DIR_B="$TASK_DIR_B/steps/02-gpu-colab"
 mkdir -p "$STEP_DIR_B"
 cat <<'EOF' > "$STEP_DIR_B/brief.md"
-# Step 02: GPU Coder Step
+# Step 02: GPU Colab Step
 ## Task
-Run remote training on Coder.
+Run remote training on Colab.
 EOF
-cp "$SKILL_DIR/templates/compute.json" "$STEP_DIR_B/compute.json"
+cp "$SKILL_DIR/templates/compute-colab.json" "$STEP_DIR_B/compute.json"
 
-assert_ok "run-task succeeds on step with valid coder compute.json" \
+assert_ok "run-task succeeds on step with valid colab compute.json" \
   run_harness_task "$STEP_DIR_B"
 
 assert_ok "prompt includes remote GPU compute manifest section" \
   grep -q "# Remote GPU compute manifest" "$STEP_DIR_B/prompt-1.md"
 
-assert_ok "prompt includes Coder backend staging rules" \
-  grep -q "Backend-specific staging rules: coder" "$STEP_DIR_B/prompt-1.md"
+assert_ok "prompt includes Colab backend staging rules" \
+  grep -q "Backend-specific staging rules: colab" "$STEP_DIR_B/prompt-1.md"
 
 assert_ok "prompt includes retry and release requirements" \
   grep -q "Retry and release requirements" "$STEP_DIR_B/prompt-1.md"
@@ -880,18 +878,18 @@ assert_ok "runner created attempt-specific artifacts directory" \
   test -d "$STEP_DIR_B/compute-1/artifacts"
 
 assert_ok "runner initialized state.json with backend, target, attempt count" \
-  jq -e '.backend == "coder" and .target == "gpu-workspace" and .attempt == 1 and .phase == "initialized"' "$STEP_DIR_B/compute-1/state.json"
+  jq -e '.backend == "colab" and .target == "notebooks/gpu_train.ipynb" and .attempt == 1 and .phase == "initialized"' "$STEP_DIR_B/compute-1/state.json"
 
 assert_ok "runner created events.jsonl location" \
   test -f "$STEP_DIR_B/compute-1/events.jsonl"
 
-assert_ok "coder prompt explicitly forbids secrets in state.json and events.jsonl" \
+assert_ok "colab prompt explicitly forbids secrets in state.json and events.jsonl" \
   grep -Fq "Neither \`state.json\` nor \`events.jsonl\` may contain credentials, tokens, dataset contents, or other secrets." "$STEP_DIR_B/prompt-1.md"
 
-assert_ok "metrics records requested compute_backend 'coder'" \
-  jq -e '.compute_backend == "coder"' "$TASK_DIR_B/metrics.jsonl"
+assert_ok "metrics records requested compute_backend 'colab'" \
+  jq -e '.compute_backend == "colab"' "$TASK_DIR_B/metrics.jsonl"
 
-assert_ok "metrics has no duplicate backend field for coder" \
+assert_ok "metrics has no duplicate backend field for colab" \
   jq -e 'has("backend") | not' "$TASK_DIR_B/metrics.jsonl"
 
 # Scenario C: Step WITH valid colab compute.json
@@ -971,7 +969,7 @@ assert_ok "no run-1.jsonl created when validation fails" \
 
 cat <<'EOF' > "$STEP_DIR_D/compute.json"
 {
-  "backend": "coder",
+  "backend": "colab",
   "target": "gpu-node",
   "command": "python train.py",
   "timeout_seconds": 600,
@@ -991,7 +989,7 @@ cat <<'EOF' > "$STEP_DIR_E/brief.md"
 ## Task
 Initial attempt.
 EOF
-cp "$SKILL_DIR/templates/compute.json" "$STEP_DIR_E/compute.json"
+cp "$SKILL_DIR/templates/compute-colab.json" "$STEP_DIR_E/compute.json"
 
 assert_ok "run-task succeeds on attempt 1" \
   run_harness_task "$STEP_DIR_E"
@@ -1026,7 +1024,7 @@ cat <<'EOF' > "$STEP_DIR_F/brief.md"
 ## Task
 Fails.
 EOF
-cp "$SKILL_DIR/templates/compute.json" "$STEP_DIR_F/compute.json"
+cp "$SKILL_DIR/templates/compute-colab.json" "$STEP_DIR_F/compute.json"
 
 # Create a failing fake agy
 cat <<'EOF' > "$FAKE_BIN_DIR/agy"
@@ -1044,7 +1042,7 @@ assert_fail "run-task exits non-zero when agy fails" \
   run_harness_task "$STEP_DIR_F"
 
 assert_ok "metrics records requested compute_backend even when agy fails" \
-  jq -e '.compute_backend == "coder" and .exit_code == 1' "$TASK_DIR_F/metrics.jsonl"
+  jq -e '.compute_backend == "colab" and .exit_code == 1' "$TASK_DIR_F/metrics.jsonl"
 
 assert_ok "metrics has no duplicate backend field when agy fails" \
   jq -e 'has("backend") | not' "$TASK_DIR_F/metrics.jsonl"
@@ -1053,7 +1051,15 @@ assert_ok "metrics has no duplicate backend field when agy fails" \
 STEP_DIR_G="$TMP_TEST_DIR/task-recovery/steps/07-recovery"
 mkdir -p "$STEP_DIR_G"
 echo 'Run a remote experiment.' > "$STEP_DIR_G/brief.md"
-cp "$SKILL_DIR/templates/compute.json" "$STEP_DIR_G/compute.json"
+cat <<'EOF' > "$STEP_DIR_G/compute.json"
+{
+  "backend": "colab",
+  "target": "notebooks/initial.ipynb",
+  "command": ["python", "train.py"],
+  "timeout_seconds": 1800,
+  "max_attempts": 2
+}
+EOF
 
 cat <<'EOF' > "$FAKE_BIN_DIR/agy"
 #!/usr/bin/env bash
@@ -1097,14 +1103,14 @@ assert_ok "interrupted state retains the unresolved job ID" \
   jq -e '.job_id == "job-42" and .phase == "execute" and .release_outcome == null' \
     "$STEP_DIR_G/compute-1/state.json"
 
-# The new manifest must not hide the old backend and target.
+# The new manifest must not hide the old target and identity.
 cp "$SKILL_DIR/templates/compute-colab.json" "$STEP_DIR_G/compute.json"
 assert_fail "agent SUCCESS is rejected while an old job remains unresolved" \
   run_recovery_task ignore
 assert_ok "retry prompt identifies the old state file" \
   grep -Fq "$STEP_DIR_G/compute-1/state.json" "$STEP_DIR_G/prompt-2.md"
-assert_ok "retry prompt carries old job ID and backend despite manifest change" \
-  grep -Fq '"backend":"coder","target":"gpu-workspace","job_id":"job-42"' "$STEP_DIR_G/prompt-2.md"
+assert_ok "retry prompt carries old job ID and target despite manifest target change" \
+  grep -Fq '"backend":"colab","target":"notebooks/initial.ipynb","job_id":"job-42"' "$STEP_DIR_G/prompt-2.md"
 assert_ok "metrics distinguish incomplete recovery from agent SUCCESS" \
   jq -se 'last | .status == "RECOVERY_INCOMPLETE" and .compute_recovery_pending == true' \
     "$TMP_TEST_DIR/task-recovery/metrics.jsonl"
@@ -1129,11 +1135,22 @@ assert_ok "successful recovery is reflected in metrics" \
   jq -se 'last | .status == "SUCCESS" and .compute_recovery_pending == false and .compute_backend == null' \
     "$TMP_TEST_DIR/task-recovery/metrics.jsonl"
 
+# Prior state with an unrecognized backend is surfaced and recovered
+jq '.backend = "unsupported-backend" | .phase = "execute" | .release_outcome = null | .release_reason = null' \
+  "$STEP_DIR_G/compute-1/state.json" > "$STEP_DIR_G/compute-1/state.json.tmp"
+mv "$STEP_DIR_G/compute-1/state.json.tmp" "$STEP_DIR_G/compute-1/state.json"
+assert_fail "unrecognized prior backend still requires recovery" \
+  run_recovery_task ignore
+assert_ok "retry prompt carries unrecognized prior backend" \
+  grep -Fq '"backend":"unsupported-backend"' "$STEP_DIR_G/prompt-7.md"
+assert_ok "unrecognized prior backend recovery succeeds upon release" \
+  run_recovery_task release
+
 echo 'not json' > "$STEP_DIR_G/compute-1/state.json"
 assert_fail "unreadable prior state cannot be treated as recovered" \
   run_recovery_task ignore
 assert_ok "unreadable state is explicitly surfaced in the retry prompt" \
-  grep -Fq 'State is unreadable; inspect and recover it explicitly.' "$STEP_DIR_G/prompt-7.md"
+  grep -Fq 'State is unreadable; inspect and recover it explicitly.' "$STEP_DIR_G/prompt-9.md"
 
 echo "=========================================="
 echo "Tests passed: $PASSED, failed: $FAILED"
